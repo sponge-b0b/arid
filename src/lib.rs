@@ -38,8 +38,14 @@ pub struct RunResult {
 pub fn run(cli: &Cli) -> Result<RunResult, String> {
     let paths = scan_paths(cli);
 
-    let loaded = load_settings(&paths[0], SettingsOverrides::default())
-        .map_err(|error| format!("failed to load configuration: {error}"))?;
+    let loaded = load_settings(
+        &paths[0],
+        SettingsOverrides {
+            min_lines: cli.min_lines,
+            ..SettingsOverrides::default()
+        },
+    )
+    .map_err(|error| format!("failed to load configuration: {error}"))?;
 
     let discovered = discover_python_files(&paths, &loaded.settings, &loaded.project_root)
         .map_err(|error| format!("failed to discover Python files: {error}"))?;
@@ -163,6 +169,7 @@ min-lines = 2
 
         let result = run(&Cli {
             paths: vec![temp.path().to_path_buf()],
+            min_lines: None,
             json: false,
             show_source: false,
         })
@@ -177,6 +184,31 @@ min-lines = 2
     }
 
     #[test]
+    fn cli_min_lines_overrides_project_config() {
+        let temp = TempDir::new();
+        write_test_config(&temp);
+
+        temp.write("a.py", "alpha = 1\nbeta = 2\n");
+
+        temp.write("b.py", "alpha = 1\nbeta = 2\n");
+
+        let result = run(&Cli {
+            paths: vec![temp.path().to_path_buf()],
+            min_lines: Some(3),
+            json: false,
+            show_source: false,
+        })
+        .unwrap();
+
+        assert_eq!(result.exit_status, ExitStatus::Success);
+
+        assert_eq!(
+            result.output,
+            concat!("No duplicate code found.\n", "0 duplicate lines (0.00%).\n",)
+        );
+    }
+
+    #[test]
     fn end_to_end_scan_succeeds_without_duplicates() {
         let temp = TempDir::new();
         write_test_config(&temp);
@@ -187,6 +219,7 @@ min-lines = 2
 
         let result = run(&Cli {
             paths: vec![temp.path().to_path_buf()],
+            min_lines: None,
             json: false,
             show_source: false,
         })
@@ -211,6 +244,7 @@ min-lines = 2
 
         let result = run(&Cli {
             paths: vec![temp.path().to_path_buf()],
+            min_lines: None,
             json: true,
             show_source: false,
         })

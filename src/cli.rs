@@ -10,6 +10,10 @@ pub struct Cli {
     #[arg(value_name = "PATH")]
     pub paths: Vec<PathBuf>,
 
+    /// Minimum number of effective lines required for a duplicate.
+    #[arg(long, value_name = "N")]
+    pub min_lines: Option<u32>,
+
     /// Emit JSON instead of human-readable output.
     #[arg(long)]
     pub json: bool,
@@ -28,21 +32,29 @@ mod tests {
         let cli = Cli::try_parse_from(["arid"]).unwrap();
 
         assert!(cli.paths.is_empty());
+        assert_eq!(cli.min_lines, None);
         assert!(!cli.json);
         assert!(!cli.show_source);
     }
 
     #[test]
     fn accepts_paths_and_output_options() {
-        let cli =
-            Cli::try_parse_from(["arid", "--json", "--show-source", "src", "tests/example.py"])
-                .unwrap();
+        let cli = Cli::try_parse_from([
+            "arid",
+            "--min-lines",
+            "6",
+            "--json",
+            "--show-source",
+            "src",
+            "tests/example.py",
+        ])
+        .unwrap();
 
         assert_eq!(
             cli.paths,
             vec![PathBuf::from("src"), PathBuf::from("tests/example.py"),]
         );
-
+        assert_eq!(cli.min_lines, Some(6));
         assert!(cli.json);
         assert!(cli.show_source);
     }
