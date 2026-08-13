@@ -150,6 +150,38 @@ Require a larger duplicate before reporting it:
 arid . --min-lines 8
 ```
 
+Override normalization behavior for a single scan:
+
+```bash
+arid . --no-ignore-docstrings
+```
+
+Configurable boolean options support both positive and negative forms:
+
+```text
+--ignore-comments       --no-ignore-comments
+--ignore-docstrings     --no-ignore-docstrings
+--ignore-imports        --no-ignore-imports
+--ignore-signatures     --no-ignore-signatures
+--same-file             --no-same-file
+```
+
+This allows command-line arguments to explicitly override either value from `pyproject.toml`.
+
+Exclude matching paths:
+
+```bash
+arid . --exclude 'generated/**'
+```
+
+`--exclude` may be repeated:
+
+```bash
+arid . \
+    --exclude 'generated/**' \
+    --exclude 'vendor/**'
+```
+
 Include the original source in each finding:
 
 ```bash
@@ -449,6 +481,10 @@ ignore-docstrings = true
 ignore-imports = true
 ignore-signatures = true
 same-file = true
+exclude = [
+    "generated/**",
+    "vendor/**",
+]
 ```
 
 Current defaults are:
@@ -461,21 +497,68 @@ Current defaults are:
 | `ignore-imports` | `true` | Ignore import statements. |
 | `ignore-signatures` | `true` | Ignore function and method declaration signatures. |
 | `same-file` | `true` | Detect non-overlapping duplicate regions within the same file. |
+| `exclude` | `[]` | Path patterns excluded from discovery. |
 
-Command-line options override project configuration, which overrides Arid's built-in defaults.
+Configuration precedence is:
+
+```text
+CLI arguments
+    ↓
+pyproject.toml
+    ↓
+built-in defaults
+```
 
 For example:
 
 ```toml
 [tool.arid]
 min-lines = 6
+ignore-docstrings = true
+same-file = true
 ```
 
 can be overridden for one scan with:
 
 ```bash
-arid . --min-lines 10
+arid . \
+    --min-lines 10 \
+    --no-ignore-docstrings \
+    --no-same-file
 ```
+
+Each configurable boolean has both an enabling and disabling CLI form. This matters when the project configuration differs from the built-in default. For example, if the project contains:
+
+```toml
+[tool.arid]
+ignore-comments = false
+```
+
+then:
+
+```bash
+arid . --ignore-comments
+```
+
+explicitly enables comment filtering for that scan.
+
+Likewise:
+
+```bash
+arid . --no-ignore-comments
+```
+
+explicitly disables it.
+
+Supplying one or more `--exclude` options on the command line overrides the configured `exclude` list for that scan:
+
+```bash
+arid . \
+    --exclude 'build/**' \
+    --exclude 'generated/**'
+```
+
+`--json` and `--show-source` control report output and are CLI-only options.
 
 ---
 
