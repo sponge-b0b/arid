@@ -7,6 +7,15 @@ use crate::model::CorpusPos;
 pub enum SuffixError {
     #[error("suffix array exceeds u32 indexing capacity")]
     TooLarge,
+
+    #[error("suffix array length {actual} does not match token length {expected}")]
+    InvalidLength { expected: usize, actual: usize },
+
+    #[error("suffix array position {position} is outside corpus length {length}")]
+    InvalidPosition { position: CorpusPos, length: usize },
+
+    #[error("suffix array contains duplicate position {0}")]
+    DuplicatePosition(CorpusPos),
 }
 
 /// Builds the suffix array for `tokens`.
@@ -85,6 +94,78 @@ pub fn build_suffix_array(tokens: &[CorpusToken]) -> Result<Vec<CorpusPos>, Suff
     }
 
     Ok(suffixes)
+}
+
+/// Builds the longest-common-prefix array for `tokens` and `suffixes`.
+///
+/// `lcp[0]` is always zero. For every `i > 0`, `lcp[i]` is the number
+/// of leading tokens shared by the suffixes at `suffixes[i - 1]` and
+/// `suffixes[i]`.
+///
+/// Construction uses Kasai's algorithm and runs in O(n) time.
+pub fn build_lcp_array(
+    tokens: &[CorpusToken],
+    suffixes: &[CorpusPos],
+) -> Result<Vec<u32>, SuffixError> {
+    let length = tokens.len();
+
+    if suffixes.len() != length {
+        return Err(SuffixError::InvalidLength {
+            expected: length,
+            actual: suffixes.len(),
+        });
+    }
+
+    if length == 0 {
+        return Ok(Vec::new());
+    }
+
+    let mut ranks = vec![usize::MAX; length];
+
+    for (rank, &position) in suffixes.iter().enumerate() {
+        let index = position as usize;
+
+        if index >= length {
+            return Err(SuffixError::InvalidPosition { position, length });
+        }
+
+        if ranks[index] != usize::MAX {
+            return Err(SuffixError::DuplicatePosition(position));
+        }
+
+        ranks[index] = rank;
+    }
+
+    let mut lcp = vec![0_u32; length];
+    let mut common = 0_usize;
+
+    for position in 0..length {
+        let rank = ranks[position];
+
+        // The lexicographically first suffix has no previous suffix.
+        if rank == 0 {
+            common = 0;
+            continue;
+        }
+
+        let previous = suffixes[rank - 1] as usize;
+
+        while position + common < length
+            && previous + common < length
+            && tokens[position + common] == tokens[previous + common]
+        {
+            common += 1;
+        }
+
+        lcp[rank] = u32::try_from(common).map_err(|_| SuffixError::TooLarge)?;
+
+        // If suffixes at i and j share `common` leading tokens, suffixes at
+        // i + 1 and j + 1 share at least `common - 1`. Reusing that fact is
+        // what keeps Kasai's algorithm linear.
+        common = common.saturating_sub(1);
+    }
+
+    Ok(lcp)
 }
 
 fn assign_initial_ranks(
@@ -271,12 +352,129 @@ mod tests {
                     value /= ALPHABET_SIZE;
                 }
 
+                let expected_suffixes = reference_suffix_array(&tokens);
+
+                let actual_suffixes = build_suffix_array(&tokens).unwrap();
+
                 assert_eq!(
-                    build_suffix_array(&tokens).unwrap(),
-                    reference_suffix_array(&tokens),
-                    "failed for {tokens:?}"
+                    actual_suffixes, expected_suffixes,
+                    "suffix array failed for {tokens:?}"
                 );
+
+                let expected_lcp = reference_lcp_array(&tokens, &expected_suffixes);
+
+                let actual_lcp = build_lcp_array(&tokens, &actual_suffixes).unwrap();
+
+                assert_eq!(actual_lcp, expected_lcp, "LCP array failed for {tokens:?}");
             }
         }
+    }
+
+    fn reference_lcp_array(tokens: &[CorpusToken], suffixes: &[CorpusPos]) -> Vec<u32> {
+        let mut lcp = vec![0_u32; suffixes.len()];
+
+        for index in 1..suffixes.len() {
+            let left = suffixes[index - 1] as usize;
+            let right = suffixes[index] as usize;
+
+            let mut common = 0_usize;
+
+            while left + common < tokens.len()
+                && right + common < tokens.len()
+                && tokens[left + common] == tokens[right + common]
+            {
+                common += 1;
+            }
+
+            lcp[index] = common as u32;
+        }
+
+        lcp
+    }
+
+    #[test]
+    fn empty_sequence_has_empty_lcp_array() {
+        let suffixes = build_suffix_array(&[]).unwrap();
+
+        assert_eq!(build_lcp_array(&[], &suffixes).unwrap(), Vec::<u32>::new());
+    }
+
+    #[test]
+    fn single_token_has_zero_lcp() {
+        let tokens = [42];
+        let suffixes = build_suffix_array(&tokens).unwrap();
+
+        assert_eq!(build_lcp_array(&tokens, &suffixes).unwrap(), vec![0]);
+    }
+
+    #[test]
+    fn computes_known_lcp_array() {
+        let tokens = [1, 2, 1, 2, 1];
+
+        let suffixes = build_suffix_array(&tokens).unwrap();
+        let lcp = build_lcp_array(&tokens, &suffixes).unwrap();
+
+        assert_eq!(suffixes, vec![4, 2, 0, 3, 1]);
+
+        assert_eq!(lcp, vec![0, 1, 3, 0, 2]);
+    }
+
+    #[test]
+    fn computes_lcp_for_repeated_tokens() {
+        let tokens = [7, 7, 7, 7];
+
+        let suffixes = build_suffix_array(&tokens).unwrap();
+
+        assert_eq!(suffixes, vec![3, 2, 1, 0]);
+
+        assert_eq!(
+            build_lcp_array(&tokens, &suffixes).unwrap(),
+            vec![0, 1, 2, 3]
+        );
+    }
+
+    #[test]
+    fn lcp_matches_reference_for_mixed_sequence() {
+        let tokens = [2, 1, 2, 1, 0, 2, 1];
+
+        let suffixes = build_suffix_array(&tokens).unwrap();
+
+        assert_eq!(
+            build_lcp_array(&tokens, &suffixes).unwrap(),
+            reference_lcp_array(&tokens, &suffixes)
+        );
+    }
+
+    #[test]
+    fn rejects_lcp_suffix_array_with_wrong_length() {
+        let error = build_lcp_array(&[1, 2, 3], &[0, 1]).unwrap_err();
+
+        assert!(matches!(
+            error,
+            SuffixError::InvalidLength {
+                expected: 3,
+                actual: 2,
+            }
+        ));
+    }
+
+    #[test]
+    fn rejects_out_of_range_suffix_position() {
+        let error = build_lcp_array(&[1, 2, 3], &[0, 1, 3]).unwrap_err();
+
+        assert!(matches!(
+            error,
+            SuffixError::InvalidPosition {
+                position: 3,
+                length: 3,
+            }
+        ));
+    }
+
+    #[test]
+    fn rejects_duplicate_suffix_position() {
+        let error = build_lcp_array(&[1, 2, 3], &[0, 1, 1]).unwrap_err();
+
+        assert!(matches!(error, SuffixError::DuplicatePosition(1)));
     }
 }
