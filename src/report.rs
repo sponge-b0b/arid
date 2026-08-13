@@ -12,7 +12,7 @@ use crate::model::{
 use crate::outcome::ExitStatus;
 
 pub const DUPLICATE_CODE: &str = "DUP001";
-pub const JSON_SCHEMA_VERSION: u8 = 2;
+pub const JSON_SCHEMA_VERSION: u8 = 3;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ReportOptions {
@@ -111,12 +111,33 @@ impl From<StructuralScope> for FindingScope {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum FindingDistribution {
+    SameFile,
+    CrossFile,
+    Mixed,
+}
+
+impl FindingDistribution {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::SameFile => "same-file",
+            Self::CrossFile => "cross-file",
+            Self::Mixed => "mixed",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Finding {
     pub code: String,
     pub lines: u32,
     pub context: FindingContext,
     pub scope: FindingScope,
+    pub occurrences: u32,
+    pub files: u32,
+    pub distribution: FindingDistribution,
     pub locations: Vec<Location>,
 }
 
@@ -186,6 +207,7 @@ pub fn render_human(report: &Report) -> String {
 
     for finding in &report.findings {
         let unit = if finding.lines == 1 { "line" } else { "lines" };
+        let file_unit = if finding.files == 1 { "file" } else { "files" };
 
         writeln!(
             &mut output,
@@ -199,6 +221,16 @@ pub fn render_human(report: &Report) -> String {
 
         writeln!(&mut output, "Scope: {}", finding.scope.as_str())
             .expect("writing to String cannot fail");
+
+        writeln!(
+            &mut output,
+            "Occurrences: {} across {} {} ({})",
+            finding.occurrences,
+            finding.files,
+            file_unit,
+            finding.distribution.as_str(),
+        )
+        .expect("writing to String cannot fail");
 
         writeln!(&mut output).expect("writing to String cannot fail");
 
@@ -269,6 +301,11 @@ fn build_finding(
     let mut occurrences = group.occurrences.clone();
     occurrences.sort_unstable();
 
+    let (file_count, distribution) = classify_distribution(&occurrences);
+
+    let occurrence_count = u32::try_from(occurrences.len())
+        .expect("a duplicate group cannot contain more than u32::MAX occurrences");
+
     let mut context = None;
     let mut scope = None;
     let mut locations = Vec::with_capacity(occurrences.len());
@@ -304,8 +341,39 @@ fn build_finding(
         lines: group.effective_lines,
         context: context.expect("validated duplicate group must contain an occurrence"),
         scope: scope.expect("validated duplicate group must contain an occurrence"),
+        occurrences: occurrence_count,
+        files: file_count,
+        distribution,
         locations,
     })
+}
+
+fn classify_distribution(occurrences: &[Occurrence]) -> (u32, FindingDistribution) {
+    let mut file_count = 0_u32;
+    let mut previous_file = None;
+    let mut repeated_file = false;
+
+    for occurrence in occurrences {
+        if previous_file == Some(occurrence.file) {
+            repeated_file = true;
+        } else {
+            file_count = file_count
+                .checked_add(1)
+                .expect("a duplicate group cannot reference more than u32::MAX files");
+
+            previous_file = Some(occurrence.file);
+        }
+    }
+
+    let distribution = if file_count <= 1 {
+        FindingDistribution::SameFile
+    } else if repeated_file {
+        FindingDistribution::Mixed
+    } else {
+        FindingDistribution::CrossFile
+    };
+
+    (file_count, distribution)
 }
 
 fn build_location(
@@ -643,7 +711,7 @@ mod tests {
 
         let report = build_report(&corpus, &groups, &ReportOptions::default()).unwrap();
 
-        assert_eq!(report.version, 2);
+        assert_eq!(report.version, 3);
         assert_eq!(report.files, 2);
         assert_eq!(report.source_lines, 4);
         assert_eq!(report.analyzed_lines, 4);
@@ -676,6 +744,7 @@ mod tests {
                 "DUP001 2 duplicated lines\n",
                 "Context: executable\n",
                 "Scope: module\n",
+                "Occurrences: 2 across 2 files (cross-file)\n",
                 "\n",
                 "  a.py:1-2\n",
                 "  b.py:1-2\n",
@@ -748,6 +817,86 @@ mod tests {
     }
 
     #[test]
+    fn finding_reports_cross_file_distribution() {
+        let corpus = build_corpus(vec![
+            prepared("a.py", "alpha()\n", &[("alpha()", 0, true)]),
+            prepared("b.py", "alpha()\n", &[("alpha()", 0, true)]),
+        ])
+        .unwrap();
+
+        let groups = vec![DuplicateGroup {
+            effective_lines: 1,
+            normalized_len: 1,
+            occurrences: vec![occurrence(0, 0, 1), occurrence(1, 0, 1)],
+        }];
+
+        let report = build_report(&corpus, &groups, &ReportOptions::default()).unwrap();
+        let finding = &report.findings[0];
+
+        assert_eq!(finding.occurrences, 2);
+        assert_eq!(finding.files, 2);
+        assert_eq!(finding.distribution, FindingDistribution::CrossFile);
+    }
+
+    #[test]
+    fn finding_reports_same_file_distribution() {
+        let corpus = build_corpus(vec![prepared(
+            "a.py",
+            "alpha()\nbeta()\nalpha()\nbeta()\n",
+            &[
+                ("alpha()", 0, true),
+                ("beta()", 1, true),
+                ("alpha()", 2, true),
+                ("beta()", 3, true),
+            ],
+        )])
+        .unwrap();
+
+        let groups = vec![DuplicateGroup {
+            effective_lines: 2,
+            normalized_len: 2,
+            occurrences: vec![occurrence(0, 0, 2), occurrence(0, 2, 2)],
+        }];
+
+        let report = build_report(&corpus, &groups, &ReportOptions::default()).unwrap();
+        let finding = &report.findings[0];
+
+        assert_eq!(finding.occurrences, 2);
+        assert_eq!(finding.files, 1);
+        assert_eq!(finding.distribution, FindingDistribution::SameFile);
+    }
+
+    #[test]
+    fn finding_reports_mixed_distribution() {
+        let corpus = build_corpus(vec![
+            prepared(
+                "a.py",
+                "alpha()\nalpha()\n",
+                &[("alpha()", 0, true), ("alpha()", 1, true)],
+            ),
+            prepared("b.py", "alpha()\n", &[("alpha()", 0, true)]),
+        ])
+        .unwrap();
+
+        let groups = vec![DuplicateGroup {
+            effective_lines: 1,
+            normalized_len: 1,
+            occurrences: vec![
+                occurrence(0, 0, 1),
+                occurrence(0, 1, 1),
+                occurrence(1, 0, 1),
+            ],
+        }];
+
+        let report = build_report(&corpus, &groups, &ReportOptions::default()).unwrap();
+        let finding = &report.findings[0];
+
+        assert_eq!(finding.occurrences, 3);
+        assert_eq!(finding.files, 2);
+        assert_eq!(finding.distribution, FindingDistribution::Mixed);
+    }
+
+    #[test]
     fn empty_report_has_success_status() {
         let corpus = build_corpus(Vec::new()).unwrap();
 
@@ -783,7 +932,7 @@ mod tests {
     }
 
     #[test]
-    fn json_uses_schema_version_two() {
+    fn json_uses_schema_version_three() {
         let corpus = build_corpus(Vec::new()).unwrap();
 
         let report = build_report(&corpus, &[], &ReportOptions::default()).unwrap();
@@ -792,7 +941,7 @@ mod tests {
 
         let value: serde_json::Value = serde_json::from_str(&json).unwrap();
 
-        assert_eq!(value["version"], 2);
+        assert_eq!(value["version"], 3);
         assert_eq!(value["files"], 0);
         assert_eq!(value["source_lines"], 0);
         assert_eq!(value["analyzed_lines"], 0);
@@ -825,6 +974,10 @@ mod tests {
 
         assert_eq!(value["findings"][0]["context"], "executable");
         assert_eq!(value["findings"][0]["scope"], "module");
+        assert_eq!(value["findings"][0]["occurrences"], 2);
+        assert_eq!(value["findings"][0]["files"], 2);
+        assert_eq!(value["findings"][0]["distribution"], "cross-file");
+
         assert!(value["findings"][0]["locations"][0].get("source").is_none());
     }
 
