@@ -254,7 +254,7 @@ min-lines = 2
 
         let value: serde_json::Value = serde_json::from_str(&result.output).unwrap();
 
-        assert_eq!(value["version"], 1);
+        assert_eq!(value["version"], 2);
         assert_eq!(value["duplicate_groups"], 1);
         assert_eq!(value["findings"][0]["code"], "DUP001");
     }

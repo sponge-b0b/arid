@@ -6,11 +6,13 @@ use thiserror::Error;
 
 use crate::corpus::Corpus;
 use crate::metrics::{MetricsError, calculate_metrics};
-use crate::model::{DuplicateGroup, Occurrence};
+use crate::model::{
+    DuplicateGroup, NormalizedLine, Occurrence, StructuralContext, StructuralScope,
+};
 use crate::outcome::ExitStatus;
 
 pub const DUPLICATE_CODE: &str = "DUP001";
-pub const JSON_SCHEMA_VERSION: u8 = 1;
+pub const JSON_SCHEMA_VERSION: u8 = 2;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ReportOptions {
@@ -51,10 +53,70 @@ impl Report {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum FindingContext {
+    Declarative,
+    Executable,
+    Mixed,
+}
+
+impl FindingContext {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::Declarative => "declarative",
+            Self::Executable => "executable",
+            Self::Mixed => "mixed",
+        }
+    }
+}
+
+impl From<StructuralContext> for FindingContext {
+    fn from(context: StructuralContext) -> Self {
+        match context {
+            StructuralContext::Declarative => Self::Declarative,
+            StructuralContext::Executable => Self::Executable,
+            StructuralContext::Mixed => Self::Mixed,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum FindingScope {
+    Module,
+    Class,
+    Function,
+    Mixed,
+}
+
+impl FindingScope {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::Module => "module",
+            Self::Class => "class",
+            Self::Function => "function",
+            Self::Mixed => "mixed",
+        }
+    }
+}
+
+impl From<StructuralScope> for FindingScope {
+    fn from(scope: StructuralScope) -> Self {
+        match scope {
+            StructuralScope::Module => Self::Module,
+            StructuralScope::Class => Self::Class,
+            StructuralScope::Function => Self::Function,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Finding {
     pub code: String,
     pub lines: u32,
+    pub context: FindingContext,
+    pub scope: FindingScope,
     pub locations: Vec<Location>,
 }
 
@@ -132,6 +194,12 @@ pub fn render_human(report: &Report) -> String {
         )
         .expect("writing to String cannot fail");
 
+        writeln!(&mut output, "Context: {}", finding.context.as_str())
+            .expect("writing to String cannot fail");
+
+        writeln!(&mut output, "Scope: {}", finding.scope.as_str())
+            .expect("writing to String cannot fail");
+
         writeln!(&mut output).expect("writing to String cannot fail");
 
         for location in &finding.locations {
@@ -201,10 +269,28 @@ fn build_finding(
     let mut occurrences = group.occurrences.clone();
     occurrences.sort_unstable();
 
-    let mut locations = occurrences
-        .into_iter()
-        .map(|occurrence| build_location(corpus, occurrence, options))
-        .collect::<Result<Vec<_>, _>>()?;
+    let mut context = None;
+    let mut scope = None;
+    let mut locations = Vec::with_capacity(occurrences.len());
+
+    for occurrence in occurrences {
+        let (location, occurrence_context, occurrence_scope) =
+            build_location(corpus, occurrence, options)?;
+
+        context = Some(match context {
+            None => occurrence_context,
+            Some(current) if current == occurrence_context => current,
+            Some(_) => FindingContext::Mixed,
+        });
+
+        scope = Some(match scope {
+            None => occurrence_scope,
+            Some(current) if current == occurrence_scope => current,
+            Some(_) => FindingScope::Mixed,
+        });
+
+        locations.push(location);
+    }
 
     locations.sort_by(|left, right| {
         left.path
@@ -216,6 +302,8 @@ fn build_finding(
     Ok(Finding {
         code: DUPLICATE_CODE.to_owned(),
         lines: group.effective_lines,
+        context: context.expect("validated duplicate group must contain an occurrence"),
+        scope: scope.expect("validated duplicate group must contain an occurrence"),
         locations,
     })
 }
@@ -224,7 +312,7 @@ fn build_location(
     corpus: &Corpus,
     occurrence: Occurrence,
     options: &ReportOptions,
-) -> Result<Location, ReportError> {
+) -> Result<(Location, FindingContext, FindingScope), ReportError> {
     let Some(file) = corpus.files.get(occurrence.file as usize) else {
         return Err(ReportError::UnknownFile {
             file: occurrence.file,
@@ -258,6 +346,8 @@ fn build_location(
         });
     };
 
+    let (context, scope) = classify_lines(lines);
+
     let start_source_line = first.source_line;
     let end_source_line = last.source_line;
 
@@ -265,12 +355,40 @@ fn build_location(
         .show_source
         .then(|| extract_source(&file.source, start_source_line, end_source_line));
 
-    Ok(Location {
-        path: display_path(&file.path, options.path_root.as_deref()),
-        start_line: u64::from(start_source_line) + 1,
-        end_line: u64::from(end_source_line) + 1,
-        source,
-    })
+    Ok((
+        Location {
+            path: display_path(&file.path, options.path_root.as_deref()),
+            start_line: u64::from(start_source_line) + 1,
+            end_line: u64::from(end_source_line) + 1,
+            source,
+        },
+        context,
+        scope,
+    ))
+}
+
+fn classify_lines(lines: &[NormalizedLine]) -> (FindingContext, FindingScope) {
+    let first = lines
+        .first()
+        .expect("validated occurrence must contain a normalized line");
+
+    let mut context = FindingContext::from(first.context);
+    let mut scope = FindingScope::from(first.scope);
+
+    for line in &lines[1..] {
+        let next_context = FindingContext::from(line.context);
+        let next_scope = FindingScope::from(line.scope);
+
+        if context != next_context {
+            context = FindingContext::Mixed;
+        }
+
+        if scope != next_scope {
+            scope = FindingScope::Mixed;
+        }
+    }
+
+    (context, scope)
 }
 
 fn extract_source(source: &str, start_line: u32, end_line: u32) -> String {
@@ -525,7 +643,7 @@ mod tests {
 
         let report = build_report(&corpus, &groups, &ReportOptions::default()).unwrap();
 
-        assert_eq!(report.version, 1);
+        assert_eq!(report.version, 2);
         assert_eq!(report.files, 2);
         assert_eq!(report.source_lines, 4);
         assert_eq!(report.analyzed_lines, 4);
@@ -556,6 +674,8 @@ mod tests {
             render_human(&report),
             concat!(
                 "DUP001 2 duplicated lines\n",
+                "Context: executable\n",
+                "Scope: module\n",
                 "\n",
                 "  a.py:1-2\n",
                 "  b.py:1-2\n",
@@ -602,6 +722,32 @@ mod tests {
     }
 
     #[test]
+    fn finding_structure_is_mixed_across_different_occurrence_contexts() {
+        let mut class_file = prepared("a.py", "value = 1\n", &[("value = 1", 0, true)]);
+
+        class_file.lines[0].context = StructuralContext::Declarative;
+        class_file.lines[0].scope = StructuralScope::Class;
+
+        let mut function_file = prepared("b.py", "value = 1\n", &[("value = 1", 0, true)]);
+
+        function_file.lines[0].context = StructuralContext::Executable;
+        function_file.lines[0].scope = StructuralScope::Function;
+
+        let corpus = build_corpus(vec![class_file, function_file]).unwrap();
+
+        let groups = vec![DuplicateGroup {
+            effective_lines: 1,
+            normalized_len: 1,
+            occurrences: vec![occurrence(0, 0, 1), occurrence(1, 0, 1)],
+        }];
+
+        let report = build_report(&corpus, &groups, &ReportOptions::default()).unwrap();
+
+        assert_eq!(report.findings[0].context, FindingContext::Mixed);
+        assert_eq!(report.findings[0].scope, FindingScope::Mixed);
+    }
+
+    #[test]
     fn empty_report_has_success_status() {
         let corpus = build_corpus(Vec::new()).unwrap();
 
@@ -637,7 +783,7 @@ mod tests {
     }
 
     #[test]
-    fn json_uses_schema_version_one() {
+    fn json_uses_schema_version_two() {
         let corpus = build_corpus(Vec::new()).unwrap();
 
         let report = build_report(&corpus, &[], &ReportOptions::default()).unwrap();
@@ -646,7 +792,7 @@ mod tests {
 
         let value: serde_json::Value = serde_json::from_str(&json).unwrap();
 
-        assert_eq!(value["version"], 1);
+        assert_eq!(value["version"], 2);
         assert_eq!(value["files"], 0);
         assert_eq!(value["source_lines"], 0);
         assert_eq!(value["analyzed_lines"], 0);
@@ -677,6 +823,8 @@ mod tests {
 
         let value: serde_json::Value = serde_json::from_str(&json).unwrap();
 
+        assert_eq!(value["findings"][0]["context"], "executable");
+        assert_eq!(value["findings"][0]["scope"], "module");
         assert!(value["findings"][0]["locations"][0].get("source").is_none());
     }
 
