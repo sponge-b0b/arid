@@ -54,6 +54,14 @@ pub struct Cli {
     #[arg(long, conflicts_with = "same_file")]
     pub no_same_file: bool,
 
+    /// Include hidden files and directories.
+    #[arg(long, conflicts_with = "no_hidden")]
+    pub hidden: bool,
+
+    /// Do not include hidden files and directories.
+    #[arg(long, conflicts_with = "hidden")]
+    pub no_hidden: bool,
+
     /// Exclude paths matching PATTERN. May be repeated.
     #[arg(long, value_name = "PATTERN")]
     pub exclude: Vec<String>,
@@ -88,6 +96,8 @@ mod tests {
         assert!(!cli.no_ignore_signatures);
         assert!(!cli.same_file);
         assert!(!cli.no_same_file);
+        assert!(!cli.hidden);
+        assert!(!cli.no_hidden);
 
         assert!(cli.exclude.is_empty());
         assert!(!cli.json);
@@ -109,7 +119,7 @@ mod tests {
 
         assert_eq!(
             cli.paths,
-            vec![PathBuf::from("src"), PathBuf::from("tests/example.py"),]
+            vec![PathBuf::from("src"), PathBuf::from("tests/example.py")]
         );
         assert_eq!(cli.min_lines, Some(6));
         assert!(cli.json);
@@ -125,6 +135,7 @@ mod tests {
             "--ignore-imports",
             "--no-ignore-signatures",
             "--no-same-file",
+            "--hidden",
             "--exclude",
             "generated/**",
             "--exclude",
@@ -147,12 +158,30 @@ mod tests {
         assert!(!cli.same_file);
         assert!(cli.no_same_file);
 
+        assert!(cli.hidden);
+        assert!(!cli.no_hidden);
+
         assert_eq!(cli.exclude, vec!["generated/**", "vendor/**"]);
+    }
+
+    #[test]
+    fn accepts_negative_hidden_override() {
+        let cli = Cli::try_parse_from(["arid", "--no-hidden"]).unwrap();
+
+        assert!(!cli.hidden);
+        assert!(cli.no_hidden);
     }
 
     #[test]
     fn rejects_conflicting_boolean_overrides() {
         let result = Cli::try_parse_from(["arid", "--ignore-comments", "--no-ignore-comments"]);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn rejects_conflicting_hidden_overrides() {
+        let result = Cli::try_parse_from(["arid", "--hidden", "--no-hidden"]);
 
         assert!(result.is_err());
     }

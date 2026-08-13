@@ -25,6 +25,8 @@ fn test_cli(path: PathBuf) -> Cli {
         no_ignore_signatures: false,
         same_file: false,
         no_same_file: false,
+        hidden: false,
+        no_hidden: false,
         exclude: Vec::new(),
         json: true,
         show_source: false,

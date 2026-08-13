@@ -16,6 +16,7 @@ pub struct Settings {
     pub ignore_imports: bool,
     pub ignore_signatures: bool,
     pub same_file: bool,
+    pub hidden: bool,
     pub exclude: Vec<String>,
 }
 
@@ -28,6 +29,7 @@ impl Default for Settings {
             ignore_imports: true,
             ignore_signatures: true,
             same_file: true,
+            hidden: false,
             exclude: Vec::new(),
         }
     }
@@ -66,6 +68,7 @@ pub struct SettingsOverrides {
     pub ignore_imports: Option<bool>,
     pub ignore_signatures: Option<bool>,
     pub same_file: Option<bool>,
+    pub hidden: Option<bool>,
     pub exclude: Option<Vec<String>>,
 }
 
@@ -237,6 +240,10 @@ fn apply_project_config(settings: &mut Settings, config: AridConfig) {
         settings.same_file = value;
     }
 
+    if let Some(value) = config.hidden {
+        settings.hidden = value;
+    }
+
     if let Some(value) = config.exclude {
         settings.exclude = value;
     }
@@ -265,6 +272,10 @@ fn apply_overrides(settings: &mut Settings, overrides: SettingsOverrides) {
 
     if let Some(value) = overrides.same_file {
         settings.same_file = value;
+    }
+
+    if let Some(value) = overrides.hidden {
+        settings.hidden = value;
     }
 
     if let Some(value) = overrides.exclude {
@@ -301,6 +312,7 @@ struct AridConfig {
     ignore_imports: Option<bool>,
     ignore_signatures: Option<bool>,
     same_file: Option<bool>,
+    hidden: Option<bool>,
     exclude: Option<Vec<String>>,
 }
 
@@ -364,6 +376,7 @@ mod tests {
 min-lines = 7
 ignore-comments = false
 same-file = false
+hidden = true
 exclude = ["generated/**"]
 "#,
         )
@@ -374,7 +387,7 @@ exclude = ["generated/**"]
         assert_eq!(loaded.settings.min_lines, 7);
         assert!(!loaded.settings.ignore_comments);
         assert!(!loaded.settings.same_file);
-
+        assert!(loaded.settings.hidden);
         assert_eq!(loaded.settings.exclude, vec!["generated/**"]);
 
         assert_eq!(loaded.config_path, Some(temp.path().join("pyproject.toml")));
@@ -433,6 +446,7 @@ min-line = 4
 min-lines = 8
 ignore-comments = true
 same-file = true
+hidden = true
 exclude = ["generated/**"]
 "#,
         )
@@ -444,6 +458,7 @@ exclude = ["generated/**"]
                 min_lines: Some(5),
                 ignore_comments: Some(false),
                 same_file: Some(false),
+                hidden: Some(false),
                 exclude: Some(vec!["vendor/**".to_owned()]),
                 ..SettingsOverrides::default()
             },
@@ -453,7 +468,7 @@ exclude = ["generated/**"]
         assert_eq!(loaded.settings.min_lines, 5);
         assert!(!loaded.settings.ignore_comments);
         assert!(!loaded.settings.same_file);
-
+        assert!(!loaded.settings.hidden);
         assert_eq!(loaded.settings.exclude, vec!["vendor/**"]);
     }
 
@@ -484,6 +499,7 @@ min-lines = 0
             ignore_imports: false,
             ignore_signatures: true,
             same_file: false,
+            hidden: true,
             exclude: Vec::new(),
         };
 

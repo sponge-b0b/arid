@@ -102,6 +102,7 @@ fn settings_overrides(cli: &Cli) -> SettingsOverrides {
         ignore_imports: boolean_override(cli.ignore_imports, cli.no_ignore_imports),
         ignore_signatures: boolean_override(cli.ignore_signatures, cli.no_ignore_signatures),
         same_file: boolean_override(cli.same_file, cli.no_same_file),
+        hidden: boolean_override(cli.hidden, cli.no_hidden),
         exclude: (!cli.exclude.is_empty()).then(|| cli.exclude.clone()),
     }
 }
@@ -187,6 +188,8 @@ min-lines = 2
             no_ignore_signatures: false,
             same_file: false,
             no_same_file: false,
+            hidden: false,
+            no_hidden: false,
             exclude: Vec::new(),
             json: false,
             show_source: false,
@@ -285,6 +288,7 @@ min-lines = 2
         cli.ignore_imports = true;
         cli.no_ignore_signatures = true;
         cli.no_same_file = true;
+        cli.hidden = true;
 
         let overrides = settings_overrides(&cli);
 
@@ -293,8 +297,9 @@ min-lines = 2
         assert_eq!(overrides.ignore_imports, Some(true));
         assert_eq!(overrides.ignore_signatures, Some(false));
         assert_eq!(overrides.same_file, Some(false));
+        assert_eq!(overrides.hidden, Some(true));
     }
-
+    
     #[test]
     fn absent_cli_flags_do_not_override_project_settings() {
         let cli = test_cli(Vec::new());

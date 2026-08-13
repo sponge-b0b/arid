@@ -164,9 +164,18 @@ Configurable boolean options support both positive and negative forms:
 --ignore-imports        --no-ignore-imports
 --ignore-signatures     --no-ignore-signatures
 --same-file             --no-same-file
+--hidden                --no-hidden
 ```
 
 This allows command-line arguments to explicitly override either value from `pyproject.toml`.
+
+Hidden files and directories are skipped by default during directory discovery. Include them when needed with:
+
+```bash
+arid . --hidden
+```
+
+This allows Arid to scan Python files under hidden directories such as `.github/` while still honoring `.gitignore` and configured `exclude` patterns.
 
 Exclude matching paths:
 
@@ -481,6 +490,7 @@ ignore-docstrings = true
 ignore-imports = true
 ignore-signatures = true
 same-file = true
+hidden = false
 exclude = [
     "generated/**",
     "vendor/**",
@@ -497,6 +507,7 @@ Current defaults are:
 | `ignore-imports` | `true` | Ignore import statements. |
 | `ignore-signatures` | `true` | Ignore function and method declaration signatures. |
 | `same-file` | `true` | Detect non-overlapping duplicate regions within the same file. |
+| `hidden` | `false` | Include hidden files and directories during directory discovery. |
 | `exclude` | `[]` | Path patterns excluded from discovery. |
 
 Configuration precedence is:
@@ -516,6 +527,7 @@ For example:
 min-lines = 6
 ignore-docstrings = true
 same-file = true
+hidden = false
 ```
 
 can be overridden for one scan with:
@@ -524,7 +536,8 @@ can be overridden for one scan with:
 arid . \
     --min-lines 10 \
     --no-ignore-docstrings \
-    --no-same-file
+    --no-same-file \
+    --hidden
 ```
 
 Each configurable boolean has both an enabling and disabling CLI form. This matters when the project configuration differs from the built-in default. For example, if the project contains:

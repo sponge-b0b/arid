@@ -670,6 +670,18 @@ V1 MUST support:
 
 Arid SHOULD honor standard VCS ignore files, particularly `.gitignore`.
 
+Hidden files and directories MUST be skipped by default during directory discovery.
+
+Users MUST be able to include hidden files and directories through:
+
+hidden \= true
+
+or:
+
+arid . \--hidden
+
+Including hidden paths MUST NOT disable standard VCS ignore handling or configured `exclude` patterns.
+
 Explicit paths MUST be supported:
 
 arid src/foo.py src/bar.py
@@ -677,6 +689,8 @@ arid src/foo.py src/bar.py
 and:
 
 arid src tests
+
+An explicitly named Python file MUST be considered for analysis regardless of whether the file itself is hidden. Configured `exclude` patterns MUST still apply.
 
 Symlinked directories SHOULD NOT be followed by default.
 
@@ -699,6 +713,7 @@ ignore-docstrings \= true
 ignore-imports \= true  
 ignore-signatures \= true  
 same-file \= true  
+hidden \= false  
 exclude \= \[\]
 
 `exclude` MUST accept project-relative path patterns:
@@ -745,6 +760,8 @@ Required options:
 \--no-ignore-signatures  
 \--same-file  
 \--no-same-file  
+\--hidden  
+\--no-hidden  
 \--json  
 \--show-source  
 \--exclude  
@@ -938,6 +955,8 @@ Tests MUST cover:
 * positive and negative CLI boolean overrides
 * conflicting positive/negative CLI flags
 * CLI `exclude` replacement semantics
+* hidden-path discovery defaults and opt-in behavior
+* hidden configuration and CLI override precedence
 * human diagnostics  
 * JSON schema and serialization
 
@@ -1102,12 +1121,13 @@ Arid v1 is complete when all of the following are true:
 19. JSON diagnostics are versioned, deterministic, and machine-readable.  
 20. Duplication metrics are deterministic and do not double-count overlapping redundant lines.  
 21. `[tool.arid]` configuration works with CLI > project config > built-in precedence.  
-22. Exit codes work reliably in CI.  
-23. Invalid Python cannot silently corrupt scan results.  
-24. Results are deterministic, and when parallel execution is enabled they remain deterministic across worker-thread counts.
-25. Benchmarks demonstrate a substantial performance advantage over Pylint `R0801`.  
-26. No general linting functionality overlaps with Ruff.  
-27. No Python runtime is required to analyze Python source.
+22. Hidden files and directories are skipped by default, can be enabled through configuration or CLI override, and remain subject to normal ignore and `exclude` rules.  
+23. Exit codes work reliably in CI.  
+24. Invalid Python cannot silently corrupt scan results.  
+25. Results are deterministic, and when parallel execution is enabled they remain deterministic across worker-thread counts.  
+26. Benchmarks demonstrate a substantial performance advantage over Pylint `R0801`.  
+27. No general linting functionality overlaps with Ruff.  
+28. No Python runtime is required to analyze Python source.
 
 ---
 

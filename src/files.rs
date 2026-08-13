@@ -102,7 +102,13 @@ pub fn discover_python_files(
         }
 
         if symlink_metadata.is_dir() {
-            discover_directory(&path, &project_root, &excludes, &mut discovered)?;
+            discover_directory(
+                &path,
+                &project_root,
+                &excludes,
+                settings.hidden,
+                &mut discovered,
+            )?;
         }
     }
 
@@ -113,6 +119,7 @@ fn discover_directory(
     root: &Path,
     project_root: &Path,
     excludes: &Gitignore,
+    include_hidden: bool,
     discovered: &mut BTreeSet<PathBuf>,
 ) -> Result<(), DiscoveryError> {
     let exclude_matcher = excludes.clone();
@@ -122,6 +129,7 @@ fn discover_directory(
     let mut builder = WalkBuilder::new(root);
 
     builder.follow_links(false);
+    builder.hidden(!include_hidden);
 
     builder.filter_entry(move |entry| {
         let path = entry.path();
@@ -290,6 +298,41 @@ mod tests {
         .unwrap();
 
         assert_eq!(files, vec![included]);
+    }
+
+    #[test]
+    fn skips_hidden_paths_by_default() {
+        let temp = TempDir::new();
+
+        let visible = temp.write("src/visible.py", "");
+        temp.write(".github/actions/hidden.py", "");
+
+        let files = discover_python_files(
+            &[temp.path().to_path_buf()],
+            &Settings::default(),
+            temp.path(),
+        )
+        .unwrap();
+
+        assert_eq!(files, vec![visible]);
+    }
+
+    #[test]
+    fn can_include_hidden_paths() {
+        let temp = TempDir::new();
+
+        let visible = temp.write("src/visible.py", "");
+        let hidden = temp.write(".github/actions/hidden.py", "");
+
+        let settings = Settings {
+            hidden: true,
+            ..Settings::default()
+        };
+
+        let files =
+            discover_python_files(&[temp.path().to_path_buf()], &settings, temp.path()).unwrap();
+
+        assert_eq!(files, vec![hidden, visible]);
     }
 
     #[test]
