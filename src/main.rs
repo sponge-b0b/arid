@@ -1,3 +1,1 @@
-fn main() -> ExitCode {
-    arid::run()
-}
+fn main() {}
