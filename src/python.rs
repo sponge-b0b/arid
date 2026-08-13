@@ -177,7 +177,11 @@ impl SyntaxCollector<'_, '_> {
         let (context, scope) = match stmt {
             Stmt::FunctionDef(_) => (StructuralContext::Declarative, StructuralScope::Function),
             Stmt::ClassDef(_) => (StructuralContext::Declarative, StructuralScope::Class),
-            Stmt::Assign(_) | Stmt::AnnAssign(_) | Stmt::Import(_) | Stmt::ImportFrom(_)
+            Stmt::TypeAlias(_)
+            | Stmt::Assign(_)
+            | Stmt::AnnAssign(_)
+            | Stmt::Import(_)
+            | Stmt::ImportFrom(_)
                 if self.scope != StructuralScope::Function && self.nesting_depth == 0 =>
             {
                 (StructuralContext::Declarative, self.scope)

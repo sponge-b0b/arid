@@ -512,6 +512,44 @@ if enabled:
     }
 
     #[test]
+    fn classifies_type_aliases_as_declarative_module_scope() {
+        let file = prepare(concat!(
+            "type JsonScalar = str | int | float | bool | None\n",
+            "\n",
+            "type CuratedRagSource = (\n",
+            "    ReportRecord\n",
+            "    | AgentSignalRecord\n",
+            "    | RecommendationRecord\n",
+            ")\n",
+        ));
+
+        assert_eq!(
+            texts(&file),
+            vec![
+                "type JsonScalar = str | int | float | bool | None",
+                "type CuratedRagSource = (",
+                "ReportRecord",
+                "| AgentSignalRecord",
+                "| RecommendationRecord",
+                ")",
+            ]
+        );
+
+        assert!(
+            file.lines
+                .iter()
+                .all(|line| line.context == StructuralContext::Declarative)
+        );
+        assert!(
+            file.lines
+                .iter()
+                .all(|line| line.scope == StructuralScope::Module)
+        );
+
+        assert!(!file.lines.last().unwrap().effective);
+    }
+
+    #[test]
     fn classifies_mixed_statements_on_one_line() {
         let file = prepare("value = 1; run()\n");
 
