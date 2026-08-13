@@ -55,7 +55,7 @@ impl Settings {
 
 /// Optional higher-precedence settings.
 ///
-/// This will be populated by CLI arguments once the CLI is implemented.
+/// Populated by higher-precedence CLI arguments.
 /// `Some` replaces the corresponding project setting; `None` leaves it
 /// unchanged.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

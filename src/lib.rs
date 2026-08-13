@@ -38,14 +38,8 @@ pub struct RunResult {
 pub fn run(cli: &Cli) -> Result<RunResult, String> {
     let paths = scan_paths(cli);
 
-    let loaded = load_settings(
-        &paths[0],
-        SettingsOverrides {
-            min_lines: cli.min_lines,
-            ..SettingsOverrides::default()
-        },
-    )
-    .map_err(|error| format!("failed to load configuration: {error}"))?;
+    let loaded = load_settings(&paths[0], settings_overrides(cli))
+        .map_err(|error| format!("failed to load configuration: {error}"))?;
 
     let discovered = discover_python_files(&paths, &loaded.settings, &loaded.project_root)
         .map_err(|error| format!("failed to discover Python files: {error}"))?;
@@ -97,6 +91,27 @@ fn scan_paths(cli: &Cli) -> Vec<PathBuf> {
         vec![PathBuf::from(".")]
     } else {
         cli.paths.clone()
+    }
+}
+
+fn settings_overrides(cli: &Cli) -> SettingsOverrides {
+    SettingsOverrides {
+        min_lines: cli.min_lines,
+        ignore_comments: boolean_override(cli.ignore_comments, cli.no_ignore_comments),
+        ignore_docstrings: boolean_override(cli.ignore_docstrings, cli.no_ignore_docstrings),
+        ignore_imports: boolean_override(cli.ignore_imports, cli.no_ignore_imports),
+        ignore_signatures: boolean_override(cli.ignore_signatures, cli.no_ignore_signatures),
+        same_file: boolean_override(cli.same_file, cli.no_same_file),
+        exclude: (!cli.exclude.is_empty()).then(|| cli.exclude.clone()),
+    }
+}
+
+fn boolean_override(enabled: bool, disabled: bool) -> Option<bool> {
+    match (enabled, disabled) {
+        (true, false) => Some(true),
+        (false, true) => Some(false),
+        (false, false) => None,
+        (true, true) => unreachable!("conflicting CLI flags must be rejected by clap"),
     }
 }
 
@@ -158,6 +173,26 @@ min-lines = 2
         );
     }
 
+    fn test_cli(paths: Vec<PathBuf>) -> Cli {
+        Cli {
+            paths,
+            min_lines: None,
+            ignore_comments: false,
+            no_ignore_comments: false,
+            ignore_docstrings: false,
+            no_ignore_docstrings: false,
+            ignore_imports: false,
+            no_ignore_imports: false,
+            ignore_signatures: false,
+            no_ignore_signatures: false,
+            same_file: false,
+            no_same_file: false,
+            exclude: Vec::new(),
+            json: false,
+            show_source: false,
+        }
+    }
+
     #[test]
     fn end_to_end_scan_reports_real_duplicate() {
         let temp = TempDir::new();
@@ -167,13 +202,7 @@ min-lines = 2
 
         temp.write("b.py", "alpha = 1\nbeta = 2\n");
 
-        let result = run(&Cli {
-            paths: vec![temp.path().to_path_buf()],
-            min_lines: None,
-            json: false,
-            show_source: false,
-        })
-        .unwrap();
+        let result = run(&test_cli(vec![temp.path().to_path_buf()])).unwrap();
 
         assert_eq!(result.exit_status, ExitStatus::Findings);
 
@@ -192,13 +221,10 @@ min-lines = 2
 
         temp.write("b.py", "alpha = 1\nbeta = 2\n");
 
-        let result = run(&Cli {
-            paths: vec![temp.path().to_path_buf()],
-            min_lines: Some(3),
-            json: false,
-            show_source: false,
-        })
-        .unwrap();
+        let mut cli = test_cli(vec![temp.path().to_path_buf()]);
+        cli.min_lines = Some(3);
+
+        let result = run(&cli).unwrap();
 
         assert_eq!(result.exit_status, ExitStatus::Success);
 
@@ -217,13 +243,7 @@ min-lines = 2
 
         temp.write("b.py", "gamma = 3\ndelta = 4\n");
 
-        let result = run(&Cli {
-            paths: vec![temp.path().to_path_buf()],
-            min_lines: None,
-            json: false,
-            show_source: false,
-        })
-        .unwrap();
+        let result = run(&test_cli(vec![temp.path().to_path_buf()])).unwrap();
 
         assert_eq!(result.exit_status, ExitStatus::Success);
 
@@ -242,13 +262,10 @@ min-lines = 2
 
         temp.write("b.py", "alpha = 1\nbeta = 2\n");
 
-        let result = run(&Cli {
-            paths: vec![temp.path().to_path_buf()],
-            min_lines: None,
-            json: true,
-            show_source: false,
-        })
-        .unwrap();
+        let mut cli = test_cli(vec![temp.path().to_path_buf()]);
+        cli.json = true;
+
+        let result = run(&cli).unwrap();
 
         assert_eq!(result.exit_status, ExitStatus::Findings);
 
@@ -257,5 +274,42 @@ min-lines = 2
         assert_eq!(value["version"], 3);
         assert_eq!(value["duplicate_groups"], 1);
         assert_eq!(value["findings"][0]["code"], "DUP001");
+    }
+
+    #[test]
+    fn cli_boolean_flags_produce_settings_overrides() {
+        let mut cli = test_cli(Vec::new());
+
+        cli.ignore_comments = true;
+        cli.no_ignore_docstrings = true;
+        cli.ignore_imports = true;
+        cli.no_ignore_signatures = true;
+        cli.no_same_file = true;
+
+        let overrides = settings_overrides(&cli);
+
+        assert_eq!(overrides.ignore_comments, Some(true));
+        assert_eq!(overrides.ignore_docstrings, Some(false));
+        assert_eq!(overrides.ignore_imports, Some(true));
+        assert_eq!(overrides.ignore_signatures, Some(false));
+        assert_eq!(overrides.same_file, Some(false));
+    }
+
+    #[test]
+    fn absent_cli_flags_do_not_override_project_settings() {
+        let cli = test_cli(Vec::new());
+
+        assert_eq!(settings_overrides(&cli), SettingsOverrides::default());
+    }
+
+    #[test]
+    fn cli_excludes_produce_settings_override() {
+        let mut cli = test_cli(Vec::new());
+        cli.exclude = vec!["generated/**".to_owned(), "vendor/**".to_owned()];
+
+        assert_eq!(
+            settings_overrides(&cli).exclude,
+            Some(vec!["generated/**".to_owned(), "vendor/**".to_owned()])
+        );
     }
 }
