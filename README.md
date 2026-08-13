@@ -235,28 +235,25 @@ Arid analyzes Python source entirely in Rust and never imports or executes the p
 
 ## Installation
 
-Arid is **not published yet**.
+> [!WARNING]
+> Arid is currently in early alpha. The CLI, configuration, and output format may change before 1.0.
 
-Planned installation methods:
+Install Arid from PyPI:
 
 ```bash
-uv tool install arid
+python -m pip install --pre arid
 ```
 
+Verify the installation:
+
 ```bash
-pip install arid
+arid --version
 ```
 
-For Rust users:
+Scan the current project:
 
 ```bash
-cargo install arid-cli
-```
-
-The installed executable will be:
-
-```bash
-arid
+arid .
 ```
 
 ---
