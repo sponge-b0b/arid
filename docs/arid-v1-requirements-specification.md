@@ -698,9 +698,10 @@ ignore-comments \= true
 ignore-docstrings \= true  
 ignore-imports \= true  
 ignore-signatures \= true  
-same-file \= true
+same-file \= true  
+exclude \= \[\]
 
-Additional v1 configuration MAY include:
+`exclude` MUST accept project-relative path patterns:
 
 exclude \= \[  
     "generated/\*\*",  
@@ -714,6 +715,10 @@ CLI arguments
 pyproject.toml  
     ↓  
 built-in defaults
+
+A CLI setting MUST replace the corresponding project setting when explicitly provided.
+
+For `exclude`, one or more CLI `--exclude` values MUST replace the configured `exclude` list for that scan rather than append to it.
 
 Arid SHOULD NOT introduce a second proprietary configuration format in v1.
 
@@ -731,17 +736,24 @@ Required options:
 
 \--min-lines  
 \--ignore-comments  
+\--no-ignore-comments  
 \--ignore-docstrings  
+\--no-ignore-docstrings  
 \--ignore-imports  
+\--no-ignore-imports  
 \--ignore-signatures  
+\--no-ignore-signatures  
 \--same-file  
+\--no-same-file  
 \--json  
 \--show-source  
 \--exclude  
 \--version  
 \--help
 
-Boolean configuration MUST have a CLI mechanism for both enabling and disabling behavior.
+Boolean configuration MUST provide both enabling and disabling CLI forms.
+
+The positive and negative forms for the same setting MUST be mutually exclusive.
 
 Examples:
 
@@ -847,6 +859,7 @@ Arid MUST correctly handle at minimum:
 * decorators  
 * multiline signatures  
 * type annotations  
+* `type` alias statements
 * module docstrings  
 * class docstrings  
 * function docstrings  
@@ -916,6 +929,9 @@ Tests MUST cover:
 * same-file/cross-file/mixed distribution reporting  
 * duplication metrics  
 * configuration precedence  
+* positive and negative CLI boolean overrides
+* conflicting positive/negative CLI flags
+* CLI `exclude` replacement semantics
 * human diagnostics  
 * JSON schema and serialization
 
