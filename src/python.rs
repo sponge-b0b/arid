@@ -177,6 +177,7 @@ impl SyntaxCollector<'_, '_> {
         let (context, scope) = match stmt {
             Stmt::FunctionDef(_) => (StructuralContext::Declarative, StructuralScope::Function),
             Stmt::ClassDef(_) => (StructuralContext::Declarative, StructuralScope::Class),
+
             Stmt::TypeAlias(_)
             | Stmt::Assign(_)
             | Stmt::AnnAssign(_)
@@ -186,7 +187,30 @@ impl SyntaxCollector<'_, '_> {
             {
                 (StructuralContext::Declarative, self.scope)
             }
-            _ => (StructuralContext::Executable, self.scope),
+
+            Stmt::Return(_)
+            | Stmt::Delete(_)
+            | Stmt::TypeAlias(_)
+            | Stmt::Assign(_)
+            | Stmt::AugAssign(_)
+            | Stmt::AnnAssign(_)
+            | Stmt::For(_)
+            | Stmt::While(_)
+            | Stmt::If(_)
+            | Stmt::With(_)
+            | Stmt::Match(_)
+            | Stmt::Raise(_)
+            | Stmt::Try(_)
+            | Stmt::Assert(_)
+            | Stmt::Import(_)
+            | Stmt::ImportFrom(_)
+            | Stmt::Global(_)
+            | Stmt::Nonlocal(_)
+            | Stmt::Expr(_)
+            | Stmt::Pass(_)
+            | Stmt::Break(_)
+            | Stmt::Continue(_)
+            | Stmt::IpyEscapeCommand(_) => (StructuralContext::Executable, self.scope),
         };
 
         self.structural_regions.push(StructuralRegion {
