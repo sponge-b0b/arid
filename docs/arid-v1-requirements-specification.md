@@ -804,9 +804,11 @@ Normal execution MUST NOT:
 
 ## **18.2 Parallelism**
 
-Independent file reading and preprocessing SHOULD execute in parallel when beneficial.
+Independent file reading and preprocessing SHOULD execute in parallel when benchmarks show a meaningful performance benefit.
 
 Detection MAY also use parallel processing where doing so preserves deterministic results.
+
+Parallelism MUST NOT be introduced solely for architectural completeness. Performance requirements SHOULD be met using the simplest implementation that satisfies the measured target.
 
 ---
 
@@ -824,11 +826,15 @@ Duplicate extraction SHOULD operate from suffix-array/LCP intervals rather than 
 
 ## **18.4 Performance Target**
 
-The v1 benchmark goal is:
+V1 MUST demonstrate a substantial performance advantage over Pylint's isolated duplicate-code checker on representative medium and large Python repositories when measured on identical hardware.
 
-> At least an order-of-magnitude faster than Pylint's isolated duplicate-code checker on representative medium and large Python repositories when measured on identical hardware.
+The target is:
 
-This is a performance target rather than permission to sacrifice correctness.
+> At least an order-of-magnitude faster than Pylint `R0801` / `symilar`.
+
+Failure to meet the target SHOULD trigger profiling and targeted optimization before introducing additional architectural complexity such as parallel execution.
+
+Correctness MUST NOT be sacrificed to meet the performance target.
 
 ---
 
@@ -963,7 +969,9 @@ Renaming identifiers alone MUST NOT make two blocks duplicates.
 
 ## **21.4 Determinism Tests**
 
-The same source tree MUST produce byte-for-byte equivalent structured findings regardless of available thread count.
+Deterministic output MUST be covered by tests.
+
+When parallel execution is enabled, the same source tree MUST produce byte-for-byte equivalent structured findings regardless of worker-thread count.
 
 ---
 
@@ -1096,7 +1104,7 @@ Arid v1 is complete when all of the following are true:
 21. `[tool.arid]` configuration works with CLI > project config > built-in precedence.  
 22. Exit codes work reliably in CI.  
 23. Invalid Python cannot silently corrupt scan results.  
-24. Results are deterministic under parallel execution.  
+24. Results are deterministic, and when parallel execution is enabled they remain deterministic across worker-thread counts.
 25. Benchmarks demonstrate a substantial performance advantage over Pylint `R0801`.  
 26. No general linting functionality overlaps with Ruff.  
 27. No Python runtime is required to analyze Python source.
