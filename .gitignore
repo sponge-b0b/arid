@@ -1,0 +1,55 @@
+# Rust
+/target/
+
+# Python packaging / environments
+/.venv/
+/venv/
+/dist/
+/build/
+*.egg-info/
+__pycache__/
+*.py[cod]
+
+# Test / coverage caches
+/.pytest_cache/
+/.coverage
+/htmlcov/
+
+# Local environment files
+.env
+.env.*
+
+# Editors / IDEs
+/.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS metadata
+.DS_Store
+Thumbs.db
+
+# Ruff stuff:
+.ruff_cache/
+
+# AI Coding Agents
+.claude/
+.codex/
+.codexignore
+
+# jscpd duplication
+.jscpd_report/
+.jscpd.json
+
+# Repowise
+.repowise/
+.repowiseIgnore
+.mcp.json
+
+# Graphify
+graphify-out/
+.graphify.toml
+.graphifyignore
+
+#Codegraph
+.codegraph/

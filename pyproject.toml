@@ -1,0 +1,39 @@
+[build-system]
+requires = ["maturin>=1.14,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "arid"
+dynamic = ["version"]
+description = "Fast Python duplicate-code checker written in Rust. A focused replacement for Pylint R0801 that complements Ruff."
+readme = "README.md"
+requires-python = ">=3.8"
+license = "MIT OR Apache-2.0"
+license-files = ["LICENSE-MIT", "LICENSE-APACHE"]
+keywords = [
+    "code-duplication",
+    "duplicate-code",
+    "python",
+    "pylint",
+    "ruff",
+    "rust",
+]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Programming Language :: Rust",
+    "Topic :: Software Development :: Quality Assurance",
+]
+
+[tool.maturin]
+bindings = "bin"
+manifest-path = "Cargo.toml"
+
+[tool.arid]
+min-lines = 4
+ignore-comments = true
+ignore-docstrings = true
+ignore-imports = true
+ignore-signatures = true
+same-file = true
