@@ -62,8 +62,10 @@ Arid v1 MUST:
 6. Operate without starting or embedding a Python interpreter.  
 7. Produce deterministic results.  
 8. Provide precise source locations and useful duplication metrics.  
-9. Support both developer CLI usage and CI enforcement.  
-10. Integrate naturally into Python projects using `pyproject.toml`.
+9. Describe duplicate findings using objective Python structural context and scope.  
+10. Provide occurrence and file-distribution metadata that helps developers triage findings without assigning severity.  
+11. Support both developer CLI usage and CI enforcement.  
+12. Integrate naturally into Python projects using `pyproject.toml`.
 
 ---
 
@@ -82,12 +84,16 @@ V1 MUST NOT implement:
 * code transformation  
 * automatic duplicate removal  
 * semantic clone detection  
+* structural clone matching  
 * identifier-renaming clone detection  
 * fuzzy AST similarity  
 * embedding-based similarity  
 * multi-language support  
 * JavaScript/TypeScript support  
-* general copy/paste detection for arbitrary text
+* general copy/paste detection for arbitrary text  
+* framework-specific duplicate classification or suppression heuristics
+
+Arid MAY use Python syntax to describe an exact duplicate after detection. This MUST NOT be interpreted as structural clone detection: structurally similar regions that do not become identical after normalization MUST NOT be reported as duplicates.
 
 Arid MUST remain Python-specific.
 
@@ -179,7 +185,7 @@ Users MAY disable it when closer Pylint behavior is desired.
 
 ## **5.5 Minimum Duplicate Length**
 
-The primary detection threshold MUST be source-line based.
+The primary detection threshold MUST be based on effective normalized lines.
 
 Default:
 
@@ -190,6 +196,22 @@ A candidate MUST contain at least `min-lines` effective normalized lines before 
 CLI override:
 
 arid . \--min-lines 6
+
+---
+
+## **5.6 Structural Finding Metadata**
+
+Structural context MUST be reporting metadata, not part of duplicate identity.
+
+Arid MUST determine whether two regions are duplicates solely from the normalized source representation and detection rules. Structural metadata MUST NOT make non-identical normalized regions match, prevent identical normalized regions from matching, or alter suffix-array/LCP duplicate detection.
+
+Structural metadata exists to help a developer interpret an already-detected duplicate.
+
+The product principle is:
+
+> Detection answers "is this duplicated?" Context helps answer "what kind of code is duplicated?" The developer decides whether it matters.
+
+Arid MUST NOT assign severity, presumed safety, or framework-specific meaning from structural context.
 
 ---
 
@@ -315,6 +337,35 @@ Normalized line numbers MUST never leak into user-facing diagnostics.
 
 ---
 
+## **6.7 Structural Source Metadata**
+
+Python-aware preprocessing MUST derive structural metadata without exposing parser-specific AST types to the duplicate-detection engine.
+
+Each retained normalized line MUST carry:
+
+* structural context  
+* structural scope
+
+Line-level structural context MUST use:
+
+* `declarative` — direct declarations or definitions, including direct module/class assignments and definitions  
+* `executable` — executable statements, control flow, or function-body logic  
+* `mixed` — a retained normalized line contains both declarative and executable source
+
+Line-level structural scope MUST use:
+
+* `module`  
+* `class`  
+* `function`
+
+Classification MUST consider only source bytes that remain after configured masking. Ignored comments, docstrings, imports, signatures, and suppressed source MUST NOT influence the classification of retained source.
+
+When nested syntax regions overlap, classification SHOULD use the most specific enclosing statement for the retained source.
+
+Structural metadata MUST NOT change normalized text, effective-line counting, segment boundaries, or duplicate matching.
+
+---
+
 # **7\. Suppression**
 
 Arid MUST provide native suppression directives.
@@ -329,6 +380,8 @@ and:
 
 Lines within a disabled region MUST NOT participate in duplicate detection.
 
+Suppression regions MUST create matching segment barriers so a duplicate cannot span across disabled source.
+
 V1 SHOULD also recognize existing Pylint duplicate-code suppression directives where practical so repositories can migrate without immediately rewriting every suppression.
 
 Suppression directives MUST be processed before comments are discarded.
@@ -337,27 +390,47 @@ Suppression directives MUST be processed before comments are discarded.
 
 # **8\. Match Construction**
 
-## **8.1 Window Detection**
+## **8.1 Corpus Construction**
 
-The implementation SHOULD identify candidate matches using hashes of consecutive normalized source lines.
+Arid MUST construct one deterministic normalized corpus from all analyzed files and enabled source segments.
 
-The algorithm MUST avoid naive exhaustive comparison of every source region against every other source region.
+Normalized source lines MUST be interned to stable line identifiers for exact comparison.
 
----
+Unique sentinels MUST separate files and suppression-created segments so duplicate matches cannot cross those boundaries.
 
-## **8.2 Collision Verification**
-
-Hash equality alone MUST NOT establish a duplicate.
-
-Candidate matches MUST be verified against normalized source content before being reported.
-
-Hash collisions MUST therefore produce no false duplicate findings.
+Corpus construction MUST preserve sufficient mapping to recover the original file and normalized-line range for every corpus position.
 
 ---
 
-## **8.3 Match Extension**
+## **8.2 Suffix Array**
 
-When adjacent matching windows belong to the same duplicated regions, Arid MUST extend them into the largest contiguous duplicate block.
+Arid MUST identify repeated normalized line sequences using a generalized suffix array over the interned corpus.
+
+The implementation MUST avoid naive exhaustive comparison of every possible source region against every other source region.
+
+Suffix-array construction MUST be deterministic.
+
+The v1 implementation SHOULD use an `O(n log n)` construction with `O(n)` auxiliary storage, where `n` is the normalized corpus length.
+
+---
+
+## **8.3 Longest Common Prefix**
+
+Arid MUST compute longest-common-prefix information for adjacent suffixes so exact repeated source regions can be discovered without pairwise substring comparison.
+
+The LCP construction SHOULD run in `O(n)` time after suffix-array construction.
+
+Exact duplicate identity MUST ultimately depend on the interned normalized line sequence rather than an unverified probabilistic hash.
+
+Hash collisions MUST therefore be incapable of producing false duplicate findings.
+
+---
+
+## **8.4 Maximal Repeats**
+
+Arid MUST convert suffix-array/LCP repeat intervals into maximal meaningful duplicate regions.
+
+Adjacent or overlapping evidence for the same repeated source regions MUST collapse into the largest valid contiguous duplicate block rather than producing sliding-window noise.
 
 For example, overlapping matches of lines:
 
@@ -374,17 +447,19 @@ rather than four findings.
 
 ---
 
-## **8.4 Contained Matches**
+## **8.5 Contained and Nested Matches**
 
-A duplicate entirely contained within a larger reported duplicate MUST NOT normally be reported separately.
+A smaller duplicate group whose occurrences are all contained within a larger reported group SHOULD be suppressed.
 
-Arid SHOULD report maximal meaningful clone regions.
+A shorter nested duplicate MAY remain when it adds at least one occurrence not represented by the larger group.
+
+This preserves meaningful clone-family variation without reporting redundant contained findings.
 
 ---
 
-## **8.5 Multiple Occurrences**
+## **8.6 Multiple Occurrences**
 
-If the same block appears in three or more locations, Arid SHOULD represent them as one duplicate group:
+If the same block appears in three or more locations, Arid MUST represent them as one duplicate group:
 
 Duplicate block: 12 lines
 
@@ -392,11 +467,11 @@ src/a.py:10-21
 src/b.py:30-41  
 src/c.py:75-86
 
-rather than three independent pairwise findings.
+rather than independent pairwise findings.
 
 ---
 
-## **8.6 Same-File Overlap**
+## **8.7 Same-File Overlap**
 
 Two same-file occurrences MUST NOT constitute a valid clone pair when their source regions overlap.
 
@@ -404,58 +479,102 @@ This prevents repetitive sequences from generating pathological self-matches.
 
 ---
 
+## **8.8 Deterministic Canonical Ordering**
+
+Occurrences within a duplicate group MUST be ordered deterministically by source location.
+
+The canonical occurrence used for metric accounting MUST be the earliest occurrence under that deterministic source ordering.
+
+---
+
 # **9\. Diagnostics**
 
 V1 defines one primary diagnostic:
 
-DUP001 duplicate-code
+`DUP001 duplicate-code`
 
-Example:
-
-DUP001 12 duplicated lines in 3 locations
-
-  src/accounts.py:40-51  
-  src/users.py:91-102  
-  tests/helpers.py:18-29
-
-12 similar lines
-
-Diagnostics MUST contain:
+Each finding MUST contain:
 
 * diagnostic code  
-* duplicate length  
+* duplicate effective-line count  
+* structural context  
+* structural scope  
 * number of occurrences  
-* file path  
-* starting line  
-* ending line
+* number of distinct files  
+* occurrence distribution  
+* original file path for every occurrence  
+* original starting line for every occurrence  
+* original ending line for every occurrence
+
+A finding MAY include original source text when explicitly requested.
+
+## **9.1 Finding Context**
+
+Finding context MUST use one of:
+
+* `declarative`  
+* `executable`  
+* `mixed`
+
+A finding is `mixed` when its normalized lines contain more than one structural context or when different occurrences classify differently.
+
+Context MUST be descriptive, not a severity. Arid MUST NOT imply that `declarative` findings are safe to ignore or that `executable` findings must be refactored.
+
+## **9.2 Finding Scope**
+
+Finding scope MUST use one of:
+
+* `module`  
+* `class`  
+* `function`  
+* `mixed`
+
+A finding is `mixed` when the duplicated region spans more than one structural scope or when different occurrences classify under different scopes.
+
+## **9.3 Finding Distribution**
+
+Finding distribution MUST use one of:
+
+* `same-file` — all occurrences are in one file  
+* `cross-file` — multiple files are involved and each involved file contains one occurrence  
+* `mixed` — multiple files are involved and at least one involved file contains multiple occurrences
+
+Distribution describes where the duplicate appears. It MUST NOT imply severity or actionability.
+
+## **9.4 Source Locations**
+
+Reported locations MUST use original physical source line numbers, never normalized internal line numbers.
+
+Ignored constructs MAY therefore appear inside a reported physical source range even though they did not participate in matching.
 
 ---
 
 # **10\. Default Human Output**
 
-Default output SHOULD prioritize concise developer usability.
+Default output SHOULD prioritize concise developer usability while exposing enough objective metadata to triage findings.
 
 Example:
 
-DUP001 8 duplicated lines
+```text
+DUP001 4 duplicated lines
+Context: declarative
+Scope: class
+Occurrences: 2 across 2 files (cross-file)
 
-  src/foo.py:21-28  
-  src/bar.py:54-61
+  src/models/user.py:12-15
+  src/models/account.py:20-23
 
-DUP001 12 duplicated lines
+Found 1 duplicate group.
+4 duplicate lines (2.31%).
+```
 
-  src/a.py:10-21  
-  src/b.py:40-51  
-  src/c.py:71-82
-
-Found 2 duplicate groups.  
-20 duplicate lines (3.4%).
+The human output MUST NOT assign severity, remediation priority, or framework-specific labels.
 
 An option SHOULD allow source snippets to be displayed when desired.
 
 For example:
 
-arid . \--show-source
+`arid . --show-source`
 
 ---
 
@@ -463,30 +582,43 @@ arid . \--show-source
 
 V1 MUST provide JSON output.
 
-Example:
+Invocation:
 
-arid . \--format json
+`arid . --json`
+
+The JSON document MUST contain a top-level schema version and stable scan metrics.
 
 Each finding MUST expose at minimum:
 
-{  
-  "code": "DUP001",  
-  "lines": 8,  
-  "locations": \[  
-    {  
-      "path": "src/foo.py",  
-      "start\_line": 21,  
-      "end\_line": 28  
-    },  
-    {  
-      "path": "src/bar.py",  
-      "start\_line": 54,  
-      "end\_line": 61  
-    }  
-  \]  
+```json
+{
+  "code": "DUP001",
+  "lines": 4,
+  "context": "declarative",
+  "scope": "class",
+  "occurrences": 2,
+  "files": 2,
+  "distribution": "cross-file",
+  "locations": [
+    {
+      "path": "src/models/user.py",
+      "start_line": 12,
+      "end_line": 15
+    },
+    {
+      "path": "src/models/account.py",
+      "start_line": 20,
+      "end_line": 23
+    }
+  ]
 }
+```
 
-JSON output MUST be stable enough for CI tooling to consume.
+When source display is not requested, location objects SHOULD omit the `source` field rather than serializing it as `null`.
+
+JSON output MUST be deterministic and stable enough for CI tooling to consume.
+
+An incompatible change to the JSON structure MUST increment the schema version.
 
 SARIF is explicitly deferred beyond v1 unless implementation proves trivial.
 
@@ -497,22 +629,29 @@ SARIF is explicitly deferred beyond v1 unless implementation proves trivial.
 Arid MUST report:
 
 * analyzed files  
-* analyzed source lines  
+* physical source lines  
+* analyzed effective lines  
 * duplicate groups  
-* duplicate lines  
+* duplicate effective lines  
 * duplication percentage
 
-Duplicate-line accounting MUST avoid double-counting overlapping findings.
+An effective normalized line is a retained normalized line containing substantive identifier/alphanumeric content. Blank lines and punctuation-only lines MUST NOT increase the effective-line count.
 
-The precise metric MUST be deterministic and documented.
+Duplicate-line accounting MUST avoid double-counting overlapping redundant findings.
 
-The preferred interpretation is:
+The metric interpretation MUST be deterministic and documented:
 
-> Lines redundant beyond one canonical occurrence of each duplicate group.
+> Duplicate lines are effective lines redundant beyond one canonical occurrence of each duplicate group.
 
-For a 10-line block appearing twice, the block contributes 10 duplicate lines rather than 20\.
+For a 10-line block appearing twice, the block contributes 10 duplicate lines rather than 20.
 
 For the same 10-line block appearing three times, it contributes 20 duplicate lines.
+
+When redundant regions overlap, the union of redundant effective lines MUST be counted so the same physical redundancy is not counted repeatedly.
+
+Duplication percentage MUST be:
+
+`duplicate effective lines / analyzed effective lines * 100`
 
 ---
 
@@ -596,7 +735,7 @@ Required options:
 \--ignore-imports  
 \--ignore-signatures  
 \--same-file  
-\--format  
+\--json  
 \--show-source  
 \--exclude  
 \--version  
@@ -616,11 +755,11 @@ arid . \--no-ignore-comments
 
 V1 MUST use predictable CI-friendly exit codes.
 
-0  scan succeeded and duplication policy passed  
-1  duplicate-code findings caused policy failure  
+0  scan succeeded and no failing duplicate findings were reported  
+1  duplicate-code findings were reported  
 2  configuration, invocation, parsing, or internal error
 
-A successful scan and an unsuccessful scan MUST be distinguishable from a codebase that merely contains duplication.
+A duplicate finding MUST be distinguishable from an Arid execution failure.
 
 ---
 
@@ -663,7 +802,11 @@ Detection MAY also use parallel processing where doing so preserves deterministi
 
 The implementation MUST NOT perform naive exhaustive pairwise substring comparison.
 
-Candidate generation SHOULD have approximately linear or near-linear behavior with respect to normalized source size under normal workloads.
+The normalized corpus MUST be analyzed using a generalized suffix array plus longest-common-prefix construction.
+
+Suffix-array construction SHOULD be `O(n log n)` with `O(n)` auxiliary storage, and LCP construction SHOULD be `O(n)`, where `n` is normalized corpus length.
+
+Duplicate extraction SHOULD operate from suffix-array/LCP intervals rather than enumerating every possible source-region pair.
 
 ---
 
@@ -685,6 +828,8 @@ Parallel execution MUST NOT change:
 * duplicate grouping  
 * canonical occurrence selection  
 * metric calculations  
+* structural context and scope  
+* occurrence/file-distribution metadata  
 * output ordering
 
 Given identical source and configuration, output MUST be deterministic.
@@ -713,9 +858,14 @@ Arid MUST correctly handle at minimum:
 * blank lines  
 * mixed indentation  
 * Unicode source  
-* `.pyi` files
+* `.pyi` files  
+* multiple statements on one physical line  
+* masked and retained statements sharing one physical line  
+* nested class/function/control-flow scopes for structural metadata
 
 Python source MUST never be executed during analysis.
+
+Structural classification MUST describe retained normalized source correctly without changing duplicate identity.
 
 ---
 
@@ -750,14 +900,24 @@ Tests MUST cover:
 * imports  
 * signatures  
 * source-line mapping  
-* hashing  
-* collision verification  
-* match extension  
+* suppression directives and segment barriers  
+* corpus construction and sentinels  
+* line interning  
+* suffix-array construction  
+* LCP construction  
+* maximal-repeat extraction  
 * match grouping  
-* overlap handling  
-* metrics  
-* configuration  
-* suppression directives
+* contained/nested match handling  
+* same-file overlap handling  
+* structural context classification  
+* structural scope classification  
+* masked-source structural classification  
+* finding-level mixed-context/scope aggregation  
+* same-file/cross-file/mixed distribution reporting  
+* duplication metrics  
+* configuration precedence  
+* human diagnostics  
+* JSON schema and serialization
 
 ---
 
@@ -819,7 +979,7 @@ pip install arid
 
 Rust-native installation SHOULD also be supported:
 
-cargo install arid
+cargo install arid-cli
 
 Prebuilt binaries SHOULD be provided for major Linux, macOS, and Windows targets.
 
@@ -837,25 +997,35 @@ file discovery
         ↓  
 Python parsing / tokenization  
         ↓  
-source preprocessing  
+normalization + structural source metadata  
         ↓  
 normalized line representation  
         ↓  
-candidate hashing  
+line interning + generalized corpus  
         ↓  
-match verification \+ extension  
+suffix array  
         ↓  
-clone grouping  
+LCP  
+        ↓  
+maximal repeat extraction + grouping  
         ↓  
 metrics  
         ↓  
-reporting
+reporting + structural finding aggregation
 
 Each stage SHOULD have a narrow responsibility.
 
+The Python frontend MAY use parser-specific AST/token types internally, but those types MUST terminate at the Python-analysis boundary. Downstream layers SHOULD consume Arid-owned representations.
+
+Structural source metadata MUST be attached during Python-aware preprocessing/normalization and carried with normalized lines.
+
+The duplicate-detection engine MUST ignore structural metadata and operate only on the normalized corpus representation.
+
+The reporting layer MUST derive finding-level context and scope from normalized-line metadata and aggregate across all occurrences.
+
 The parser implementation MUST NOT dictate the duplicate-detection algorithm.
 
-The duplicate-detection engine SHOULD operate on a normalized source representation independent of CLI concerns.
+The duplicate-detection engine SHOULD remain independent of CLI and reporting concerns.
 
 ---
 
@@ -877,6 +1047,8 @@ The following SHOULD be considered after v1 rather than included automatically:
 * semantic clone detection  
 * autofix/refactoring suggestions
 
+`AST structural similarity` here means using structural similarity to create duplicate matches. It does not prohibit syntax-derived structural metadata attached to exact normalized duplicates after detection.
+
 These features require separate justification.
 
 ---
@@ -893,20 +1065,25 @@ Arid v1 is complete when all of the following are true:
 6. Imports can be ignored correctly.  
 7. Function signatures can be ignored correctly.  
 8. All ignored constructs preserve correct original source locations.  
-9. `min-lines` behaves predictably.  
-10. Adjacent candidate matches collapse into maximal duplicate regions.  
-11. Contained and overlapping noise is suppressed.  
-12. Duplicate groups support more than two occurrences.  
-13. Human-readable diagnostics are useful.  
-14. JSON diagnostics are machine-readable.  
-15. Duplication metrics are deterministic.  
-16. `[tool.arid]` configuration works.  
-17. Exit codes work reliably in CI.  
-18. Invalid Python cannot silently corrupt scan results.  
-19. Results are deterministic under parallel execution.  
-20. Benchmarks demonstrate a substantial performance advantage over Pylint `R0801`.  
-21. No general linting functionality overlaps with Ruff.  
-22. No Python runtime is required to analyze Python source.
+9. `min-lines` behaves predictably using effective normalized lines.  
+10. The generalized suffix-array/LCP pipeline detects exact normalized repeats deterministically.  
+11. Adjacent evidence collapses into maximal duplicate regions.  
+12. Contained and overlapping noise is suppressed while meaningful nested groups that add occurrences may remain.  
+13. Duplicate groups support more than two occurrences.  
+14. Structural context is reported as `declarative`, `executable`, or `mixed` without affecting duplicate identity.  
+15. Structural scope is reported as `module`, `class`, `function`, or `mixed`.  
+16. Structural classification considers only retained normalized source and is framework-agnostic.  
+17. Findings report occurrence count, distinct file count, and `same-file` / `cross-file` / `mixed` distribution correctly.  
+18. Human-readable diagnostics are concise and documented.  
+19. JSON diagnostics are versioned, deterministic, and machine-readable.  
+20. Duplication metrics are deterministic and do not double-count overlapping redundant lines.  
+21. `[tool.arid]` configuration works with CLI > project config > built-in precedence.  
+22. Exit codes work reliably in CI.  
+23. Invalid Python cannot silently corrupt scan results.  
+24. Results are deterministic under parallel execution.  
+25. Benchmarks demonstrate a substantial performance advantage over Pylint `R0801`.  
+26. No general linting functionality overlaps with Ruff.  
+27. No Python runtime is required to analyze Python source.
 
 ---
 

@@ -6,7 +6,7 @@
   <a href="#project-status"><img alt="Status: WIP" src="https://img.shields.io/badge/status-WIP%20%2F%20under%20active%20development-orange"></a>
   <a href="#what-is-arid"><img alt="Scope: Python-only" src="https://img.shields.io/badge/scope-Python--only-3776AB"></a>
   <a href="#what-is-arid"><img alt="Purpose: Duplicate-code detection" src="https://img.shields.io/badge/purpose-duplicate--code%20detection-D79A3B"></a>
-  <a href="#planned-configuration"><img alt="Config: tool.arid" src="https://img.shields.io/badge/config-tool.arid-4B5563"></a>
+  <a href="#configuration"><img alt="Config: tool.arid" src="https://img.shields.io/badge/config-tool.arid-4B5563"></a>
   <a href="#license"><img alt="License: MIT OR Apache-2.0" src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue"></a>
 </p>
 
@@ -22,8 +22,9 @@
   <a href="#what-is-arid">What is Arid?</a> ·
   <a href="#project-status">Project status</a> ·
   <a href="#goals">Goals</a> ·
-  <a href="#planned-usage">Usage</a> ·
-  <a href="#planned-configuration">Configuration</a> ·
+  <a href="#usage">Usage</a> ·
+  <a href="#understanding-arids-output">Output</a> ·
+  <a href="#configuration">Configuration</a> ·
   <a href="#architecture">Architecture</a> ·
   <a href="#license">License</a>
 </p>
@@ -98,7 +99,8 @@ Arid v1 is being designed to:
 - ignore comments, docstrings, imports, and function signatures when configured
 - preserve accurate original source locations
 - report concise `DUP001` diagnostics
-- provide duplication metrics
+- describe duplicate findings using Python structural context
+- provide deterministic duplication metrics
 - support `pyproject.toml` configuration via `[tool.arid]`
 - provide machine-readable JSON output
 - run substantially faster than Pylint's duplicate-code checker
@@ -119,6 +121,7 @@ It does not aim to provide:
 - complexity analysis
 - security scanning
 - semantic clone detection
+- structural clone matching
 - fuzzy AST similarity
 - multi-language duplicate detection
 
@@ -126,7 +129,7 @@ If a feature belongs naturally in Ruff, it does not belong in Arid.
 
 ---
 
-## Planned usage
+## Usage
 
 Arid is intended to fit naturally into a Python quality workflow:
 
@@ -135,23 +138,308 @@ ruff check .
 arid .
 ```
 
+Scan specific files or directories:
+
+```bash
+arid src tests
+```
+
+Require a larger duplicate before reporting it:
+
+```bash
+arid . --min-lines 8
+```
+
+Include the original source in each finding:
+
+```bash
+arid . --show-source
+```
+
+Emit machine-readable JSON:
+
+```bash
+arid . --json
+```
+
 Example diagnostic:
 
 ```text
-DUP001 8 duplicated lines
+DUP001 4 duplicated lines
+Context: declarative
+Scope: class
+Occurrences: 2 across 2 files (cross-file)
 
-  src/foo.py:21-28
-  src/bar.py:54-61
+  src/models/user.py:12-15
+  src/models/account.py:20-23
 
 Found 1 duplicate group.
-8 duplicate lines (1.7%).
+4 duplicate lines (2.31%).
 ```
 
 ---
 
-## Planned configuration
+## Understanding Arid's output
 
-Arid will use `pyproject.toml`:
+Arid separates two questions:
+
+> **Detection answers: "Is this code duplicated?"**  
+> **Context helps answer: "What kind of code is duplicated?"**
+
+Arid deliberately does **not** assign a severity or decide whether duplication should be removed. Duplicate code can be intentional, harmless, framework-driven, or worth refactoring.
+
+The structural metadata exists to help you make that decision.
+
+Consider:
+
+```text
+DUP001 4 duplicated lines
+Context: declarative
+Scope: class
+Occurrences: 2 across 2 files (cross-file)
+
+  src/models/user.py:12-15
+  src/models/account.py:20-23
+
+Found 1 duplicate group.
+4 duplicate lines (2.31%).
+```
+
+### `DUP001 4 duplicated lines`
+
+`DUP001` is Arid's duplicate-code diagnostic.
+
+`4 duplicated lines` means the matching region contains four **effective normalized lines** that satisfy the configured duplicate threshold.
+
+Arid compares source after its configured Python-aware normalization. Depending on configuration, this can remove constructs such as:
+
+- comments
+- docstrings
+- imports
+- function signatures
+
+Blank lines do not count toward `min-lines`, and lines containing only non-substantive punctuation do not increase the effective-line count.
+
+Because of that, a finding reported as four duplicated lines may span more than four physical source lines.
+
+### `Context`
+
+`Context` describes the structural kind of Python code involved in the duplicate.
+
+Possible values are:
+
+| Context | Meaning |
+| --- | --- |
+| `declarative` | The duplicate consists of declarations or definitions, such as direct module/class assignments or definitions. |
+| `executable` | The duplicate consists of executable statements, control flow, or function-body logic. |
+| `mixed` | The duplicate contains or occurs across more than one structural context. |
+
+For example:
+
+```text
+Context: declarative
+```
+
+often appears for repeated class or module definitions.
+
+```text
+Context: executable
+```
+
+often appears for repeated application logic inside functions.
+
+> [!NOTE]
+> Context is **descriptive, not a severity**. `declarative` does not mean "safe to ignore," and `executable` does not mean "must refactor."
+
+Arid describes Python structure without attempting to infer framework semantics or developer intent.
+
+It therefore does not label findings as "ORM boilerplate," "configuration noise," "safe duplication," or similar framework-specific categories.
+
+### `Scope`
+
+`Scope` describes where the duplicated code occurs structurally.
+
+Possible values are:
+
+| Scope | Meaning |
+| --- | --- |
+| `module` | Module-level code. |
+| `class` | Code structurally associated with a class. |
+| `function` | Code structurally associated with a function or method. |
+| `mixed` | The duplicate spans or occurs across more than one scope. |
+
+For example:
+
+```text
+Context: executable
+Scope: function
+```
+
+indicates repeated executable logic within functions or methods.
+
+By contrast:
+
+```text
+Context: declarative
+Scope: class
+```
+
+indicates repeated declarative code associated with classes.
+
+Again, scope describes **where** the duplicate exists, not whether it is a problem.
+
+### `Occurrences`
+
+The occurrence line tells you how widely the duplicate appears.
+
+```text
+Occurrences: 2 across 2 files (cross-file)
+```
+
+contains three pieces of information:
+
+- the number of duplicate occurrences
+- the number of distinct files containing them
+- how those occurrences are distributed
+
+Distribution values are:
+
+| Distribution | Meaning |
+| --- | --- |
+| `same-file` | All occurrences are contained in one file. |
+| `cross-file` | Occurrences are spread across multiple files, with one occurrence in each involved file. |
+| `mixed` | Multiple files are involved and at least one file contains multiple occurrences. |
+
+Examples:
+
+```text
+Occurrences: 2 across 1 file (same-file)
+```
+
+means the same block appears twice in one file.
+
+```text
+Occurrences: 3 across 3 files (cross-file)
+```
+
+means one occurrence appears in each of three files.
+
+```text
+Occurrences: 4 across 3 files (mixed)
+```
+
+means the duplicate spans multiple files and at least one of those files contains more than one occurrence.
+
+### Source locations
+
+Locations such as:
+
+```text
+src/models/user.py:12-15
+```
+
+always refer to the **original physical Python source**, not Arid's internal normalized representation.
+
+This remains true even when ignored comments, imports, signatures, docstrings, or blank lines appear within the physical range.
+
+Use:
+
+```bash
+arid . --show-source
+```
+
+to include the original source text alongside each location.
+
+### Duplicate groups
+
+When the same block appears more than twice, Arid reports it as one duplicate group rather than generating every possible pair.
+
+For example, a block appearing in:
+
+```text
+a.py
+b.py
+c.py
+```
+
+is one finding with three occurrences, not three separate pairwise findings.
+
+### Duplicate lines and duplication percentage
+
+The final summary:
+
+```text
+4 duplicate lines (2.31%).
+```
+
+measures **redundant effective lines**, not every line participating in a duplicate.
+
+One occurrence of each duplicate group is treated as canonical. Only redundant copies beyond that canonical occurrence contribute duplicate lines.
+
+For example:
+
+```text
+10-line block × 2 occurrences
+```
+
+contributes:
+
+```text
+10 duplicate lines
+```
+
+not 20.
+
+A 10-line block appearing three times contributes:
+
+```text
+20 duplicate lines
+```
+
+because two of the three copies are redundant.
+
+Overlapping redundant regions are not counted repeatedly.
+
+The duplication percentage is:
+
+```text
+duplicate effective lines
+───────────────────────── × 100
+ analyzed effective lines
+```
+
+This makes the metric represent how much analyzed code is redundant rather than how much code merely participates in a duplicated region.
+
+### How to interpret findings
+
+There is no universal rule for which duplicate should be refactored first, but Arid's metadata can help you triage a large report.
+
+A practical review order is often:
+
+1. Look at **larger duplicate regions** before very short ones.
+2. Review `executable` / `function` findings for repeated application logic.
+3. Look at findings with many occurrences to identify patterns repeated broadly through the codebase.
+4. Use `same-file`, `cross-file`, and `mixed` to distinguish localized repetition from code repeated across modules.
+5. Review `declarative` findings in context. Repeated declarations may be intentional, generated by a common coding pattern, or candidates for consolidation depending on the project.
+
+Arid intentionally stops short of saying:
+
+```text
+high severity
+low value
+safe to ignore
+must refactor
+```
+
+Those are project-specific judgments.
+
+Its job is to provide accurate duplicate detection and enough objective structural information for the developer to make them.
+
+---
+
+## Configuration
+
+Arid uses `[tool.arid]` in `pyproject.toml`:
 
 ```toml
 [tool.arid]
@@ -163,7 +451,31 @@ ignore-signatures = true
 same-file = true
 ```
 
-Command-line options will override project configuration.
+Current defaults are:
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `min-lines` | `4` | Minimum effective normalized lines required for a duplicate. |
+| `ignore-comments` | `true` | Ignore Python comments during matching. |
+| `ignore-docstrings` | `true` | Ignore structural Python docstrings. |
+| `ignore-imports` | `true` | Ignore import statements. |
+| `ignore-signatures` | `true` | Ignore function and method declaration signatures. |
+| `same-file` | `true` | Detect non-overlapping duplicate regions within the same file. |
+
+Command-line options override project configuration, which overrides Arid's built-in defaults.
+
+For example:
+
+```toml
+[tool.arid]
+min-lines = 6
+```
+
+can be overridden for one scan with:
+
+```bash
+arid . --min-lines 10
+```
 
 ---
 
@@ -203,7 +515,31 @@ result = calculate_value()
 save_value(result)
 ```
 
-Structural and semantic clone detection are outside the v1 scope.
+Arid can attach structural context such as `declarative`, `executable`, `class`, or `function` to a duplicate that it has already detected.
+
+That does **not** make Arid a structural clone detector. Two pieces of code that are merely structurally similar but do not become identical after normalization are not considered duplicates.
+
+Semantic clone detection, identifier-renaming clone detection, and fuzzy AST similarity remain outside the v1 scope.
+
+---
+
+## Suppressing intentional duplication
+
+Arid supports source-level suppression regions:
+
+```python
+# arid: disable
+
+# intentionally duplicated code
+
+# arid: enable
+```
+
+Code inside a disabled region does not participate in duplicate detection.
+
+Suppression regions also create matching boundaries, so Arid does not construct a duplicate across disabled source.
+
+Use suppression for duplication that is intentionally accepted by the project rather than expecting Arid to infer whether a particular framework pattern or coding convention should be ignored.
 
 ---
 
@@ -230,6 +566,8 @@ DUP001
 ```
 
 Arid analyzes Python source entirely in Rust and never imports or executes the project being scanned.
+
+Duplicate detection operates on Arid's normalized source representation. Structural context is derived from Python syntax and attached as reporting metadata; it does not alter whether two normalized regions match.
 
 ---
 
@@ -265,6 +603,20 @@ Scan the current project:
 ```bash
 arid .
 ```
+
+---
+
+## Exit codes
+
+Arid uses predictable exit codes for CLI and CI usage:
+
+| Exit code | Meaning |
+| --- | --- |
+| `0` | Scan completed successfully and no duplicate findings failed the scan. |
+| `1` | Duplicate-code findings were reported. |
+| `2` | Invocation, configuration, parsing, or internal error. |
+
+A finding exit status is therefore distinct from an Arid execution failure.
 
 ---
 

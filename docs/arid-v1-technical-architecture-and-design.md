@@ -34,15 +34,17 @@ file discovery
     ↓  
 Python parse \+ tokenize  
     ↓  
-Python-aware filtering  
+Python-aware filtering \+ structural classification  
     ↓  
-normalized source lines  
+normalized source lines \+ structural metadata  
     ↓  
 global exact-duplicate index  
     ↓  
 maximal repeated blocks  
     ↓  
 DUP001 findings \+ metrics
+
+Structural metadata describes detected duplicates but never participates in duplicate identity.
 
 ---
 
@@ -64,7 +66,7 @@ Arid targets the intent of Pylint `R0801`, not bug-for-bug reproduction.
 
 Where Pylint uses textual heuristics, Arid SHOULD use Python syntax information.
 
-Pylint currently strips/filter lines and then hashes windows of `min-similarity-lines`, merging adjacent matching windows afterward. It also uses AST information for import and function-signature filtering.
+Pylint strips/filters lines and then hashes windows of `min-similarity-lines`, merging adjacent matching windows afterward. It also uses syntax information for import and function-signature filtering.
 
 Arid preserves that behavioral intent but does not need to preserve that implementation.
 
@@ -80,7 +82,9 @@ The duplicate-detection engine MUST NOT depend on:
 * RustPython types  
 * source syntax constructs
 
-The parser/frontend converts Python source into Arid's own normalized representation.
+The Python frontend converts parser-owned syntax into Arid-owned masks and structural regions.
+
+Normalization produces Arid-owned normalized lines containing source mapping, effective-line qualification, structural context, and structural scope.
 
 Everything downstream operates on Arid-owned data structures.
 
@@ -94,6 +98,8 @@ The core detector MUST NOT depend on hash equality as proof of duplication.
 
 Hash maps MAY be used as implementation details where normal equality checks resolve collisions, but duplicate findings themselves MUST be exact.
 
+Structural metadata MUST NOT influence equality.
+
 ---
 
 ## **2.5 Determinism is architectural**
@@ -104,6 +110,7 @@ Parallelism MUST NOT affect:
 * grouping  
 * canonical occurrence selection  
 * metrics  
+* structural reporting metadata  
 * JSON order  
 * human-readable output order
 
@@ -129,14 +136,23 @@ Parser-specific code is isolated by module boundaries, which is sufficient for v
 
 ---
 
+## **2.7 Structural metadata is descriptive**
+
+Structural context and scope help describe an already-detected duplicate.
+
+Classification is syntax-based and framework-agnostic. It MUST NOT alter matching, grouping, metrics, or assign severity, presumed safety, or framework-specific meaning.
+
+---
+
 # **3\. Major Technical Decisions**
 
 | Area | V1 decision |
 | ----- | ----- |
-| Python frontend | RustPython-published Ruff-derived parser |
+| Python frontend | RustPython-packaged Ruff-derived parser |
 | Parsing model | AST \+ lexical tokens |
 | Internal matching unit | normalized physical source line |
 | Ignored constructs | byte-range masks derived from tokens/AST |
+| Structural metadata | syntax-derived context/scope on normalized lines; reporting only |
 | Suppressions | segment barriers |
 | Global representation | interned normalized-line IDs |
 | Duplicate algorithm | generalized suffix array \+ LCP |
@@ -148,7 +164,7 @@ Parser-specific code is isolated by module boundaries, which is sufficient for v
 | File discovery | `ignore` crate |
 | CLI | `clap` |
 | Configuration | `pyproject.toml` via Serde \+ `toml` |
-| JSON | Serde \+ `serde_json` |
+| JSON | Serde \+ `serde_json`, versioned schema |
 | Runtime errors | typed errors with `thiserror` |
 | Python runtime | none |
 | Persistent cache | none in v1 |
@@ -160,38 +176,25 @@ Parser-specific code is isolated by module boundaries, which is sufficient for v
 
 ## **4.1 Selected frontend**
 
-Arid SHOULD use the RustPython-published Ruff-derived parser packages:
+Arid uses the RustPython-packaged Ruff-derived parser crates from the RustPython Ruff repository, pinned to an explicit tag:
 
-ruff\_python\_parser \= {  
-    package \= "rustpython-ruff\_python\_parser",  
-    version \= "0.15"  
-}
+```toml
+ruff_python_parser = { package = "rustpython-ruff_python_parser", git = "https://github.com/RustPython/ruff.git", tag = "0.15.19-rustpython" }
+ruff_python_ast = { package = "rustpython-ruff_python_ast", git = "https://github.com/RustPython/ruff.git", tag = "0.15.19-rustpython" }
+ruff_text_size = { package = "rustpython-ruff_text_size", git = "https://github.com/RustPython/ruff.git", tag = "0.15.19-rustpython" }
+```
 
-ruff\_python\_ast \= {  
-    package \= "rustpython-ruff\_python\_ast",  
-    version \= "0.15"  
-}
+The Git tag fixes the parser source, and `Cargo.lock` pins the resolved dependency graph.
 
-ruff\_text\_size \= {  
-    package \= "rustpython-ruff\_text\_size",  
-    version \= "0.15"  
-}
-
-Exact versions MUST be pinned through `Cargo.lock`.
-
-RustPython 0.5 currently uses its published Ruff-derived parser and targets CPython 3.14+, making it a considerably better starting point for Arid than the older standalone `rustpython-parser` 0.4 series.
-
-Ruff's parser architecture exposes both source-ranged AST nodes and lexical tokens, including comment tokens with byte offsets, which provides exactly the two views Arid needs.
+The parser exposes both source-ranged AST nodes and lexical tokens, including comment tokens with byte offsets, which provides the two views Arid needs.
 
 ---
 
-## **4.2 Why not depend directly on Ruff's repository?**
+## **4.2 Why not depend directly on Ruff's main repository?**
 
-Arid SHOULD NOT use an unversioned Git dependency against Ruff's internal workspace.
+Arid SHOULD NOT depend on an unversioned Ruff workspace revision.
 
-Ruff's parser crates historically have not been treated as independently published stable public APIs, although Ruff maintainers have documented that external Rust projects can consume them from the repository.
-
-Using the RustPython-packaged fork gives Arid a normal Cargo package dependency while keeping parser-specific types isolated.
+Using the RustPython-maintained fork at an explicit tag gives Arid a reproducible parser dependency while keeping parser-specific types isolated.
 
 ---
 
@@ -204,8 +207,6 @@ Tree-sitter is useful for permissive structural parsing, but Arid needs authorit
 * function declarations  
 * comments  
 * source ranges
-
-The Tree-sitter Python grammar continues to have open syntax and parsing issues, including new-language-feature work in 2026\.
 
 Arid therefore SHOULD NOT use Tree-sitter as its v1 Python frontend.
 
@@ -224,64 +225,69 @@ src/python/
     masks.rs  
     syntax.rs
 
-No parser AST type may cross into `detect`, `metrics`, or reporting code.
+The frontend converts parser-specific information into Arid-owned masks and structural regions.
+
+No parser AST or token type may cross into normalization, detection, metrics, or reporting code.
 
 ---
 
 # **5\. High-Level Execution Pipeline**
 
-                   ┌───────────────────┐  
-                    │ CLI arguments     │  
-                    └─────────┬─────────┘  
-                              │  
-                    ┌─────────▼─────────┐  
-                    │ Configuration     │  
-                    │ resolution        │  
-                    └─────────┬─────────┘  
-                              │  
-                    ┌─────────▼─────────┐  
-                    │ File discovery    │  
-                    └─────────┬─────────┘  
-                              │  
-              ┌───────────────▼───────────────┐  
-              │ Parallel per-file preparation │  
-              │                               │  
-              │ read                          │  
-              │ parse                         │  
-              │ tokenize                      │  
-              │ suppression scan              │  
-              │ ignored-range collection      │  
-              │ normalization                 │  
-              └───────────────┬───────────────┘  
-                              │  
-                    sorted PreparedFiles  
-                              │  
-                    ┌─────────▼─────────┐  
-                    │ Line interning    │  
-                    │ \+ corpus build   │  
-                    └─────────┬─────────┘  
-                              │  
-                    ┌─────────▼─────────┐  
-                    │ Suffix array      │  
-                    └─────────┬─────────┘  
-                              │  
-                    ┌─────────▼─────────┐  
-                    │ LCP array         │  
-                    └─────────┬─────────┘  
-                              │  
-                    ┌─────────▼─────────┐  
-                    │ Repeat extraction │  
-                    │ \+ grouping       │  
-                    └─────────┬─────────┘  
-                              │  
-                    ┌─────────▼─────────┐  
-                    │ Metrics           │  
-                    └─────────┬─────────┘  
-                              │  
-                    ┌─────────▼─────────┐  
-                    │ Human / JSON      │  
-                    │ reporting         │  
-                    └───────────────────┘
+```text
+                   ┌───────────────────┐
+                   │ CLI arguments     │
+                   └─────────┬─────────┘
+                             │
+                   ┌─────────▼─────────┐
+                   │ Configuration     │
+                   │ resolution        │
+                   └─────────┬─────────┘
+                             │
+                   ┌─────────▼─────────┐
+                   │ File discovery    │
+                   └─────────┬─────────┘
+                             │
+             ┌───────────────▼───────────────┐
+             │ Parallel per-file preparation │
+             │                               │
+             │ read / parse / tokenize       │
+             │ suppression scan              │
+             │ ignored ranges                │
+             │ structural regions            │
+             │ normalization                 │
+             └───────────────┬───────────────┘
+                             │
+                   sorted PreparedFiles
+                             │
+                   ┌─────────▼─────────┐
+                   │ Line interning    │
+                   │ + corpus build    │
+                   └─────────┬─────────┘
+                             │
+                   ┌─────────▼─────────┐
+                   │ Suffix array      │
+                   └─────────┬─────────┘
+                             │
+                   ┌─────────▼─────────┐
+                   │ LCP array         │
+                   └─────────┬─────────┘
+                             │
+                   ┌─────────▼─────────┐
+                   │ Repeat extraction │
+                   │ + grouping        │
+                   └─────────┬─────────┘
+                             │
+                   ┌─────────▼─────────┐
+                   │ Metrics           │
+                   └─────────┬─────────┘
+                             │
+                   ┌─────────▼─────────┐
+                   │ Report building   │
+                   │ + Human / JSON    │
+                   └───────────────────┘
+```
+
+Structural metadata remains attached to normalized lines for reporting. Corpus construction and duplicate detection ignore it.
 
 ---
 
@@ -304,6 +310,8 @@ arid/
 │   ├── model.rs  
 │   ├── python.rs  
 │   ├── normalize.rs  
+│   ├── corpus.rs  
+│   ├── suffix.rs  
 │   ├── detect.rs  
 │   ├── metrics.rs  
 │   └── report.rs  
@@ -347,7 +355,7 @@ discover files
 prepare files  
 build corpus  
 detect duplicates  
-calculate metrics  
+build report \+ metrics  
 render result
 
 The core implementation remains callable without shelling out to the CLI, making integration and benchmarking straightforward.
@@ -360,40 +368,60 @@ Arid SHOULD use small owned internal types.
 
 Conceptually:
 
-type FileId \= u32;  
-type LineId \= u32;  
-type CorpusPos \= u32;
+```rust
+type FileId = u32;
+type LineId = u32;
+type CorpusPos = u32;
 
-struct PreparedFile {  
-    path: PathBuf,  
-    source: String,  
-    normalized: String,  
-    lines: Vec\<NormalizedLine\>,  
-    segments: Vec\<NormalizedSegment\>,  
+enum StructuralContext {
+    Declarative,
+    Executable,
+    Mixed,
 }
 
-struct NormalizedLine {  
-    text\_range: Range\<u32\>,  
-    source\_line: u32,  
-    effective: bool,  
+enum StructuralScope {
+    Module,
+    Class,
+    Function,
 }
 
-struct NormalizedSegment {  
-    start: u32,  
-    end: u32,  
+struct PreparedFile {
+    path: PathBuf,
+    source: String,
+    normalized: String,
+    lines: Vec<NormalizedLine>,
+    segments: Vec<NormalizedSegment>,
 }
 
-struct Occurrence {  
-    file: FileId,  
-    normalized\_start: u32,  
-    normalized\_len: u32,  
+struct NormalizedLine {
+    text_range: Range<u32>,
+    source_line: u32,
+    effective: bool,
+    context: StructuralContext,
+    scope: StructuralScope,
 }
 
-struct DuplicateGroup {  
-    effective\_lines: u32,  
-    normalized\_len: u32,  
-    occurrences: Vec\<Occurrence\>,  
+struct NormalizedSegment {
+    start: u32,
+    end: u32,
 }
+
+struct Occurrence {
+    file: FileId,
+    normalized_start: u32,
+    normalized_len: u32,
+}
+
+struct DuplicateGroup {
+    effective_lines: u32,
+    normalized_len: u32,
+    occurrences: Vec<Occurrence>,
+}
+```
+
+Line-level context supports `Mixed` for physical lines retaining more than one structural context. Line-level scope uses the most specific `Module`, `Class`, or `Function` scope; finding-level mixed scope is derived during reporting.
+
+Structural metadata does not belong to `DuplicateGroup` and does not affect duplicate identity.
 
 Internal line numbering SHOULD be zero-based.
 
@@ -413,11 +441,11 @@ read UTF-8 source
  ↓  
 parse \+ lex  
  ↓  
-collect syntax ranges  
+collect syntax masks \+ structural regions  
  ↓  
 collect suppression boundaries  
  ↓  
-construct normalized lines  
+construct normalized lines \+ metadata  
  ↓  
 PreparedFile
 
@@ -428,9 +456,12 @@ Arid MUST NOT independently reparse source for:
 * imports  
 * signatures  
 * docstrings  
-* comments
+* comments  
+* structural context or scope
 
-All required information should come from one parser/lexer pass.
+All required syntax information should come from one parser/lexer pass.
+
+Parser-specific types are converted to Arid-owned masks and structural regions before normalization.
 
 ---
 
@@ -470,6 +501,8 @@ Masks are:
 2. sorted  
 3. merged when overlapping or adjacent  
 4. applied during line normalization
+
+Structural regions are maintained separately and classify only source bytes that remain after masking.
 
 This gives preprocessing approximately:
 
@@ -723,7 +756,7 @@ Pylint directive compatibility may be added once compatibility fixtures define t
 
 # **17\. Line Normalization**
 
-After masks are constructed, Arid walks physical source lines once.
+After masks and structural regions are constructed, Arid walks physical source lines once.
 
 For each line:
 
@@ -733,7 +766,8 @@ For each line:
 4. discard the line if empty  
 5. append remaining text into the file's `normalized` buffer  
 6. record its original source line  
-7. classify whether it counts toward the duplication threshold
+7. classify whether it counts toward the duplication threshold  
+8. classify retained source context and scope
 
 Internal whitespace is preserved.
 
@@ -762,6 +796,32 @@ Line-ending bytes are not part of normalized lines.
 
 ---
 
+## **17.2 Structural classification**
+
+Classification uses only retained source after masking.
+
+The frontend supplies syntax-derived regions; normalization selects the most specific region covering each retained source fragment.
+
+A line retaining both declarative and executable source is `mixed`.
+
+For example:
+
+```python
+setting = 1; run()
+```
+
+may classify as mixed, while:
+
+```python
+import os; run()
+```
+
+with imports ignored classifies from the retained `run()` source.
+
+Structural context and scope MUST NOT change normalized text, effective-line qualification, segment boundaries, line interning, or duplicate equality.
+
+---
+
 # **18\. Effective Lines**
 
 Not every repeated physical line should contribute to `min-lines`.
@@ -787,6 +847,8 @@ The v1 implementation SHOULD use a simple deterministic criterion aligned with P
 > The normalized line contains at least one Unicode alphanumeric character or `_`.
 
 Pylint currently uses a similar content test when accounting for meaningful common lines.
+
+Effective-line qualification is independent of structural context and scope.
 
 ---
 
@@ -855,6 +917,8 @@ becomes:
 17 42 91
 
 Two lines receive the same `LineId` **only if their normalized text is exactly equal**.
+
+Structural context and scope are not part of line identity.
 
 A normal Rust `HashMap` MAY be used for interning because hash collisions are resolved by string equality and therefore cannot create false duplicate findings.
 
@@ -1454,25 +1518,45 @@ The original source SHOULD remain resident until reporting completes so `--show-
 
 # **39\. Diagnostic Model**
 
-Internal findings SHOULD be separate from rendering.
+Detection results are separate from report findings.
+
+`DuplicateGroup` contains duplicate identity and occurrences. Report construction maps those occurrences to source and derives user-facing metadata.
 
 Conceptually:
 
-struct Finding {  
-    code: DiagnosticCode,  
-    effective\_lines: u32,  
-    occurrences: Vec\<Location\>,  
+```rust
+struct Finding {
+    code: String,
+    lines: u32,
+    context: FindingContext,
+    scope: FindingScope,
+    occurrences: u32,
+    files: u32,
+    distribution: FindingDistribution,
+    locations: Vec<Location>,
 }
 
-struct Location {  
-    path: PathBuf,  
-    start\_line: u32,  
-    end\_line: u32,  
+struct Location {
+    path: String,
+    start_line: u64,
+    end_line: u64,
+    source: Option<String>,
 }
+```
+
+Finding context is `declarative`, `executable`, or `mixed`.
+
+Finding scope is `module`, `class`, `function`, or `mixed`.
+
+Finding distribution is:
+
+* `same-file` — all occurrences are in one file  
+* `cross-file` — multiple files, one occurrence per involved file  
+* `mixed` — multiple files and at least one repeated occurrence within an involved file
+
+Context and scope are aggregated across all normalized lines and all occurrences. Disagreement produces `mixed`.
 
 `DUP001` is currently the only diagnostic.
-
-The model SHOULD nevertheless represent the diagnostic code explicitly rather than hardcoding strings throughout rendering logic.
 
 ---
 
@@ -1497,27 +1581,22 @@ Default output SHOULD remain compact.
 
 Example:
 
-DUP001 8 duplicated lines
+```text
+DUP001 4 duplicated lines
+Context: declarative
+Scope: class
+Occurrences: 2 across 2 files (cross-file)
 
-  src/foo.py:21-28  
-  src/bar.py:54-61
+  src/models/user.py:12-15
+  src/models/account.py:20-23
 
-DUP001 12 duplicated lines
+Found 1 duplicate group.
+4 duplicate lines (2.31%).
+```
 
-  src/a.py:10-21  
-  src/b.py:40-51  
-  src/c.py:71-82
+Report construction MAY perform source mapping and structural/distribution aggregation.
 
-Found 2 duplicate groups.  
-20 duplicate lines (3.4%).
-
-The reporter receives only:
-
-findings  
-metrics  
-optional original source
-
-It MUST NOT perform detection logic.
+Rendering MUST NOT perform detection logic or assign severity, presumed safety, or framework-specific labels.
 
 ---
 
@@ -1525,36 +1604,48 @@ It MUST NOT perform detection logic.
 
 JSON SHOULD use a versioned top-level schema.
 
+The current alpha schema is version `3`.
+
 Example:
 
-{  
-  "version": 1,  
-  "files": 42,  
-  "source\_lines": 12000,  
-  "analyzed\_lines": 8400,  
-  "duplicate\_lines": 286,  
-  "duplication\_percent": 3.4048,  
-  "findings": \[  
-    {  
-      "code": "DUP001",  
-      "lines": 8,  
-      "locations": \[  
-        {  
-          "path": "src/foo.py",  
-          "start\_line": 21,  
-          "end\_line": 28  
-        },  
-        {  
-          "path": "src/bar.py",  
-          "start\_line": 54,  
-          "end\_line": 61  
-        }  
-      \]  
-    }  
-  \]  
+```json
+{
+  "version": 3,
+  "files": 42,
+  "source_lines": 12000,
+  "analyzed_lines": 8400,
+  "duplicate_groups": 18,
+  "duplicate_lines": 286,
+  "duplication_percent": 3.4048,
+  "findings": [
+    {
+      "code": "DUP001",
+      "lines": 8,
+      "context": "executable",
+      "scope": "function",
+      "occurrences": 2,
+      "files": 2,
+      "distribution": "cross-file",
+      "locations": [
+        {
+          "path": "src/foo.py",
+          "start_line": 21,
+          "end_line": 28
+        },
+        {
+          "path": "src/bar.py",
+          "start_line": 54,
+          "end_line": 61
+        }
+      ]
+    }
+  ]
 }
+```
 
-The explicit schema version allows later additive evolution without ambiguous consumers.
+When source display is disabled, location objects SHOULD omit `source`.
+
+An incompatible schema change MUST increment the top-level version.
 
 ---
 
@@ -1727,6 +1818,19 @@ def foo(): return calculate()
 def foo():  
     return calculate()
 
+
+## **Structural metadata**
+
+Fixtures MUST also cover:
+
+* declarative module/class source  
+* executable function source  
+* nested scopes  
+* mixed-context same-line statements  
+* retained-source classification after masking  
+* finding-level mixed context/scope aggregation  
+* same-file / cross-file / mixed distribution
+
 ---
 
 # **49\. Pylint Compatibility Fixtures**
@@ -1759,7 +1863,7 @@ For example:
 4  
 8
 
-and verify identical serialized findings.
+and verify identical serialized findings, including structural and distribution metadata.
 
 At minimum, structured JSON output SHOULD be byte-identical after removing intentionally environment-dependent metadata, if any.
 
@@ -1821,6 +1925,8 @@ LCP array
 position mapping
 
 Each SHOULD use compact integer storage where practical.
+
+Structural context/scope remain per-line metadata and are not copied into suffix-array/LCP working arrays.
 
 Memory is expected to remain:
 
@@ -1980,6 +2086,8 @@ Implement:
 PreparedFile  
 NormalizedLine  
 NormalizedSegment  
+StructuralContext  
+StructuralScope  
 Occurrence  
 DuplicateGroup
 
@@ -1997,11 +2105,13 @@ docstrings
 imports  
 function signatures  
 source mapping  
-suppression segments
+suppression segments  
+structural regions  
+retained-source context/scope classification
 
 Exit criterion:
 
-> Given Python source and settings, Arid produces the expected normalized representation.
+> Given Python source and settings, Arid produces the expected normalized representation and structural metadata.
 
 ---
 
@@ -2087,7 +2197,9 @@ CLI override merging
 Add:
 
 DUP001 human reporter  
-JSON schema v1  
+versioned JSON schema  
+structural context/scope aggregation  
+occurrence/file distribution metadata  
 \--show-source  
 exit 0 / 1 / 2
 
@@ -2200,7 +2312,7 @@ Hash collisions cannot create duplicate findings.
 
 ### **A9**
 
-Parallel scheduling cannot change the result.
+Parallel scheduling cannot change the result, including structural and distribution metadata.
 
 ### **A10**
 
@@ -2208,7 +2320,7 @@ Python source is never executed.
 
 ### **A11**
 
-Parser-specific types never enter the detection engine.
+Parser-specific types never leave the Python-analysis boundary.
 
 ### **A12**
 
@@ -2221,6 +2333,19 @@ Duplicate-line metrics never double-count the same redundant normalized line.
 ### **A14**
 
 No v1 feature performs general linting that belongs in Ruff.
+
+
+### **A15**
+
+Structural context and scope never participate in line interning, suffix-array/LCP matching, duplicate equality, grouping, or metrics.
+
+### **A16**
+
+Structural classification describes only retained source after configured masking and suppression.
+
+### **A17**
+
+Finding-level context and scope aggregate across all occurrences and never imply severity or framework semantics.
 
 ---
 
@@ -2243,6 +2368,8 @@ LCP
 maximal repeats  
    ↓  
 DUP001
+
+Structural metadata travels alongside normalized lines and is consumed only when findings are built for reporting; it is not another detection stage.
 
 If the implementation begins requiring substantially more conceptual machinery than that, the design should be challenged before adding it.
 
