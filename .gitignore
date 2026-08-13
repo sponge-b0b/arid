@@ -53,3 +53,6 @@ graphify-out/
 
 #Codegraph
 .codegraph/
+
+# Generated benchmark results
+/benchmarks/results/
