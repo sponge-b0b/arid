@@ -238,6 +238,16 @@ Arid analyzes Python source entirely in Rust and never imports or executes the p
 > [!WARNING]
 > Arid is currently in early alpha. The CLI, configuration, and output format may change before 1.0.
 
+### uv
+
+Install Arid as an isolated command-line tool:
+
+```bash
+uv tool install arid
+```
+
+### pip
+
 Install Arid from PyPI:
 
 ```bash
