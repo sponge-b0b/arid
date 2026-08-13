@@ -2,9 +2,7 @@ use thiserror::Error;
 
 use crate::corpus::Corpus;
 use crate::model::{CorpusPos, DuplicateGroup, Occurrence};
-use crate::suffix::{
-    build_lcp_array, build_suffix_array, SuffixError,
-};
+use crate::suffix::{SuffixError, build_lcp_array, build_suffix_array};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DetectionOptions {
@@ -33,10 +31,7 @@ pub enum DetectError {
         "corpus position {position} with length {length} does not map to a \
          contiguous normalized source range"
     )]
-    InvalidOccurrence {
-        position: CorpusPos,
-        length: u32,
-    },
+    InvalidOccurrence { position: CorpusPos, length: u32 },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -85,15 +80,10 @@ fn extract_duplicates(
     let mut groups = Vec::new();
 
     for interval in intervals {
-        let mut occurrences =
-            Vec::with_capacity(interval.right - interval.left + 1);
+        let mut occurrences = Vec::with_capacity(interval.right - interval.left + 1);
 
         for &suffix in &suffixes[interval.left..=interval.right] {
-            occurrences.push(candidate_occurrence(
-                corpus,
-                suffix,
-                interval.length,
-            )?);
+            occurrences.push(candidate_occurrence(corpus, suffix, interval.length)?);
         }
 
         let occurrences = remove_same_file_overlaps(occurrences);
@@ -106,8 +96,7 @@ fn extract_duplicates(
             continue;
         }
 
-        let effective_lines =
-            effective_line_count(corpus, occurrences[0].occurrence)?;
+        let effective_lines = effective_line_count(corpus, occurrences[0].occurrence)?;
 
         if effective_lines < options.min_lines {
             continue;
@@ -141,10 +130,7 @@ fn extract_duplicates(
 ///
 /// Each interval identifies a suffix-array range where every suffix shares
 /// at least `length` leading normalized-line tokens.
-fn lcp_intervals(
-    lcp: &[u32],
-    min_lines: u32,
-) -> Vec<LcpInterval> {
+fn lcp_intervals(lcp: &[u32], min_lines: u32) -> Vec<LcpInterval> {
     if lcp.len() < 2 {
         return Vec::new();
     }
@@ -155,11 +141,7 @@ fn lcp_intervals(
     // `lcp[i]` describes suffixes i-1 and i, so traversal begins at 1.
     // One synthetic zero at the end flushes every remaining interval.
     for index in 1..=lcp.len() {
-        let current = if index < lcp.len() {
-            lcp[index]
-        } else {
-            0
-        };
+        let current = if index < lcp.len() { lcp[index] } else { 0 };
 
         let mut left = index - 1;
 
@@ -181,8 +163,7 @@ fn lcp_intervals(
             left = interval_left;
         }
 
-        let previous_height =
-            stack.last().map_or(0, |&(_, height)| height);
+        let previous_height = stack.last().map_or(0, |&(_, height)| height);
 
         if current > previous_height {
             stack.push((left, current));
@@ -198,49 +179,27 @@ fn candidate_occurrence(
     length: u32,
 ) -> Result<CandidateOccurrence, DetectError> {
     let Some(start) = corpus.source_at(position) else {
-        return Err(DetectError::InvalidOccurrence {
-            position,
-            length,
-        });
+        return Err(DetectError::InvalidOccurrence { position, length });
     };
 
     let Some(last_offset) = length.checked_sub(1) else {
-        return Err(DetectError::InvalidOccurrence {
-            position,
-            length,
-        });
+        return Err(DetectError::InvalidOccurrence { position, length });
     };
 
     let Some(end_position) = position.checked_add(last_offset) else {
-        return Err(DetectError::InvalidOccurrence {
-            position,
-            length,
-        });
+        return Err(DetectError::InvalidOccurrence { position, length });
     };
 
     let Some(end) = corpus.source_at(end_position) else {
-        return Err(DetectError::InvalidOccurrence {
-            position,
-            length,
-        });
+        return Err(DetectError::InvalidOccurrence { position, length });
     };
 
-    let Some(expected_end_line) =
-        start.normalized_line.checked_add(last_offset)
-    else {
-        return Err(DetectError::InvalidOccurrence {
-            position,
-            length,
-        });
+    let Some(expected_end_line) = start.normalized_line.checked_add(last_offset) else {
+        return Err(DetectError::InvalidOccurrence { position, length });
     };
 
-    if start.file != end.file
-        || end.normalized_line != expected_end_line
-    {
-        return Err(DetectError::InvalidOccurrence {
-            position,
-            length,
-        });
+    if start.file != end.file || end.normalized_line != expected_end_line {
+        return Err(DetectError::InvalidOccurrence { position, length });
     }
 
     Ok(CandidateOccurrence {
@@ -293,9 +252,7 @@ fn remove_same_file_overlaps(
     kept
 }
 
-fn spans_multiple_files(
-    occurrences: &[CandidateOccurrence],
-) -> bool {
+fn spans_multiple_files(occurrences: &[CandidateOccurrence]) -> bool {
     let Some(first) = occurrences.first() else {
         return false;
     };
@@ -303,15 +260,10 @@ fn spans_multiple_files(
     occurrences
         .iter()
         .skip(1)
-        .any(|candidate| {
-            candidate.occurrence.file != first.occurrence.file
-        })
+        .any(|candidate| candidate.occurrence.file != first.occurrence.file)
 }
 
-fn effective_line_count(
-    corpus: &Corpus,
-    occurrence: Occurrence,
-) -> Result<u32, DetectError> {
+fn effective_line_count(corpus: &Corpus, occurrence: Occurrence) -> Result<u32, DetectError> {
     let Some(file) = corpus.files.get(occurrence.file as usize) else {
         return Err(DetectError::InvalidOccurrence {
             position: 0,
@@ -320,8 +272,7 @@ fn effective_line_count(
     };
 
     let start = occurrence.normalized_start as usize;
-    let Some(end) = start.checked_add(occurrence.normalized_len as usize)
-    else {
+    let Some(end) = start.checked_add(occurrence.normalized_len as usize) else {
         return Err(DetectError::InvalidOccurrence {
             position: 0,
             length: occurrence.normalized_len,
@@ -335,12 +286,11 @@ fn effective_line_count(
         });
     };
 
-    u32::try_from(
-        lines.iter().filter(|line| line.effective).count(),
-    )
-    .map_err(|_| DetectError::InvalidOccurrence {
-        position: 0,
-        length: occurrence.normalized_len,
+    u32::try_from(lines.iter().filter(|line| line.effective).count()).map_err(|_| {
+        DetectError::InvalidOccurrence {
+            position: 0,
+            length: occurrence.normalized_len,
+        }
     })
 }
 
@@ -349,10 +299,7 @@ fn effective_line_count(
 ///
 /// A file/segment boundary prevents extension because its preceding token is
 /// either absent or a unique sentinel.
-fn all_extend_left(
-    corpus: &Corpus,
-    occurrences: &[CandidateOccurrence],
-) -> bool {
+fn all_extend_left(corpus: &Corpus, occurrences: &[CandidateOccurrence]) -> bool {
     let mut expected = None;
 
     for candidate in occurrences {
@@ -360,8 +307,7 @@ fn all_extend_left(
             return false;
         }
 
-        let previous_position =
-            candidate.corpus_start as usize - 1;
+        let previous_position = candidate.corpus_start as usize - 1;
 
         let token = corpus.tokens[previous_position];
 
@@ -388,16 +334,11 @@ fn all_extend_left(
 ///
 /// A file/segment boundary prevents extension because the following token is
 /// either absent or a unique sentinel.
-fn all_extend_right(
-    corpus: &Corpus,
-    occurrences: &[CandidateOccurrence],
-    length: u32,
-) -> bool {
+fn all_extend_right(corpus: &Corpus, occurrences: &[CandidateOccurrence], length: u32) -> bool {
     let mut expected = None;
 
     for candidate in occurrences {
-        let next_position =
-            candidate.corpus_start as usize + length as usize;
+        let next_position = candidate.corpus_start as usize + length as usize;
 
         let Some(&token) = corpus.tokens.get(next_position) else {
             return false;
@@ -433,21 +374,15 @@ fn all_extend_right(
 /// A, B, and C share the first 6 lines.
 ///
 /// Both groups remain because the 6-line group adds C.
-fn canonicalize_groups(
-    mut groups: Vec<DuplicateGroup>,
-) -> Vec<DuplicateGroup> {
+fn canonicalize_groups(mut groups: Vec<DuplicateGroup>) -> Vec<DuplicateGroup> {
     // Process larger groups first so contained-match suppression can compare
     // each candidate only against groups already accepted.
     groups.sort_by(|left, right| {
         right
             .normalized_len
             .cmp(&left.normalized_len)
-            .then_with(|| {
-                right.effective_lines.cmp(&left.effective_lines)
-            })
-            .then_with(|| {
-                left.occurrences.cmp(&right.occurrences)
-            })
+            .then_with(|| right.effective_lines.cmp(&left.effective_lines))
+            .then_with(|| left.occurrences.cmp(&right.occurrences))
     });
 
     groups.dedup();
@@ -455,10 +390,7 @@ fn canonicalize_groups(
     let mut kept: Vec<DuplicateGroup> = Vec::new();
 
     for group in groups {
-        if kept
-            .iter()
-            .any(|larger| group_is_contained(larger, &group))
-        {
+        if kept.iter().any(|larger| group_is_contained(larger, &group)) {
             continue;
         }
 
@@ -470,21 +402,14 @@ fn canonicalize_groups(
     kept.sort_by(|left, right| {
         left.occurrences[0]
             .cmp(&right.occurrences[0])
-            .then_with(|| {
-                right.normalized_len.cmp(&left.normalized_len)
-            })
-            .then_with(|| {
-                left.occurrences.cmp(&right.occurrences)
-            })
+            .then_with(|| right.normalized_len.cmp(&left.normalized_len))
+            .then_with(|| left.occurrences.cmp(&right.occurrences))
     });
 
     kept
 }
 
-fn group_is_contained(
-    larger: &DuplicateGroup,
-    smaller: &DuplicateGroup,
-) -> bool {
+fn group_is_contained(larger: &DuplicateGroup, smaller: &DuplicateGroup) -> bool {
     if larger.normalized_len <= smaller.normalized_len {
         return false;
     }
@@ -493,32 +418,22 @@ fn group_is_contained(
         larger
             .occurrences
             .iter()
-            .any(|container| {
-                occurrence_contains(*container, *candidate)
-            })
+            .any(|container| occurrence_contains(*container, *candidate))
     })
 }
 
-fn occurrence_contains(
-    container: Occurrence,
-    candidate: Occurrence,
-) -> bool {
+fn occurrence_contains(container: Occurrence, candidate: Occurrence) -> bool {
     if container.file != candidate.file {
         return false;
     }
 
-    let container_start =
-        u64::from(container.normalized_start);
-    let container_end =
-        container_start + u64::from(container.normalized_len);
+    let container_start = u64::from(container.normalized_start);
+    let container_end = container_start + u64::from(container.normalized_len);
 
-    let candidate_start =
-        u64::from(candidate.normalized_start);
-    let candidate_end =
-        candidate_start + u64::from(candidate.normalized_len);
+    let candidate_start = u64::from(candidate.normalized_start);
+    let candidate_end = candidate_start + u64::from(candidate.normalized_len);
 
-    container_start <= candidate_start
-        && container_end >= candidate_end
+    container_start <= candidate_start && container_end >= candidate_end
 }
 
 #[cfg(test)]
@@ -527,23 +442,15 @@ mod tests {
     use std::path::PathBuf;
 
     use crate::corpus::build_corpus;
-    use crate::model::{
-        NormalizedLine, NormalizedSegment, PreparedFile,
-    };
+    use crate::model::{NormalizedLine, NormalizedSegment, PreparedFile};
 
     use super::*;
 
-    fn prepared(
-        path: &str,
-        text_lines: &[(&str, bool)],
-        segments: &[(u32, u32)],
-    ) -> PreparedFile {
+    fn prepared(path: &str, text_lines: &[(&str, bool)], segments: &[(u32, u32)]) -> PreparedFile {
         let mut normalized = String::new();
         let mut lines = Vec::new();
 
-        for (source_line, &(text, effective)) in
-            text_lines.iter().enumerate()
-        {
+        for (source_line, &(text, effective)) in text_lines.iter().enumerate() {
             let start = normalized.len() as u32;
             normalized.push_str(text);
             let end = normalized.len() as u32;
@@ -563,10 +470,7 @@ mod tests {
             lines,
             segments: segments
                 .iter()
-                .map(|&(start, end)| NormalizedSegment {
-                    start,
-                    end,
-                })
+                .map(|&(start, end)| NormalizedSegment { start, end })
                 .collect(),
         }
     }
@@ -575,11 +479,7 @@ mod tests {
         lines.iter().map(|&line| (line, true)).collect()
     }
 
-    fn detect(
-        files: Vec<PreparedFile>,
-        min_lines: u32,
-        same_file: bool,
-    ) -> Vec<DuplicateGroup> {
+    fn detect(files: Vec<PreparedFile>, min_lines: u32, same_file: bool) -> Vec<DuplicateGroup> {
         let corpus = build_corpus(files).unwrap();
 
         detect_duplicates(
@@ -594,34 +494,15 @@ mod tests {
 
     #[test]
     fn detects_cross_file_duplicate_block() {
-        let first_lines = effective_lines(&[
-            "alpha()",
-            "beta()",
-            "gamma()",
-            "delta()",
-            "only_a()",
-        ]);
+        let first_lines = effective_lines(&["alpha()", "beta()", "gamma()", "delta()", "only_a()"]);
 
-        let second_lines = effective_lines(&[
-            "alpha()",
-            "beta()",
-            "gamma()",
-            "delta()",
-            "only_b()",
-        ]);
+        let second_lines =
+            effective_lines(&["alpha()", "beta()", "gamma()", "delta()", "only_b()"]);
 
         let groups = detect(
             vec![
-                prepared(
-                    "a.py",
-                    &first_lines,
-                    &[(0, 5)],
-                ),
-                prepared(
-                    "b.py",
-                    &second_lines,
-                    &[(0, 5)],
-                ),
+                prepared("a.py", &first_lines, &[(0, 5)]),
+                prepared("b.py", &second_lines, &[(0, 5)]),
             ],
             4,
             true,
@@ -652,12 +533,7 @@ mod tests {
 
     #[test]
     fn groups_three_occurrences_together() {
-        let common = [
-            "alpha()",
-            "beta()",
-            "gamma()",
-            "delta()",
-        ];
+        let common = ["alpha()", "beta()", "gamma()", "delta()"];
 
         let mut first = effective_lines(&common);
         first.push(("only_a()", true));
@@ -687,26 +563,11 @@ mod tests {
     #[test]
     fn detects_non_overlapping_same_file_duplicates() {
         let lines = effective_lines(&[
-            "alpha()",
-            "beta()",
-            "gamma()",
-            "delta()",
-            "gap()",
-            "alpha()",
-            "beta()",
-            "gamma()",
+            "alpha()", "beta()", "gamma()", "delta()", "gap()", "alpha()", "beta()", "gamma()",
             "delta()",
         ]);
 
-        let groups = detect(
-            vec![prepared(
-                "a.py",
-                &lines,
-                &[(0, 9)],
-            )],
-            4,
-            true,
-        );
+        let groups = detect(vec![prepared("a.py", &lines, &[(0, 9)])], 4, true);
 
         assert_eq!(groups.len(), 1);
 
@@ -730,26 +591,11 @@ mod tests {
     #[test]
     fn can_disable_same_file_only_detection() {
         let lines = effective_lines(&[
-            "alpha()",
-            "beta()",
-            "gamma()",
-            "delta()",
-            "gap()",
-            "alpha()",
-            "beta()",
-            "gamma()",
+            "alpha()", "beta()", "gamma()", "delta()", "gap()", "alpha()", "beta()", "gamma()",
             "delta()",
         ]);
 
-        let groups = detect(
-            vec![prepared(
-                "a.py",
-                &lines,
-                &[(0, 9)],
-            )],
-            4,
-            false,
-        );
+        let groups = detect(vec![prepared("a.py", &lines, &[(0, 9)])], 4, false);
 
         assert!(groups.is_empty());
     }
@@ -768,19 +614,11 @@ mod tests {
             prepared("b.py", &lines, &[(0, 4)]),
         ];
 
-        let too_strict = detect(
-            files.clone(),
-            3,
-            true,
-        );
+        let too_strict = detect(files.clone(), 3, true);
 
         assert!(too_strict.is_empty());
 
-        let accepted = detect(
-            files,
-            2,
-            true,
-        );
+        let accepted = detect(files, 2, true);
 
         assert_eq!(accepted.len(), 1);
         assert_eq!(accepted[0].normalized_len, 4);
@@ -789,27 +627,14 @@ mod tests {
 
     #[test]
     fn does_not_match_across_segment_boundaries() {
-        let first = effective_lines(&[
-            "alpha()",
-            "beta()",
-            "gamma()",
-            "delta()",
-        ]);
+        let first = effective_lines(&["alpha()", "beta()", "gamma()", "delta()"]);
 
         let second = first.clone();
 
         let groups = detect(
             vec![
-                prepared(
-                    "a.py",
-                    &first,
-                    &[(0, 2), (2, 4)],
-                ),
-                prepared(
-                    "b.py",
-                    &second,
-                    &[(0, 4)],
-                ),
+                prepared("a.py", &first, &[(0, 2), (2, 4)]),
+                prepared("b.py", &second, &[(0, 4)]),
             ],
             4,
             true,
@@ -820,29 +645,11 @@ mod tests {
 
     #[test]
     fn preserves_shorter_group_when_it_adds_an_occurrence() {
-        let first = effective_lines(&[
-            "alpha()",
-            "beta()",
-            "gamma()",
-            "delta()",
-            "only_a()",
-        ]);
+        let first = effective_lines(&["alpha()", "beta()", "gamma()", "delta()", "only_a()"]);
 
-        let second = effective_lines(&[
-            "alpha()",
-            "beta()",
-            "gamma()",
-            "delta()",
-            "only_b()",
-        ]);
+        let second = effective_lines(&["alpha()", "beta()", "gamma()", "delta()", "only_b()"]);
 
-        let third = effective_lines(&[
-            "alpha()",
-            "beta()",
-            "gamma()",
-            "different()",
-            "only_c()",
-        ]);
+        let third = effective_lines(&["alpha()", "beta()", "gamma()", "different()", "only_c()"]);
 
         let groups = detect(
             vec![
@@ -856,10 +663,7 @@ mod tests {
 
         assert_eq!(groups.len(), 2);
 
-        let lengths: Vec<u32> = groups
-            .iter()
-            .map(|group| group.normalized_len)
-            .collect();
+        let lengths: Vec<u32> = groups.iter().map(|group| group.normalized_len).collect();
 
         assert!(lengths.contains(&4));
         assert!(lengths.contains(&3));
@@ -874,22 +678,9 @@ mod tests {
 
     #[test]
     fn suppresses_fully_contained_repetitive_group() {
-        let lines = effective_lines(&[
-            "same()",
-            "same()",
-            "same()",
-            "same()",
-        ]);
+        let lines = effective_lines(&["same()", "same()", "same()", "same()"]);
 
-        let groups = detect(
-            vec![prepared(
-                "a.py",
-                &lines,
-                &[(0, 4)],
-            )],
-            1,
-            true,
-        );
+        let groups = detect(vec![prepared("a.py", &lines, &[(0, 4)])], 1, true);
 
         assert_eq!(groups.len(), 1);
         assert_eq!(groups[0].normalized_len, 2);
@@ -924,47 +715,26 @@ mod tests {
         )
         .unwrap_err();
 
-        assert!(matches!(
-            error,
-            DetectError::InvalidMinLines
-        ));
+        assert!(matches!(error, DetectError::InvalidMinLines));
     }
 
     #[test]
     fn detection_is_independent_of_input_file_order() {
         let first = prepared(
             "b.py",
-            &effective_lines(&[
-                "alpha()",
-                "beta()",
-                "gamma()",
-                "delta()",
-            ]),
+            &effective_lines(&["alpha()", "beta()", "gamma()", "delta()"]),
             &[(0, 4)],
         );
 
         let second = prepared(
             "a.py",
-            &effective_lines(&[
-                "alpha()",
-                "beta()",
-                "gamma()",
-                "delta()",
-            ]),
+            &effective_lines(&["alpha()", "beta()", "gamma()", "delta()"]),
             &[(0, 4)],
         );
 
-        let forward = detect(
-            vec![first.clone(), second.clone()],
-            4,
-            true,
-        );
+        let forward = detect(vec![first.clone(), second.clone()], 4, true);
 
-        let reversed = detect(
-            vec![second, first],
-            4,
-            true,
-        );
+        let reversed = detect(vec![second, first], 4, true);
 
         assert_eq!(forward, reversed);
     }
