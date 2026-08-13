@@ -7,7 +7,7 @@ use ruff_python_parser::parse_module;
 use ruff_text_size::{Ranged, TextRange};
 use thiserror::Error;
 
-use crate::model::NormalizationOptions;
+use crate::model::{NormalizationOptions, StructuralContext, StructuralScope};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SuppressionKind {
@@ -21,10 +21,18 @@ pub(crate) struct SuppressionEvent {
     pub kind: SuppressionKind,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct StructuralRegion {
+    pub range: Range<usize>,
+    pub context: StructuralContext,
+    pub scope: StructuralScope,
+}
+
 #[derive(Debug)]
 pub(crate) struct PythonAnalysis {
     pub masks: Vec<Range<usize>>,
     pub suppressions: Vec<SuppressionEvent>,
+    pub structural_regions: Vec<StructuralRegion>,
 }
 
 #[derive(Debug, Error)]
@@ -44,6 +52,7 @@ pub(crate) fn analyze(
     let tokens = parsed.tokens();
     let mut masks = Vec::new();
     let mut suppressions = Vec::new();
+    let mut structural_regions = Vec::new();
 
     collect_comments_and_suppressions(
         source,
@@ -53,11 +62,14 @@ pub(crate) fn analyze(
         &mut suppressions,
     );
 
-    let mut collector = SyntaxMaskCollector {
+    let mut collector = SyntaxCollector {
         source,
         tokens,
         options,
         masks: &mut masks,
+        structural_regions: &mut structural_regions,
+        scope: StructuralScope::Module,
+        nesting_depth: 0,
     };
 
     if options.ignore_docstrings {
@@ -68,10 +80,12 @@ pub(crate) fn analyze(
 
     merge_ranges(&mut masks);
     suppressions.sort_by_key(|event| event.offset);
+    structural_regions.sort_by_key(|region| (region.range.start, region.range.end));
 
     Ok(PythonAnalysis {
         masks,
         suppressions,
+        structural_regions,
     })
 }
 
@@ -112,14 +126,17 @@ fn collect_comments_and_suppressions(
     }
 }
 
-struct SyntaxMaskCollector<'a, 'm> {
+struct SyntaxCollector<'a, 'm> {
     source: &'a str,
     tokens: &'a Tokens,
     options: NormalizationOptions,
     masks: &'m mut Vec<Range<usize>>,
+    structural_regions: &'m mut Vec<StructuralRegion>,
+    scope: StructuralScope,
+    nesting_depth: u32,
 }
 
-impl SyntaxMaskCollector<'_, '_> {
+impl SyntaxCollector<'_, '_> {
     fn collect_docstring(&mut self, body: &[Stmt]) {
         let Some(Stmt::Expr(statement)) = body.first() else {
             return;
@@ -154,6 +171,25 @@ impl SyntaxMaskCollector<'_, '_> {
                 _ => {}
             }
         }
+    }
+
+    fn collect_structural_region(&mut self, stmt: &Stmt) {
+        let (context, scope) = match stmt {
+            Stmt::FunctionDef(_) => (StructuralContext::Declarative, StructuralScope::Function),
+            Stmt::ClassDef(_) => (StructuralContext::Declarative, StructuralScope::Class),
+            Stmt::Assign(_) | Stmt::AnnAssign(_) | Stmt::Import(_) | Stmt::ImportFrom(_)
+                if self.scope != StructuralScope::Function && self.nesting_depth == 0 =>
+            {
+                (StructuralContext::Declarative, self.scope)
+            }
+            _ => (StructuralContext::Executable, self.scope),
+        };
+
+        self.structural_regions.push(StructuralRegion {
+            range: to_range(stmt.range()),
+            context,
+            scope,
+        });
     }
 
     fn extend_statement_range(&self, range: TextRange) -> Range<usize> {
@@ -194,8 +230,10 @@ impl SyntaxMaskCollector<'_, '_> {
     }
 }
 
-impl<'a> StatementVisitor<'a> for SyntaxMaskCollector<'_, '_> {
+impl<'a> StatementVisitor<'a> for SyntaxCollector<'_, '_> {
     fn visit_stmt(&mut self, stmt: &'a Stmt) {
+        self.collect_structural_region(stmt);
+
         match stmt {
             Stmt::FunctionDef(function) => {
                 if self.options.ignore_signatures {
@@ -226,7 +264,27 @@ impl<'a> StatementVisitor<'a> for SyntaxMaskCollector<'_, '_> {
             _ => {}
         }
 
+        let previous_scope = self.scope;
+        let previous_nesting_depth = self.nesting_depth;
+
+        match stmt {
+            Stmt::FunctionDef(_) => {
+                self.scope = StructuralScope::Function;
+                self.nesting_depth = 0;
+            }
+            Stmt::ClassDef(_) => {
+                self.scope = StructuralScope::Class;
+                self.nesting_depth = 0;
+            }
+            _ => {
+                self.nesting_depth = self.nesting_depth.saturating_add(1);
+            }
+        }
+
         statement_visitor::walk_stmt(self, stmt);
+
+        self.scope = previous_scope;
+        self.nesting_depth = previous_nesting_depth;
     }
 }
 

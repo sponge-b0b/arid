@@ -3,8 +3,11 @@ use std::path::PathBuf;
 
 use thiserror::Error;
 
-use crate::model::{NormalizationOptions, NormalizedLine, NormalizedSegment, PreparedFile};
-use crate::python::{self, SuppressionEvent, SuppressionKind};
+use crate::model::{
+    NormalizationOptions, NormalizedLine, NormalizedSegment, PreparedFile, StructuralContext,
+    StructuralScope,
+};
+use crate::python::{self, StructuralRegion, SuppressionEvent, SuppressionKind};
 
 #[derive(Debug, Error)]
 pub enum PrepareError {
@@ -32,8 +35,12 @@ pub fn prepare_file(
         message: error.to_string(),
     })?;
 
-    let (normalized, lines, segments) =
-        normalize_source(&source, &analysis.masks, &analysis.suppressions);
+    let (normalized, lines, segments) = normalize_source(
+        &source,
+        &analysis.masks,
+        &analysis.suppressions,
+        &analysis.structural_regions,
+    );
 
     Ok(PreparedFile {
         path,
@@ -48,6 +55,7 @@ fn normalize_source(
     source: &str,
     masks: &[Range<usize>],
     suppressions: &[SuppressionEvent],
+    structural_regions: &[StructuralRegion],
 ) -> (String, Vec<NormalizedLine>, Vec<NormalizedSegment>) {
     let mut normalized = String::new();
     let mut lines = Vec::new();
@@ -56,6 +64,8 @@ fn normalize_source(
     let mut line_start = 0_usize;
     let mut mask_index = 0_usize;
     let mut suppression_index = 0_usize;
+    let mut structural_region_index = 0_usize;
+    let mut active_structural_regions = Vec::new();
 
     let mut disabled = false;
     let mut segment_start: Option<u32> = None;
@@ -67,8 +77,17 @@ fn normalize_source(
         let content = content.strip_suffix('\r').unwrap_or(content);
         let content_end = line_start + content.len();
 
+        update_structural_regions(
+            line_start,
+            content_end,
+            structural_regions,
+            &mut structural_region_index,
+            &mut active_structural_regions,
+        );
+
         if !disabled {
-            let line = normalized_line(source, line_start, content_end, masks, &mut mask_index);
+            let (line, retained_ranges) =
+                normalized_line(source, line_start, content_end, masks, &mut mask_index);
 
             if !line.is_empty() {
                 let normalized_index = u32::try_from(lines.len()).expect(
@@ -87,11 +106,20 @@ fn normalize_source(
 
                 normalized.push('\n');
 
+                let (context, scope) = classify_structural_line(
+                    source,
+                    &retained_ranges,
+                    structural_regions,
+                    &active_structural_regions,
+                );
+
                 lines.push(NormalizedLine {
                     text_range: start..end,
                     source_line: u32::try_from(source_line)
                         .expect("source cannot contain more than u32::MAX lines"),
                     effective: is_effective(&line),
+                    context,
+                    scope,
                 });
             }
         } else {
@@ -139,7 +167,7 @@ fn normalized_line(
     line_end: usize,
     masks: &[Range<usize>],
     mask_index: &mut usize,
-) -> String {
+) -> (String, Vec<Range<usize>>) {
     while let Some(mask) = masks.get(*mask_index) {
         if mask.end <= line_start {
             *mask_index += 1;
@@ -149,6 +177,7 @@ fn normalized_line(
     }
 
     let mut output = String::new();
+    let mut retained_ranges = Vec::new();
     let mut cursor = line_start;
     let mut index = *mask_index;
 
@@ -162,6 +191,7 @@ fn normalized_line(
 
         if cursor < masked_start {
             output.push_str(&source[cursor..masked_start]);
+            retained_ranges.push(cursor..masked_start);
         }
 
         cursor = cursor.max(masked_end);
@@ -175,11 +205,115 @@ fn normalized_line(
 
     if cursor < line_end {
         output.push_str(&source[cursor..line_end]);
+        retained_ranges.push(cursor..line_end);
     }
 
     *mask_index = index;
 
-    output.trim().to_owned()
+    (output.trim().to_owned(), retained_ranges)
+}
+
+fn update_structural_regions(
+    line_start: usize,
+    line_end: usize,
+    regions: &[StructuralRegion],
+    region_index: &mut usize,
+    active: &mut Vec<usize>,
+) {
+    active.retain(|index| regions[*index].range.end > line_start);
+
+    while let Some(region) = regions.get(*region_index) {
+        if region.range.start >= line_end {
+            break;
+        }
+
+        if region.range.end > line_start {
+            active.push(*region_index);
+        }
+
+        *region_index += 1;
+    }
+}
+
+fn classify_structural_line(
+    source: &str,
+    retained_ranges: &[Range<usize>],
+    regions: &[StructuralRegion],
+    active: &[usize],
+) -> (StructuralContext, StructuralScope) {
+    let mut context = None;
+    let mut scope = None;
+
+    for retained in retained_ranges {
+        let mut boundaries = vec![retained.start, retained.end];
+
+        for index in active {
+            let region = &regions[*index];
+
+            if region.range.end <= retained.start || region.range.start >= retained.end {
+                continue;
+            }
+
+            boundaries.push(region.range.start.max(retained.start));
+            boundaries.push(region.range.end.min(retained.end));
+        }
+
+        boundaries.sort_unstable();
+        boundaries.dedup();
+
+        for interval in boundaries.windows(2) {
+            let start = interval[0];
+            let end = interval[1];
+
+            if start == end || source[start..end].trim().is_empty() {
+                continue;
+            }
+
+            let most_specific = active
+                .iter()
+                .map(|index| &regions[*index])
+                .filter(|region| region.range.start <= start && region.range.end >= end)
+                .min_by_key(|region| region.range.end - region.range.start);
+
+            let (next_context, next_scope) = most_specific.map_or(
+                (StructuralContext::Executable, StructuralScope::Module),
+                |region| (region.context, region.scope),
+            );
+
+            context = Some(match context {
+                None => next_context,
+                Some(current) if current == next_context => current,
+                Some(_) => StructuralContext::Mixed,
+            });
+
+            scope = Some(match scope {
+                None => next_scope,
+                Some(current) if current == next_scope => current,
+                Some(current) => more_specific_scope(current, next_scope),
+            });
+        }
+    }
+
+    (
+        context.unwrap_or(StructuralContext::Executable),
+        scope.unwrap_or(StructuralScope::Module),
+    )
+}
+
+fn more_specific_scope(left: StructuralScope, right: StructuralScope) -> StructuralScope {
+    if scope_rank(right) > scope_rank(left) {
+        right
+    } else {
+        left
+    }
+}
+
+fn scope_rank(scope: StructuralScope) -> u8 {
+    match scope {
+        StructuralScope::Module => 0,
+        StructuralScope::Class => 1,
+        StructuralScope::Function => 2,
+    }
 }
 
 fn advance_masks(line_end: usize, masks: &[Range<usize>], mask_index: &mut usize) {
@@ -324,6 +458,75 @@ def compact(): return calculate(1, 2)
         let file = prepare("import os; run()\nrun(); import os\n");
 
         assert_eq!(texts(&file), vec!["run()", "run()",]);
+    }
+
+    #[test]
+    fn classifies_structural_context_and_scope() {
+        let file = prepare(
+            r#"
+SETTING = 1
+
+class Example:
+    value = 1
+
+    def method(self):
+        result = 2
+        return result
+
+if enabled:
+    nested = 3
+"#,
+        );
+
+        assert_eq!(
+            texts(&file),
+            vec![
+                "SETTING = 1",
+                "class Example:",
+                "value = 1",
+                "result = 2",
+                "return result",
+                "if enabled:",
+                "nested = 3",
+            ]
+        );
+
+        let metadata: Vec<_> = file
+            .lines
+            .iter()
+            .map(|line| (line.context, line.scope))
+            .collect();
+
+        assert_eq!(
+            metadata,
+            vec![
+                (StructuralContext::Declarative, StructuralScope::Module),
+                (StructuralContext::Declarative, StructuralScope::Class),
+                (StructuralContext::Declarative, StructuralScope::Class),
+                (StructuralContext::Executable, StructuralScope::Function),
+                (StructuralContext::Executable, StructuralScope::Function),
+                (StructuralContext::Executable, StructuralScope::Module),
+                (StructuralContext::Executable, StructuralScope::Module),
+            ]
+        );
+    }
+
+    #[test]
+    fn classifies_mixed_statements_on_one_line() {
+        let file = prepare("value = 1; run()\n");
+
+        assert_eq!(texts(&file), vec!["value = 1; run()"]);
+        assert_eq!(file.lines[0].context, StructuralContext::Mixed);
+        assert_eq!(file.lines[0].scope, StructuralScope::Module);
+    }
+
+    #[test]
+    fn classifies_only_retained_source_after_masking() {
+        let file = prepare("import os; run()\n");
+
+        assert_eq!(texts(&file), vec!["run()"]);
+        assert_eq!(file.lines[0].context, StructuralContext::Executable);
+        assert_eq!(file.lines[0].scope, StructuralScope::Module);
     }
 
     #[test]

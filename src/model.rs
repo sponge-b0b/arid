@@ -24,6 +24,20 @@ impl Default for NormalizationOptions {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StructuralContext {
+    Declarative,
+    Executable,
+    Mixed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StructuralScope {
+    Module,
+    Class,
+    Function,
+}
+
 #[derive(Debug, Clone)]
 pub struct PreparedFile {
     pub path: PathBuf,
@@ -38,6 +52,8 @@ pub struct NormalizedLine {
     pub text_range: Range<u32>,
     pub source_line: u32,
     pub effective: bool,
+    pub context: StructuralContext,
+    pub scope: StructuralScope,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

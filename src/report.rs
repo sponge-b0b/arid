@@ -335,7 +335,9 @@ mod tests {
     use std::path::PathBuf;
 
     use crate::corpus::build_corpus;
-    use crate::model::{NormalizedLine, NormalizedSegment, PreparedFile};
+    use crate::model::{
+        NormalizedLine, NormalizedSegment, PreparedFile, StructuralContext, StructuralScope,
+    };
 
     use super::*;
 
@@ -356,6 +358,8 @@ mod tests {
                 text_range: Range { start, end },
                 source_line,
                 effective,
+                context: StructuralContext::Executable,
+                scope: StructuralScope::Module,
             });
         }
 

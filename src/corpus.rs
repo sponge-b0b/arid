@@ -275,7 +275,7 @@ mod tests {
     use std::ops::Range;
     use std::path::PathBuf;
 
-    use crate::model::{NormalizedLine, NormalizedSegment};
+    use crate::model::{NormalizedLine, NormalizedSegment, StructuralContext, StructuralScope};
 
     use super::*;
 
@@ -293,6 +293,8 @@ mod tests {
                 text_range: Range { start, end },
                 source_line: source_line as u32,
                 effective: true,
+                context: StructuralContext::Executable,
+                scope: StructuralScope::Module,
             });
         }
 
