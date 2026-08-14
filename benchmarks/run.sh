@@ -166,6 +166,7 @@ corpus_remote="$(git -C "$CORPUS" remote get-url origin 2>/dev/null || true)"
     echo "analyzed_effective_lines=$analyzed_lines"
     echo "warmup=$WARMUP"
     echo "runs=$RUNS"
+    echo "arid_worker_counts=1,2,4,8"
     echo "hyperfine=$actual_hyperfine"
     echo "pylint=$actual_pylint"
     echo "jscpd=$actual_jscpd"
@@ -186,6 +187,7 @@ arid_pylint_cmd="$arid_q \
 $corpus_q \
 --hidden \
 --no-same-file \
+--workers 1 \
 --json > /dev/null; \
 status=\$?; [[ \$status -eq 0 || \$status -eq 1 ]]"
 
@@ -209,6 +211,14 @@ status=\$?; [[ \$status -eq 0 || \$status -eq 8 ]]"
 arid_jscpd_cmd="$arid_q \
 $corpus_q \
 --hidden \
+--workers 1 \
+--json > /dev/null; \
+status=\$?; [[ \$status -eq 0 || \$status -eq 1 ]]"
+
+arid_workers_cmd="$arid_q \
+$corpus_q \
+--hidden \
+--workers {workers} \
 --json > /dev/null; \
 status=\$?; [[ \$status -eq 0 || \$status -eq 1 ]]"
 
@@ -276,6 +286,18 @@ hyperfine \
     --export-markdown "$RESULT_DIR/jscpd-auto.md" \
     "$arid_jscpd_cmd" \
     "$jscpd_auto_cmd"
+
+echo
+echo "Benchmarking Arid worker scaling..."
+
+hyperfine \
+    --shell=bash \
+    --warmup "$WARMUP" \
+    --runs "$RUNS" \
+    --parameter-list workers 1,2,4,8 \
+    --export-json "$RESULT_DIR/arid-workers.json" \
+    --export-markdown "$RESULT_DIR/arid-workers.md" \
+    "$arid_workers_cmd"
 
 echo
 echo "Benchmark results written to:"

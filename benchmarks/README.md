@@ -152,6 +152,7 @@ The Pylint comparison is intended to approximate Arid's Pylint-compatible detect
 - function signatures ignored
 - same-file detection disabled in Arid
 - hidden-path discovery enabled in Arid
+- Arid run with one worker
 - Pylint run with one worker
 - unrelated Pylint checks disabled
 - persistent Pylint state disabled
@@ -166,7 +167,7 @@ The benchmark runner uses:
 Pylint 4.0.6
 ```
 
-The Pylint comparison is serial so that current serial Arid is compared directly against the isolated duplicate checker without multiprocessing affecting the result.
+The Pylint comparison is serial so that serial Arid is compared directly against the isolated duplicate checker without multiprocessing affecting the result.
 
 The Arid side is equivalent to:
 
@@ -174,6 +175,7 @@ The Arid side is equivalent to:
 arid <corpus> \
     --hidden \
     --no-same-file \
+    --workers 1 \
     --json
 ```
 
@@ -222,7 +224,7 @@ Two jscpd measurements are recorded:
 1. one worker, for a serial comparison
 2. default automatic workers, for comparison with jscpd's normal parallel execution
 
-Arid retains its default same-file detection for these comparisons and runs with `--hidden`.
+Arid retains its default same-file detection, runs with `--hidden`, and uses `--workers 1` for both cross-tool comparisons.
 
 Because jscpd is token-based and uses different normalization and clone semantics, its finding counts are not expected to match Arid's.
 
@@ -268,6 +270,7 @@ Benchmark output records:
 - Python file counts
 - physical source lines
 - analyzed effective lines
+- Arid worker counts used for worker-scaling measurements
 
 Performance conclusions are based on repeated measurements rather than a single run.
 
@@ -286,14 +289,14 @@ Unexpected execution statuses remain benchmark failures rather than being global
 
 ## Final v1 benchmark results
 
-The following results use:
+The following cross-tool results use:
 
 ```text
 Warmup runs:   3
 Measured runs: 10
 ```
 
-All results were produced with the same benchmark runner and methodology.
+The cross-tool results were produced using the same benchmark methodology.
 
 ### Summary
 
@@ -494,40 +497,125 @@ The finalized cross-tool benchmarks did not justify making parallel execution th
 
 Arid therefore defaults to one worker and provides optional parallel per-file preparation through `--workers <N>`.
 
-A follow-up worker-scaling benchmark used the same pinned Polaris corpus with 3 warmup runs and 10 measured runs:
+### Worker scaling
+
+A follow-up worker-scaling benchmark measured optional parallel preparation on the same pinned Polaris corpus:
+
+```text
+Corpus commit:  00e208e7f5dcb3329c3d8d1ee5f13aec7fbe1031
+Arid commit:    502c639d213deb888a2c2a1dc364be4eec0b5eef
+Warmup runs:    3
+Measured runs:  10
+Logical CPUs:   8
+CPU:            Intel(R) Core(TM) i7-9700 CPU @ 3.00GHz
+```
+
+The benchmark used repository-root native discovery with:
+
+```bash
+arid <corpus> \
+    --hidden \
+    --workers <N> \
+    --json
+```
+
+Results:
 
 | Workers | Mean time | User CPU | System CPU | Speedup vs 1 worker |
 | ---: | ---: | ---: | ---: | ---: |
-| 1 | 469.4 ms ± 9.8 ms | 452.8 ms | 25.5 ms | 1.00x |
-| 2 | 336.0 ms ± 4.5 ms | 465.5 ms | 23.5 ms | 1.40x |
-| 4 | 270.0 ms ± 3.8 ms | 475.9 ms | 22.3 ms | 1.74x |
-| 8 | 269.6 ms ± 4.4 ms | 507.7 ms | 85.7 ms | 1.74x |
+| 1 | 468.9 ms ± 7.6 ms | 446.5 ms | 28.3 ms | 1.00x |
+| 2 | 334.1 ms ± 1.9 ms | 464.6 ms | 25.5 ms | 1.40x |
+| 4 | **266.4 ms ± 4.2 ms** | 483.2 ms | 17.4 ms | **1.76x** |
+| 8 | 269.0 ms ± 10.3 ms | 495.1 ms | 93.1 ms | 1.74x |
 
 On this corpus and benchmark host:
 
-- two workers reduced wall-clock time by approximately 28%
-- four workers reduced wall-clock time by approximately 42%
-- eight workers provided no meaningful wall-clock improvement over four while consuming more aggregate CPU
+- two workers reduced wall-clock time by approximately 28.7%
+- four workers reduced wall-clock time by approximately 43.2%
+- eight workers provided no meaningful wall-clock improvement over four and consumed substantially more system CPU
 
-Four workers therefore provided the best measured latency/CPU tradeoff for Polaris on the tested hardware. This is not a universal worker-count recommendation; the useful level of parallelism depends on repository shape and hardware.
+Four workers therefore provided the best measured latency/CPU tradeoff for Polaris on the tested hardware.
+
+This is not a universal worker-count recommendation. The useful level of parallelism depends on repository shape, preparation cost, available CPUs, and the proportion of total execution time spent in the serial global stages.
 
 Serial execution remains the default because it is already fast, minimizes CPU consumption, and satisfies Arid's v1 performance target. `--workers` is an opt-in latency optimization rather than an analysis setting or a reason to parallelize the global detection pipeline.
 
-## Reproducing a benchmark
+The worker-scaling measurement was produced from a newer Arid commit than the published cross-tool Polaris measurements. The measured values are recorded here rather than being merged into the historical cross-tool result set.
 
-Clone the desired canonical corpus and check out the documented commit.
+Generated benchmark artifacts are written beneath `benchmarks/results/`. That directory is intentionally ignored by Git and contains local reproducibility artifacts rather than version-controlled benchmark data.
 
-For example:
+## Setting up benchmark corpora
 
-```bash
-git clone https://github.com/psf/requests.git
-cd requests
-git checkout 6e83187b8feb273ed4c6cdab5efd8d54901dfab3
+Keep benchmark corpora outside the Arid repository so benchmark inputs remain independent of Arid's working tree.
+
+The canonical local layout is:
+
+```text
+~/benchmarks/
+└── arid-corpora/
+    ├── polaris/
+    ├── pydantic/
+    └── requests/
 ```
 
-The benchmark corpus working tree must be clean.
+Create the corpus directory and clone the three canonical repositories:
 
-Then run the benchmark from the Arid repository:
+```bash
+mkdir -p ~/benchmarks/arid-corpora
+cd ~/benchmarks/arid-corpora
+
+git clone https://github.com/psf/requests.git requests
+git clone https://github.com/pydantic/pydantic.git pydantic
+git clone https://github.com/sponge-b0b/Polaris.git polaris
+```
+
+Pin each corpus to the revision documented by this benchmark suite:
+
+```bash
+git -C requests checkout 6e83187b8feb273ed4c6cdab5efd8d54901dfab3
+git -C pydantic checkout cf67d4b3193c3fe43ede18612ed62785eee11382
+git -C polaris checkout 00e208e7f5dcb3329c3d8d1ee5f13aec7fbe1031
+```
+
+The resulting layout is:
+
+```text
+~/benchmarks/arid-corpora/
+├── polaris/
+├── pydantic/
+└── requests/
+```
+
+These repositories are benchmark fixtures. Keep them pinned and clean rather than using active development working trees for published measurements.
+
+Before benchmarking, verify the pinned revisions and clean working trees:
+
+```bash
+git -C ~/benchmarks/arid-corpora/requests rev-parse HEAD
+git -C ~/benchmarks/arid-corpora/requests status --short
+
+git -C ~/benchmarks/arid-corpora/pydantic rev-parse HEAD
+git -C ~/benchmarks/arid-corpora/pydantic status --short
+
+git -C ~/benchmarks/arid-corpora/polaris rev-parse HEAD
+git -C ~/benchmarks/arid-corpora/polaris status --short
+```
+
+The expected revisions are:
+
+```text
+requests: 6e83187b8feb273ed4c6cdab5efd8d54901dfab3
+pydantic: cf67d4b3193c3fe43ede18612ed62785eee11382
+polaris:  00e208e7f5dcb3329c3d8d1ee5f13aec7fbe1031
+```
+
+Each `status --short` command should produce no output.
+
+## Reproducing a benchmark
+
+Set up the desired canonical corpus as described above, then run the benchmark from the Arid repository.
+
+Published measurements use:
 
 ```bash
 WARMUP=3 RUNS=10 \
@@ -536,7 +624,7 @@ WARMUP=3 RUNS=10 \
   <label>
 ```
 
-For example:
+For Requests:
 
 ```bash
 WARMUP=3 RUNS=10 \
@@ -545,13 +633,33 @@ WARMUP=3 RUNS=10 \
   requests-2.34.2
 ```
 
-Results are written beneath:
+For Pydantic:
+
+```bash
+WARMUP=3 RUNS=10 \
+  benchmarks/run.sh \
+  ~/benchmarks/arid-corpora/pydantic \
+  pydantic-2.13.4
+```
+
+For Polaris:
+
+```bash
+WARMUP=3 RUNS=10 \
+  benchmarks/run.sh \
+  ~/benchmarks/arid-corpora/polaris \
+  polaris-00e208e
+```
+
+The runner records the cross-tool comparisons and Arid worker scaling for worker counts `1`, `2`, `4`, and `8`.
+
+Results are generated beneath:
 
 ```text
 benchmarks/results/<label>/
 ```
 
-The result directory contains:
+Each result directory contains:
 
 ```text
 metadata.txt
@@ -562,13 +670,17 @@ jscpd-serial.json
 jscpd-serial.md
 jscpd-auto.json
 jscpd-auto.md
+arid-workers.json
+arid-workers.md
 ```
 
-The metadata and exact corpus commit MUST accompany any published performance claim.
+`metadata.txt` records the worker-count matrix in addition to the corpus, environment, tool-version, and Arid revision metadata.
+
+`benchmarks/results/` is intentionally ignored by Git. These files support local inspection and reproduction but are not committed benchmark artifacts. Published performance claims are recorded in this README and MUST identify the relevant corpus revision, Arid revision, hardware, and benchmark configuration.
 
 ## Benchmark interpretation
 
-Performance results describe the tested tool versions, corpus revisions, hardware, and benchmark configuration.
+Performance results describe the tested tool versions, corpus revisions, hardware, Arid revisions, and benchmark configuration.
 
 They MUST NOT be generalized into claims about all repositories or all duplicate-detection workloads without supporting measurements.
 
@@ -578,6 +690,8 @@ In particular:
 - The Pylint comparison is configured for the closest practical behavioral comparison, including disabling Arid's same-file detection.
 - jscpd provides a useful comparison with another high-performance duplicate detector but does not have equivalent detection semantics.
 - Arid's same-file detection remains enabled for the jscpd comparisons.
+- cross-tool Arid measurements use one worker so optional parallel preparation does not change the meaning of the existing comparisons.
+- worker-scaling measurements evaluate Arid separately using identical analysis semantics across worker counts.
 - wall-clock time and aggregate CPU consumption provide different information and SHOULD both be considered when evaluating parallel implementations.
 - small-corpus results are particularly sensitive to process startup and fixed overhead.
 - correctness remains more important than benchmark performance.
