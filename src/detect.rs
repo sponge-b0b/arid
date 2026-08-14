@@ -496,6 +496,183 @@ mod tests {
         .unwrap()
     }
 
+    /// Deliberately slow reference detector used to verify the optimized
+    /// suffix-array/LCP candidate discovery.
+    ///
+    /// The reference implementation exhaustively examines every valid
+    /// normalized-source window and groups equal token sequences directly.
+    /// It intentionally reuses the production qualification and
+    /// canonicalization rules so this test isolates candidate discovery from
+    /// the suffix-array/LCP implementation.
+    fn reference_detect(
+        corpus: &Corpus,
+        options: DetectionOptions,
+    ) -> Result<Vec<DuplicateGroup>, DetectError> {
+        if options.min_lines == 0 {
+            return Err(DetectError::InvalidMinLines);
+        }
+
+        let max_length = corpus
+            .files
+            .iter()
+            .map(|file| file.lines.len())
+            .max()
+            .unwrap_or(0);
+
+        let mut groups = Vec::new();
+
+        for length in options.min_lines as usize..=max_length {
+            let Ok(length) = u32::try_from(length) else {
+                break;
+            };
+
+            for anchor_start in 0..corpus.tokens.len() {
+                let anchor_end = anchor_start + length as usize;
+
+                if anchor_end > corpus.tokens.len() {
+                    continue;
+                }
+
+                let Ok(anchor) = candidate_occurrence(corpus, anchor_start as CorpusPos, length)
+                else {
+                    continue;
+                };
+
+                let anchor_tokens = &corpus.tokens[anchor_start..anchor_end];
+
+                // Process each distinct normalized window only once. Without
+                // this guard, later occurrences of the same window would
+                // generate incomplete occurrence subsets.
+                let seen_earlier = (0..anchor_start).any(|candidate_start| {
+                    let candidate_end = candidate_start + length as usize;
+
+                    candidate_end <= corpus.tokens.len()
+                        && &corpus.tokens[candidate_start..candidate_end] == anchor_tokens
+                        && candidate_occurrence(corpus, candidate_start as CorpusPos, length)
+                            .is_ok()
+                });
+
+                if seen_earlier {
+                    continue;
+                }
+
+                let mut occurrences = vec![anchor];
+
+                for candidate_start in anchor_start + 1..corpus.tokens.len() {
+                    let candidate_end = candidate_start + length as usize;
+
+                    if candidate_end > corpus.tokens.len()
+                        || &corpus.tokens[candidate_start..candidate_end] != anchor_tokens
+                    {
+                        continue;
+                    }
+
+                    if let Ok(candidate) =
+                        candidate_occurrence(corpus, candidate_start as CorpusPos, length)
+                    {
+                        occurrences.push(candidate);
+                    }
+                }
+
+                let occurrences = remove_same_file_overlaps(occurrences);
+
+                if occurrences.len() < 2 {
+                    continue;
+                }
+
+                if !options.same_file && !spans_multiple_files(&occurrences) {
+                    continue;
+                }
+
+                let effective_lines = effective_line_count(corpus, occurrences[0].occurrence)?;
+
+                if effective_lines < options.min_lines {
+                    continue;
+                }
+
+                if all_extend_left(corpus, &occurrences)
+                    || all_extend_right(corpus, &occurrences, length)
+                {
+                    continue;
+                }
+
+                groups.push(DuplicateGroup {
+                    effective_lines,
+                    normalized_len: length,
+                    occurrences: occurrences
+                        .into_iter()
+                        .map(|candidate| candidate.occurrence)
+                        .collect(),
+                });
+            }
+        }
+
+        Ok(canonicalize_groups(groups))
+    }
+
+    fn generated_binary_lines(value: usize, length: usize) -> Vec<(&'static str, bool)> {
+        (0..length)
+            .map(|index| {
+                if value & (1 << index) == 0 {
+                    ("alpha()", true)
+                } else {
+                    ("beta()", true)
+                }
+            })
+            .collect()
+    }
+
+    fn assert_detection_matches_reference(files: Vec<PreparedFile>, max_min_lines: u32) {
+        let corpus = build_corpus(files).unwrap();
+
+        for min_lines in 1..=max_min_lines {
+            for same_file in [true, false] {
+                let options = DetectionOptions {
+                    min_lines,
+                    same_file,
+                };
+
+                let optimized = detect_duplicates(&corpus, options).unwrap();
+                let reference = reference_detect(&corpus, options).unwrap();
+
+                assert_eq!(
+                    optimized, reference,
+                    "optimized detector diverged from reference for \
+                     min_lines={min_lines}, same_file={same_file}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn matches_brute_force_reference_for_small_generated_corpora() {
+        const LENGTH: usize = 4;
+        const VARIANTS: usize = 1 << LENGTH;
+
+        for first_value in 0..VARIANTS {
+            for second_value in 0..VARIANTS {
+                let first_lines = generated_binary_lines(first_value, LENGTH);
+                let second_lines = generated_binary_lines(second_value, LENGTH);
+
+                assert_detection_matches_reference(
+                    vec![
+                        prepared("a.py", &first_lines, &[(0, LENGTH as u32)]),
+                        prepared("b.py", &second_lines, &[(0, LENGTH as u32)]),
+                    ],
+                    LENGTH as u32,
+                );
+
+                assert_detection_matches_reference(
+                    vec![
+                        prepared("a.py", &first_lines, &[(0, 2), (2, LENGTH as u32)]),
+                        prepared("b.py", &second_lines, &[(0, LENGTH as u32)]),
+                    ],
+                    LENGTH as u32,
+                );
+            }
+        }
+    }
+
     #[test]
     fn detects_cross_file_duplicate_block() {
         let first_lines = effective_lines(&["alpha()", "beta()", "gamma()", "delta()", "only_a()"]);
