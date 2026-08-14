@@ -70,6 +70,11 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
       - name: Build wheel
         uses: PyO3/maturin-action@v1
         with:
@@ -96,6 +101,60 @@ jobs:
           Compress-Archive `
             -Path "target/${{ matrix.target }}/release/${{ matrix.binary }}" `
             -DestinationPath "${{ matrix.archive }}"
+
+      - name: Smoke test standalone archive
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          mkdir standalone-smoke
+          tar -xzf "${{ matrix.archive }}" -C standalone-smoke
+
+          ./standalone-smoke/${{ matrix.binary }} --version
+          ./standalone-smoke/${{ matrix.binary }} --help >/dev/null
+
+      - name: Smoke test standalone archive
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Expand-Archive `
+            -Path "${{ matrix.archive }}" `
+            -DestinationPath "standalone-smoke"
+
+          & ".\standalone-smoke\${{ matrix.binary }}" --version
+          & ".\standalone-smoke\${{ matrix.binary }}" --help | Out-Null
+
+      - name: Smoke test wheel
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          python -m venv wheel-smoke
+
+          wheel="$(find dist -maxdepth 1 -type f -name '*.whl' -print -quit)"
+
+          if [ -z "$wheel" ]; then
+            echo "no wheel found in dist"
+            exit 1
+          fi
+
+          wheel-smoke/bin/python -m pip install "$wheel"
+          wheel-smoke/bin/arid --version
+          wheel-smoke/bin/arid --help >/dev/null
+
+      - name: Smoke test wheel
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          python -m venv wheel-smoke
+
+          $wheel = Get-ChildItem -Path "dist" -Filter "*.whl" | Select-Object -First 1
+
+          if (-not $wheel) {
+            throw "no wheel found in dist"
+          }
+
+          & ".\wheel-smoke\Scripts\python.exe" -m pip install $wheel.FullName
+          & ".\wheel-smoke\Scripts\arid.exe" --version
+          & ".\wheel-smoke\Scripts\arid.exe" --help | Out-Null
 
       - name: Store wheel
         uses: actions/upload-artifact@v7
