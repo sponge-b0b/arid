@@ -155,9 +155,17 @@ jobs:
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
+        shell: bash
         run: |
+          prerelease=()
+
+          if [[ "${GITHUB_REF_NAME}" == *-* ]]; then
+            prerelease+=(--prerelease)
+          fi
+
           gh release create \
             "${GITHUB_REF_NAME}" \
             release/* \
             --verify-tag \
-            --generate-notes
+            --generate-notes \
+            "${prerelease[@]}"
