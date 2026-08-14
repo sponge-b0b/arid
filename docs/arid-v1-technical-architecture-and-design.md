@@ -2188,11 +2188,11 @@ Add:
 ignore walker  
 .py / .pyi filtering  
 pyproject.toml  
-CLI override merging
+higher-precedence settings override merging
 
 ---
 
-## **Phase 9 — Reporting and exit codes**
+## **Phase 9 — Reporting and outcome model**
 
 Add:
 
@@ -2200,12 +2200,37 @@ DUP001 human reporter
 versioned JSON schema  
 structural context/scope aggregation  
 occurrence/file distribution metadata  
-\--show-source  
-exit 0 / 1 / 2
+source display support  
+success / findings / error outcome model
+
+Exit criterion:
+
+> Detection results can be converted into deterministic human or JSON reports with a stable outcome independent of the CLI.
 
 ---
 
-## **Phase 10 — Parallel preparation**
+## **Phase 10 — CLI and end-to-end execution**
+
+Add:
+
+complete `clap` argument parsing  
+positive and negative boolean overrides  
+CLI `exclude` replacement semantics  
+default current-directory scan  
+configuration override wiring  
+end-to-end pipeline orchestration  
+human / JSON output selection  
+`--show-source` wiring  
+`--help` and `--version`  
+process exit 0 / 1 / 2
+
+Exit criterion:
+
+> `arid` can execute a complete scan from command-line arguments through deterministic reporting and return the required process exit status.
+
+---
+
+## **Phase 11 — Parallel preparation**
 
 Replace sequential per-file preparation with Rayon.
 
@@ -2213,7 +2238,7 @@ Verify deterministic output before and after.
 
 ---
 
-## **Phase 11 — Packaging**
+## **Phase 12 — Packaging**
 
 Add:
 
@@ -2224,7 +2249,7 @@ GitHub release binaries
 
 ---
 
-## **Phase 12 — Benchmarks**
+## **Phase 13 — Benchmarks**
 
 Benchmark:
 
