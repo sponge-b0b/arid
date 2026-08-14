@@ -45,8 +45,17 @@ pub(crate) fn analyze(
     source: &str,
     options: NormalizationOptions,
 ) -> Result<PythonAnalysis, PythonError> {
-    let parsed = parse_module(source).map_err(|error| PythonError {
-        message: error.to_string(),
+    let parsed = parse_module(source).map_err(|error| {
+        let offset = error.location.start().to_usize();
+        let prefix = &source[..offset];
+
+        let line = prefix.bytes().filter(|&byte| byte == b'\n').count() + 1;
+        let line_start = prefix.rfind('\n').map_or(0, |index| index + 1);
+        let column = prefix[line_start..].chars().count() + 1;
+
+        PythonError {
+            message: format!("{} at line {line}, column {column}", error.error),
+        }
     })?;
 
     let tokens = parsed.tokens();

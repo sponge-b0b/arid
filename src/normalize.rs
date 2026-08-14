@@ -665,12 +665,15 @@ fourth()
     fn rejects_invalid_python() {
         let error = prepare_file(
             "broken.py",
-            "def broken(:\n".to_owned(),
+            "value = 1\n)\n".to_owned(),
             NormalizationOptions::default(),
         )
         .unwrap_err();
 
-        assert!(error.to_string().contains("broken.py"));
-        assert!(error.to_string().contains("invalid Python syntax"));
+        let message = error.to_string();
+
+        assert!(message.contains("broken.py"));
+        assert!(message.contains("invalid Python syntax"));
+        assert!(message.contains("line 2, column 1"));
     }
 }
