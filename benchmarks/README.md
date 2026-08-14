@@ -484,9 +484,7 @@ The small Requests corpus demonstrates that the advantage is not limited to larg
 
 ## Parallelism decision
 
-The finalized v1 benchmarks do not demonstrate a need for parallel execution in Arid.
-
-Current serial Arid:
+The finalized cross-tool benchmarks did not justify making parallel execution the default. Serial Arid already:
 
 - exceeds the Pylint performance target by a large margin at every tested scale
 - outperforms serial jscpd at every tested scale
@@ -494,19 +492,26 @@ Current serial Arid:
 - remains effectively tied with auto-parallel jscpd on the large corpus
 - uses substantially less aggregate CPU than auto-parallel jscpd on Polaris
 
-The scaling trend is visible in the jscpd comparison:
+Arid therefore defaults to one worker and provides optional parallel per-file preparation through `--workers <N>`.
 
-```text
-                     Requests    Pydantic    Polaris
-Serial jscpd         4.97x       2.13x       1.68x
-Auto jscpd           4.57x       1.13x       -1.02x
-```
+A follow-up worker-scaling benchmark used the same pinned Polaris corpus with 3 warmup runs and 10 measured runs:
 
-Positive values indicate an Arid advantage. The final Polaris value indicates jscpd was approximately 1.02x faster.
+| Workers | Mean time | User CPU | System CPU | Speedup vs 1 worker |
+| ---: | ---: | ---: | ---: | ---: |
+| 1 | 469.4 ms ± 9.8 ms | 452.8 ms | 25.5 ms | 1.00x |
+| 2 | 336.0 ms ± 4.5 ms | 465.5 ms | 23.5 ms | 1.40x |
+| 4 | 270.0 ms ± 3.8 ms | 475.9 ms | 22.3 ms | 1.74x |
+| 8 | 269.6 ms ± 4.4 ms | 507.7 ms | 85.7 ms | 1.74x |
 
-Parallelism therefore remains an evidence-driven optimization rather than a v1 implementation requirement.
+On this corpus and benchmark host:
 
-Arid SHOULD introduce parallel execution only when benchmarks demonstrate a meaningful real-world benefit that justifies the additional implementation and determinism complexity.
+- two workers reduced wall-clock time by approximately 28%
+- four workers reduced wall-clock time by approximately 42%
+- eight workers provided no meaningful wall-clock improvement over four while consuming more aggregate CPU
+
+Four workers therefore provided the best measured latency/CPU tradeoff for Polaris on the tested hardware. This is not a universal worker-count recommendation; the useful level of parallelism depends on repository shape and hardware.
+
+Serial execution remains the default because it is already fast, minimizes CPU consumption, and satisfies Arid's v1 performance target. `--workers` is an opt-in latency optimization rather than an analysis setting or a reason to parallelize the global detection pipeline.
 
 ## Reproducing a benchmark
 
