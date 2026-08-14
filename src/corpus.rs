@@ -333,6 +333,20 @@ mod tests {
     }
 
     #[test]
+    fn structural_metadata_does_not_affect_line_interning() {
+        let first = prepared("a.py", &["same()"], &[(0, 1)]);
+
+        let mut second = prepared("b.py", &["same()"], &[(0, 1)]);
+        second.lines[0].context = StructuralContext::Declarative;
+        second.lines[0].scope = StructuralScope::Class;
+
+        let corpus = build_corpus(vec![first, second]).unwrap();
+
+        assert_eq!(corpus.line_id_count, 1);
+        assert_eq!(corpus.tokens, vec![0, 1, 0, 2]);
+    }
+
+    #[test]
     fn assigns_unique_sentinels_to_each_segment() {
         let corpus = build_corpus(vec![prepared(
             "a.py",
