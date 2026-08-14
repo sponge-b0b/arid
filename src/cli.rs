@@ -66,6 +66,15 @@ pub struct Cli {
     #[arg(long, value_name = "PATTERN")]
     pub exclude: Vec<String>,
 
+    /// Number of workers used for file preparation.
+    #[arg(
+        long,
+        value_name = "N",
+        default_value_t = 1,
+        value_parser = parse_worker_count,
+    )]
+    pub workers: usize,
+
     /// Emit JSON instead of human-readable output.
     #[arg(long)]
     pub json: bool,
@@ -73,6 +82,18 @@ pub struct Cli {
     /// Include source text in reported duplicate locations.
     #[arg(long)]
     pub show_source: bool,
+}
+
+fn parse_worker_count(value: &str) -> Result<usize, String> {
+    let workers = value
+        .parse::<usize>()
+        .map_err(|_| "worker count must be a positive integer".to_owned())?;
+
+    if workers == 0 {
+        return Err("worker count must be at least 1".to_owned());
+    }
+
+    Ok(workers)
 }
 
 #[cfg(test)]
@@ -98,7 +119,9 @@ mod tests {
         assert!(!cli.no_same_file);
         assert!(!cli.hidden);
         assert!(!cli.no_hidden);
+
         assert!(cli.exclude.is_empty());
+        assert_eq!(cli.workers, 1);
         assert!(!cli.json);
         assert!(!cli.show_source);
     }
@@ -109,6 +132,8 @@ mod tests {
             "arid",
             "--min-lines",
             "6",
+            "--workers",
+            "4",
             "--json",
             "--show-source",
             "src",
@@ -118,10 +143,11 @@ mod tests {
 
         assert_eq!(
             cli.paths,
-            vec![PathBuf::from("src"), PathBuf::from("tests/example.py"),]
+            vec![PathBuf::from("src"), PathBuf::from("tests/example.py")]
         );
 
         assert_eq!(cli.min_lines, Some(6));
+        assert_eq!(cli.workers, 4);
         assert!(cli.json);
         assert!(cli.show_source);
     }
@@ -135,6 +161,7 @@ mod tests {
             "--ignore-imports",
             "--no-ignore-signatures",
             "--no-same-file",
+            "--hidden",
             "--exclude",
             "generated/**",
             "--exclude",
@@ -144,18 +171,16 @@ mod tests {
 
         assert!(cli.ignore_comments);
         assert!(!cli.no_ignore_comments);
-
         assert!(!cli.ignore_docstrings);
         assert!(cli.no_ignore_docstrings);
-
         assert!(cli.ignore_imports);
         assert!(!cli.no_ignore_imports);
-
         assert!(!cli.ignore_signatures);
         assert!(cli.no_ignore_signatures);
-
         assert!(!cli.same_file);
         assert!(cli.no_same_file);
+        assert!(cli.hidden);
+        assert!(!cli.no_hidden);
 
         assert_eq!(cli.exclude, vec!["generated/**", "vendor/**"]);
     }
@@ -177,6 +202,13 @@ mod tests {
     #[test]
     fn rejects_conflicting_hidden_overrides() {
         let result = Cli::try_parse_from(["arid", "--hidden", "--no-hidden"]);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn rejects_zero_workers() {
+        let result = Cli::try_parse_from(["arid", "--workers", "0"]);
 
         assert!(result.is_err());
     }

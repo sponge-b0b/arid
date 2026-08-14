@@ -1,6 +1,8 @@
 use std::fs;
 use std::path::PathBuf;
 
+use rayon::prelude::*;
+
 pub mod cli;
 pub mod config;
 pub mod corpus;
@@ -20,6 +22,7 @@ use config::{SettingsOverrides, load_settings};
 use corpus::build_corpus;
 use detect::detect_duplicates;
 use files::discover_python_files;
+use model::{NormalizationOptions, PreparedFile};
 use normalize::prepare_file;
 use outcome::ExitStatus;
 use report::{ReportOptions, build_report, render_human, render_json};
@@ -44,19 +47,11 @@ pub fn run(cli: &Cli) -> Result<RunResult, String> {
     let discovered = discover_python_files(&paths, &loaded.settings, &loaded.project_root)
         .map_err(|error| format!("failed to discover Python files: {error}"))?;
 
-    let normalization_options = loaded.settings.normalization_options();
-
-    let mut prepared = Vec::with_capacity(discovered.len());
-
-    for path in discovered {
-        let source = fs::read_to_string(&path)
-            .map_err(|error| format!("failed to read {}: {error}", path.display()))?;
-
-        let file = prepare_file(path, source, normalization_options)
-            .map_err(|error| format!("failed to prepare Python source: {error}"))?;
-
-        prepared.push(file);
-    }
+    let prepared = prepare_files(
+        discovered,
+        loaded.settings.normalization_options(),
+        cli.workers,
+    )?;
 
     let corpus = build_corpus(prepared)
         .map_err(|error| format!("failed to build source corpus: {error}"))?;
@@ -84,6 +79,47 @@ pub fn run(cli: &Cli) -> Result<RunResult, String> {
         exit_status: report.exit_status(),
         output,
     })
+}
+
+fn prepare_files(
+    paths: Vec<PathBuf>,
+    options: NormalizationOptions,
+    workers: usize,
+) -> Result<Vec<PreparedFile>, String> {
+    if workers == 0 {
+        return Err("worker count must be at least 1".to_owned());
+    }
+
+    if workers == 1 || paths.len() < 2 {
+        return paths
+            .into_iter()
+            .map(|path| prepare_path(path, options))
+            .collect();
+    }
+
+    let worker_count = workers.min(paths.len());
+
+    let pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(worker_count)
+        .build()
+        .map_err(|error| format!("failed to create worker pool: {error}"))?;
+
+    let results = pool.install(|| {
+        paths
+            .into_par_iter()
+            .map(|path| prepare_path(path, options))
+            .collect::<Vec<_>>()
+    });
+
+    results.into_iter().collect()
+}
+
+fn prepare_path(path: PathBuf, options: NormalizationOptions) -> Result<PreparedFile, String> {
+    let source = fs::read_to_string(&path)
+        .map_err(|error| format!("failed to read {}: {error}", path.display()))?;
+
+    prepare_file(path, source, options)
+        .map_err(|error| format!("failed to prepare Python source: {error}"))
 }
 
 fn scan_paths(cli: &Cli) -> Vec<PathBuf> {
@@ -193,6 +229,7 @@ min-lines = 2
             hidden: false,
             no_hidden: false,
             exclude: Vec::new(),
+            workers: 1,
             json: false,
             show_source: false,
         }
@@ -282,6 +319,53 @@ min-lines = 2
         assert_eq!(value["duplicate_groups"], 1);
 
         assert_eq!(value["findings"][0]["code"], "DUP001");
+    }
+
+    #[test]
+    fn worker_counts_produce_identical_json() {
+        let temp = TempDir::new();
+        write_test_config(&temp);
+
+        for index in 0..8 {
+            let path = format!("file_{index}.py");
+
+            temp.write(&path, "alpha = 1\nbeta = 2\n");
+        }
+
+        let mut serial = test_cli(vec![temp.path().to_path_buf()]);
+
+        serial.json = true;
+
+        let expected = run(&serial).unwrap();
+
+        for workers in [2, 4, 8] {
+            let mut parallel = test_cli(vec![temp.path().to_path_buf()]);
+
+            parallel.json = true;
+            parallel.workers = workers;
+
+            let actual = run(&parallel).unwrap();
+
+            assert_eq!(actual.exit_status, expected.exit_status);
+
+            assert_eq!(actual.output, expected.output);
+        }
+    }
+
+    #[test]
+    fn run_rejects_zero_workers() {
+        let temp = TempDir::new();
+        write_test_config(&temp);
+
+        temp.write("example.py", "alpha = 1\nbeta = 2\n");
+
+        let mut cli = test_cli(vec![temp.path().to_path_buf()]);
+
+        cli.workers = 0;
+
+        let error = run(&cli).unwrap_err();
+
+        assert_eq!(error, "worker count must be at least 1");
     }
 
     #[test]
