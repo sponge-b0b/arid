@@ -32,7 +32,7 @@ pub struct RunResult {
 
 /// Runs one complete Arid scan.
 ///
-/// This is the application-level pipeline:
+/// Application pipeline:
 ///
 /// discover → read → normalize → corpus → detect → report
 pub fn run(cli: &Cli) -> Result<RunResult, String> {
@@ -112,7 +112,9 @@ fn boolean_override(enabled: bool, disabled: bool) -> Option<bool> {
         (true, false) => Some(true),
         (false, true) => Some(false),
         (false, false) => None,
-        (true, true) => unreachable!("conflicting CLI flags must be rejected by clap"),
+        (true, true) => {
+            unreachable!("conflicting CLI flags must be rejected by clap")
+        }
     }
 }
 
@@ -134,7 +136,7 @@ mod tests {
             let id = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
 
             let path =
-                std::env::temp_dir().join(format!("arid-mvp-test-{}-{id}", std::process::id()));
+                std::env::temp_dir().join(format!("arid-run-test-{}-{id}", std::process::id()));
 
             fs::create_dir_all(&path).unwrap();
 
@@ -225,6 +227,7 @@ min-lines = 2
         temp.write("b.py", "alpha = 1\nbeta = 2\n");
 
         let mut cli = test_cli(vec![temp.path().to_path_buf()]);
+
         cli.min_lines = Some(3);
 
         let result = run(&cli).unwrap();
@@ -266,6 +269,7 @@ min-lines = 2
         temp.write("b.py", "alpha = 1\nbeta = 2\n");
 
         let mut cli = test_cli(vec![temp.path().to_path_buf()]);
+
         cli.json = true;
 
         let result = run(&cli).unwrap();
@@ -276,6 +280,7 @@ min-lines = 2
 
         assert_eq!(value["version"], 3);
         assert_eq!(value["duplicate_groups"], 1);
+
         assert_eq!(value["findings"][0]["code"], "DUP001");
     }
 
@@ -299,7 +304,7 @@ min-lines = 2
         assert_eq!(overrides.same_file, Some(false));
         assert_eq!(overrides.hidden, Some(true));
     }
-    
+
     #[test]
     fn absent_cli_flags_do_not_override_project_settings() {
         let cli = test_cli(Vec::new());
@@ -308,13 +313,14 @@ min-lines = 2
     }
 
     #[test]
-    fn cli_excludes_produce_settings_override() {
+    fn cli_excludes_replace_project_excludes() {
         let mut cli = test_cli(Vec::new());
+
         cli.exclude = vec!["generated/**".to_owned(), "vendor/**".to_owned()];
 
         assert_eq!(
             settings_overrides(&cli).exclude,
-            Some(vec!["generated/**".to_owned(), "vendor/**".to_owned()])
+            Some(vec!["generated/**".to_owned(), "vendor/**".to_owned(),])
         );
     }
 }
