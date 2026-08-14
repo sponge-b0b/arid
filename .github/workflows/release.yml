@@ -1,90 +1,163 @@
 name: Release
 
 on:
+  workflow_dispatch:
   push:
     tags:
       - "v*"
 
-jobs:
-  build:
-    name: Build distributions
-    strategy:
-      matrix:
-        include:
-          - os: ubuntu-latest
-            artifact: linux
-          - os: macos-latest
-            artifact: macos
-          - os: windows-latest
-            artifact: windows
+permissions:
+  contents: read
 
-    runs-on: ${{ matrix.os }}
+jobs:
+  verify:
+    name: Verify release
+    runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Verify tag matches package version
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          version="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)"
+
+          if [ "v${version}" != "${GITHUB_REF_NAME}" ]; then
+            echo "release tag ${GITHUB_REF_NAME} does not match Cargo version ${version}"
+            exit 1
+          fi
+
+  build:
+    name: Build ${{ matrix.name }}
+    needs: verify
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x86_64
+            os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            binary: arid
+            archive: arid-linux-x86_64.tar.gz
+
+          - name: macos-aarch64
+            os: macos-latest
+            target: aarch64-apple-darwin
+            binary: arid
+            archive: arid-macos-aarch64.tar.gz
+
+          - name: macos-x86_64
+            os: macos-15-intel
+            target: x86_64-apple-darwin
+            binary: arid
+            archive: arid-macos-x86_64.tar.gz
+
+          - name: windows-x86_64
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+            binary: arid.exe
+            archive: arid-windows-x86_64.zip
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Build wheel
         uses: PyO3/maturin-action@v1
         with:
           command: build
-          args: --release --locked --out dist
-          manylinux: auto
+          target: ${{ matrix.target }}
+          args: --release --locked --compatibility pypi --out dist
 
-      - name: Upload wheel
-        uses: actions/upload-artifact@v4
+      - name: Build standalone binary
+        run: cargo build --release --locked --target ${{ matrix.target }}
+
+      - name: Package standalone binary
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          tar \
+            -C "target/${{ matrix.target }}/release" \
+            -czf "${{ matrix.archive }}" \
+            "${{ matrix.binary }}"
+
+      - name: Package standalone binary
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Compress-Archive `
+            -Path "target/${{ matrix.target }}/release/${{ matrix.binary }}" `
+            -DestinationPath "${{ matrix.archive }}"
+
+      - name: Store wheel
+        uses: actions/upload-artifact@v7
         with:
-          name: wheels-${{ matrix.artifact }}
+          name: wheel-${{ matrix.name }}
           path: dist/*.whl
           if-no-files-found: error
 
-  sdist:
-    name: Build source distribution
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Build sdist
-        uses: PyO3/maturin-action@v1
+      - name: Store standalone binary
+        uses: actions/upload-artifact@v7
         with:
-          command: sdist
-          args: --out dist
-
-      - name: Upload sdist
-        uses: actions/upload-artifact@v4
-        with:
-          name: sdist
-          path: dist/*.tar.gz
+          name: binary-${{ matrix.name }}
+          path: ${{ matrix.archive }}
           if-no-files-found: error
 
-  publish:
+  publish-pypi:
     name: Publish to PyPI
-    needs:
-      - build
-      - sdist
-
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
     runs-on: ubuntu-latest
 
     environment:
       name: pypi
-      url: https://pypi.org/project/arid/
+      url: https://pypi.org/p/arid
 
     permissions:
       id-token: write
 
     steps:
-      - name: Download distributions
-        uses: actions/download-artifact@v4
+      - name: Download wheels
+        uses: actions/download-artifact@v6
         with:
-          pattern: wheels-*
+          pattern: wheel-*
           path: dist
           merge-multiple: true
 
-      - name: Download source distribution
-        uses: actions/download-artifact@v4
-        with:
-          name: sdist
-          path: dist
-
-      - name: Publish distributions to PyPI
+      - name: Publish wheels
         uses: pypa/gh-action-pypi-publish@release/v1
+
+  publish-github:
+    name: Publish GitHub release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download standalone binaries
+        uses: actions/download-artifact@v6
+        with:
+          pattern: binary-*
+          path: release
+          merge-multiple: true
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create \
+            "${GITHUB_REF_NAME}" \
+            release/* \
+            --verify-tag \
+            --generate-notes

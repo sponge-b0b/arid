@@ -26,6 +26,10 @@ classifiers = [
     "Topic :: Software Development :: Quality Assurance",
 ]
 
+[project.urls]
+Repository = "https://github.com/sponge-b0b/arid"
+Issues = "https://github.com/sponge-b0b/arid/issues"
+
 [tool.maturin]
 bindings = "bin"
 manifest-path = "Cargo.toml"

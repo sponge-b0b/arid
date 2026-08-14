@@ -5,6 +5,7 @@ edition = "2024"
 description = "Fast Python duplicate-code checker written in Rust. A focused replacement for Pylint R0801 that complements Ruff."
 license = "MIT OR Apache-2.0"
 readme = "README.md"
+repository = "https://github.com/sponge-b0b/arid"
 keywords = [
     "code-duplication",
     "duplicate-code",
