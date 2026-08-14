@@ -150,6 +150,7 @@ impl SyntaxCollector<'_, '_> {
 
     fn collect_signature(&mut self, function: &StmtFunctionDef) {
         let mut nesting = 0_u32;
+        let mut signature_start = None;
 
         for token in self.tokens.after(function.start()) {
             if token.start() >= function.end() {
@@ -157,17 +158,31 @@ impl SyntaxCollector<'_, '_> {
             }
 
             match token.kind() {
+                TokenKind::Async if nesting == 0 && signature_start.is_none() => {
+                    signature_start = Some(token.start());
+                }
+
+                TokenKind::Def if nesting == 0 => {
+                    signature_start.get_or_insert(token.start());
+                }
+
                 TokenKind::Lpar | TokenKind::Lsqb | TokenKind::Lbrace => {
                     nesting += 1;
                 }
+
                 TokenKind::Rpar | TokenKind::Rsqb | TokenKind::Rbrace => {
                     nesting = nesting.saturating_sub(1);
                 }
+
                 TokenKind::Colon if nesting == 0 => {
-                    self.masks
-                        .push(function.start().to_usize()..token.end().to_usize());
+                    let Some(start) = signature_start else {
+                        continue;
+                    };
+
+                    self.masks.push(start.to_usize()..token.end().to_usize());
                     return;
                 }
+
                 _ => {}
             }
         }

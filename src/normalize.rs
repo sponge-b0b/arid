@@ -454,6 +454,33 @@ def compact(): return calculate(1, 2)
     }
 
     #[test]
+    fn preserves_decorators_while_ignoring_async_and_nested_signatures() {
+        let file = prepare(
+            r#"
+@outer_decorator
+async def outer(
+    value: dict[str, tuple[int, int]],
+) -> list[int]:
+    @inner_decorator
+    def inner(item: int) -> int:
+        return item
+
+    return [inner(value["item"][0])]
+"#,
+        );
+
+        assert_eq!(
+            texts(&file),
+            vec![
+                "@outer_decorator",
+                "@inner_decorator",
+                "return item",
+                "return [inner(value[\"item\"][0])]",
+            ]
+        );
+    }
+
+    #[test]
     fn removes_import_without_leaving_a_semicolon() {
         let file = prepare("import os; run()\nrun(); import os\n");
 
