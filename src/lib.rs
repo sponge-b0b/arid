@@ -322,6 +322,26 @@ min-lines = 2
     }
 
     #[test]
+    fn parse_failure_aborts_entire_scan() {
+        let temp = TempDir::new();
+        write_test_config(&temp);
+
+        temp.write("a.py", "alpha = 1\nbeta = 2\n");
+        temp.write("b.py", "alpha = 1\nbeta = 2\n");
+        temp.write("broken.py", "def broken(:\n");
+
+        for workers in [1, 4] {
+            let mut cli = test_cli(vec![temp.path().to_path_buf()]);
+            cli.workers = workers;
+
+            let error = run(&cli).unwrap_err();
+
+            assert!(error.contains("broken.py"));
+            assert!(error.contains("invalid Python syntax"));
+        }
+    }
+
+    #[test]
     fn worker_counts_produce_identical_json() {
         let temp = TempDir::new();
         write_test_config(&temp);
