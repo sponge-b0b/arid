@@ -56,3 +56,6 @@ graphify-out/
 
 # Generated benchmark results
 /benchmarks/results/
+
+# Generated validation results
+/validation/results/
