@@ -713,6 +713,34 @@ mod tests {
     }
 
     #[test]
+    fn does_not_match_similar_blocks_with_renamed_identifiers() {
+        let first = effective_lines(&[
+            "total = calculate(value)",
+            "result = total + offset",
+            "emit(result)",
+            "return result",
+        ]);
+
+        let second = effective_lines(&[
+            "sum = calculate(item)",
+            "output = sum + offset",
+            "emit(output)",
+            "return output",
+        ]);
+
+        let groups = detect(
+            vec![
+                prepared("a.py", &first, &[(0, 4)]),
+                prepared("b.py", &second, &[(0, 4)]),
+            ],
+            4,
+            true,
+        );
+
+        assert!(groups.is_empty());
+    }
+
+    #[test]
     fn groups_three_occurrences_together() {
         let common = ["alpha()", "beta()", "gamma()", "delta()"];
 
