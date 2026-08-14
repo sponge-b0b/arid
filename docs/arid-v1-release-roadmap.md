@@ -2,7 +2,7 @@
 
 **Product:** Arid  
 **Stable v1 target:** `1.0.0`  
-**Current phase:** Alpha stabilization
+**Current phase:** Beta
 
 ## Purpose
 
@@ -154,9 +154,9 @@ Before publishing the code-complete alpha:
 4. Run Arid-only regression benchmarks against the established benchmark corpora.
 
    ```bash
-   ./benchmarks/run.sh <corpus-path> <label> \
-     --tools arid \
-     --no-worker-scaling
+    benchmarks/run.sh <global-root> \
+        --tools arid \
+        --no-worker-scaling
    ```
 
    Compare current Arid performance with the most recent established baseline and investigate any substantial unexplained regression.

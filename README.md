@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="#project-status"><img alt="Status: WIP" src="https://img.shields.io/badge/status-WIP%20%2F%20under%20active%20development-orange"></a>
+  <a href="#project-status"><img alt="Status: Beta" src="https://img.shields.io/badge/status-beta-blue"></a>
   <a href="#what-is-arid"><img alt="Scope: Python-only" src="https://img.shields.io/badge/scope-Python--only-3776AB"></a>
   <a href="#what-is-arid"><img alt="Purpose: Duplicate-code detection" src="https://img.shields.io/badge/purpose-duplicate--code%20detection-D79A3B"></a>
   <a href="#configuration"><img alt="Config: tool.arid" src="https://img.shields.io/badge/config-tool.arid-4B5563"></a>
@@ -34,9 +34,9 @@
 ## Project status
 
 > [!IMPORTANT]
-> **Arid is a work in progress.** The project is under active development and is not yet production-ready. Interfaces, behavior, defaults, and packaging details may change as the implementation matures.
+> **Arid is currently in beta.** The intended v1 feature set is frozen and the core CLI, configuration, output, and duplicate-detection semantics are considered substantially complete. Arid remains prerelease software until `1.0.0`.
 
-Arid is currently being built as a **small, focused CLI** for one job:
+Arid is a **small, focused CLI** for one job:
 
 > Detect duplicated Python source code quickly and accurately.
 
@@ -92,7 +92,7 @@ Arid is **not** intended to replace jscpd for multi-language repositories.
 
 ## Goals
 
-Arid v1 is being designed to:
+Arid v1 is designed to:
 
 - detect duplicated Python source blocks across files
 - detect duplicated blocks within the same file
@@ -669,8 +669,8 @@ Duplicate detection operates on Arid's normalized source representation. Structu
 
 ## Installation
 
-> [!WARNING]
-> Arid is currently in early alpha. The CLI, configuration, and output format may change before 1.0.
+> [!NOTE]
+> Arid is currently in beta. The v1 feature set and core interfaces are frozen while prerelease validation and bug fixing continue toward `1.0.0`.
 
 ### uv
 
@@ -738,4 +738,4 @@ Arid includes dedicated tooling and documentation for performance benchmarking a
 
 ## Contributing
 
-Arid is in early development. Contribution guidelines will be added once the initial architecture and v1 behavior are established.
+Arid is currently in beta. Until `1.0.0`, contributions should focus on correctness, compatibility, portability, packaging, performance regressions, documentation, and release-process fixes rather than expanding the frozen v1 feature set.
