@@ -160,10 +160,10 @@ Classification is syntax-based and framework-agnostic. It MUST NOT alter matchin
 | LCP construction | Kasai algorithm |
 | Duplicate grouping | LCP intervals / maximal repeats |
 | Same-file clones | enabled, overlapping occurrences filtered |
-| Parallelism | file read/parse/normalize only initially |
+| Parallelism | serial by default; optional per-file preparation via `--workers` |
 | File discovery | `ignore` crate |
 | CLI | `clap` |
-| Configuration | `pyproject.toml` via Serde \+ `toml` |
+| Configuration | `pyproject.toml` via Serde \+ `toml`; worker count is CLI-only |
 | JSON | Serde \+ `serde_json`, versioned schema |
 | Runtime errors | typed errors with `thiserror` |
 | Python runtime | none |
@@ -248,7 +248,10 @@ No parser AST or token type may cross into normalization, detection, metrics, or
                    └─────────┬─────────┘
                              │
              ┌───────────────▼───────────────┐
-             │ Parallel per-file preparation │
+             │ Per-file preparation          │
+             │                               │
+             │ serial by default             │
+             │ optional parallel workers     │
              │                               │
              │ read / parse / tokenize       │
              │ suppression scan              │
@@ -433,7 +436,7 @@ User-visible line numbering MUST be one-based.
 
 Each source file is processed independently.
 
-This is the primary parallel work unit.
+This is the natural unit of optional parallel work, but v1 executes preparation serially by default.
 
 Path  
  ↓  
@@ -462,6 +465,8 @@ Arid MUST NOT independently reparse source for:
 All required syntax information should come from one parser/lexer pass.
 
 Parser-specific types are converted to Arid-owned masks and structural regions before normalization.
+
+When optional parallel preparation is enabled, each file still follows this same preparation path independently.
 
 ---
 
@@ -1346,7 +1351,7 @@ That crate provides directory walking with Git-ignore-aware filtering and also o
 
 V1 SHOULD use discovery sequentially because discovery itself is unlikely to dominate runtime.
 
-The expensive per-file preparation stage is parallelized separately.
+Optional parallel execution applies to independent file preparation after discovery, not to discovery itself.
 
 ---
 
@@ -1450,7 +1455,35 @@ is appropriate here.
 
 # **37\. Parallelism**
 
-V1 parallelism SHOULD be intentionally narrow.
+V1 defaults to serial execution.
+
+Benchmarking demonstrated that the serial implementation already provides excellent performance, so Arid does not consume additional CPU concurrency unless the user explicitly requests it.
+
+Optional parallelism is controlled by the CLI:
+
+`--workers <N>`
+
+The worker count MUST be at least `1`.
+
+Behavior is:
+
+`--workers 1`  
+    serial preparation
+
+`--workers N`, where `N > 1`  
+    parallel per-file preparation using at most `N` workers
+
+Omitting `--workers` is equivalent to:
+
+`--workers 1`
+
+Worker count is an execution-performance setting, not an analysis setting. It therefore remains CLI-only in v1 and MUST NOT be added to `[tool.arid]`.
+
+This decision is recorded in ADR-0006.
+
+---
+
+## **37.1 Optional parallel preparation**
 
 The following work is independent per file:
 
@@ -1460,35 +1493,47 @@ lex
 collect masks  
 normalize
 
-That stage SHOULD use Rayon.
+When `workers > 1`, this stage SHOULD use a bounded Rayon thread pool.
 
-Rayon provides data-parallel iterators and dynamically divides work among worker threads.
+When `workers == 1`, Arid SHOULD use the existing serial path rather than creating a one-thread Rayon pool.
 
----
-
-## **37.1 Deterministic reduction**
-
-Parallel preparation produces:
-
-Vec\<Result\<PreparedFile\>\>
-
-The completed results are then sorted by path before any global indexing occurs.
-
-Therefore worker completion order cannot affect output.
+Parallelism MUST NOT change the preparation semantics of an individual file.
 
 ---
 
-## **37.2 Global detection**
+## **37.2 Deterministic reduction**
 
-Suffix-array construction SHOULD initially remain single-process and deterministic.
+Serial and parallel preparation MUST converge on the same deterministic input to the global pipeline.
 
-It MAY internally parallelize later only if benchmarks demonstrate that it is worthwhile.
+Prepared results MUST be sorted by path before any global indexing occurs.
 
-Do not introduce parallel suffix-array complexity before measurement proves it necessary.
+Therefore worker completion order cannot affect:
+
+* line interning
+* corpus construction
+* findings
+* grouping
+* canonical occurrence selection
+* metrics
+* structural reporting metadata
+* JSON ordering
+* human-readable output ordering
+
+Worker count may affect runtime only.
 
 ---
 
-## **37.3 No async runtime**
+## **37.3 Global detection**
+
+Corpus construction, suffix-array construction, LCP construction, duplicate extraction, metrics, and reporting SHOULD remain serial and deterministic in v1.
+
+These stages MAY be parallelized later only if benchmarks demonstrate a meaningful benefit and deterministic behavior is preserved.
+
+Do not introduce global parallelism before measurement proves it necessary.
+
+---
+
+## **37.4 No async runtime**
 
 Arid has no network operations and primarily performs:
 
@@ -1854,16 +1899,20 @@ This prevents accidental compatibility drift.
 
 # **50\. Determinism Testing**
 
-Tests MUST execute detection under differing Rayon thread counts.
+Tests MUST execute equivalent scans using differing worker counts.
 
-For example:
+At minimum:
 
 1  
 2  
 4  
 8
 
-and verify identical serialized findings, including structural and distribution metadata.
+Worker count `1` exercises the serial path.
+
+Worker counts greater than `1` exercise optional parallel preparation.
+
+All worker counts MUST produce identical findings, grouping, canonical occurrences, metrics, structural metadata, distribution metadata, and output ordering.
 
 At minimum, structured JSON output SHOULD be byte-identical after removing intentionally environment-dependent metadata, if any.
 
@@ -2230,11 +2279,24 @@ Exit criterion:
 
 ---
 
-## **Phase 11 — Parallel preparation**
+## **Phase 11 — Optional parallel preparation**
 
-Replace sequential per-file preparation with Rayon.
+Add:
 
-Verify deterministic output before and after.
+CLI-only `--workers <N>`  
+default worker count of `1`  
+validation rejecting worker count `0`  
+existing serial preparation path for one worker  
+bounded Rayon thread pool for multiple workers  
+parallel independent file preparation  
+deterministic sorting before corpus construction  
+cross-worker determinism tests
+
+Worker count MUST affect execution performance only. It MUST NOT affect scan semantics or output.
+
+Exit criterion:
+
+> Serial execution remains the default, while users may opt into bounded parallel file preparation without changing findings, metrics, metadata, or deterministic output.
 
 ---
 
