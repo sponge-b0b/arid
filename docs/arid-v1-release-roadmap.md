@@ -151,9 +151,24 @@ Before publishing the code-complete alpha:
    git status --short
    ```
 
-4. Reproduce the end-to-end benchmark suite.
+4. Run Arid-only regression benchmarks against the established benchmark corpora.
 
-5. Confirm Arid still demonstrates the required substantial performance advantage over Pylint `R0801` / `symilar`.
+   ```bash
+   ./benchmarks/run.sh <corpus-path> <label> \
+     --tools arid \
+     --no-worker-scaling
+   ```
+
+   Compare current Arid performance with the most recent established baseline and investigate any substantial unexplained regression.
+
+5. A full Arid/Pylint/jscpd comparison is not required for every alpha release. Re-run the full cross-tool benchmark suite when:
+
+   * performance-sensitive implementation changes have landed
+   * entering beta
+   * entering release candidate
+   * establishing or changing a public performance claim
+
+   Existing reproducible cross-tool results remain valid evidence between those gates when the comparison methodology and relevant implementation behavior have not materially changed.
 
 6. Build all intended PyPI and GitHub release artifacts.
 

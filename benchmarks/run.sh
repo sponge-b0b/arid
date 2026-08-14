@@ -11,48 +11,183 @@ JSCPD_VERSION="cpd 5.0.12"
 
 WARMUP="${WARMUP:-1}"
 RUNS="${RUNS:-5}"
+TOOLS="arid,pylint,jscpd"
+WORKERS="1,2,4,8"
+WORKER_SCALING=true
 
 usage() {
-    echo "Usage: $0 <corpus-path> [label]"
-    echo
-    echo "The corpus must be a clean Git repository root."
-    echo
-    echo "Environment:"
-    echo "  WARMUP=N   Hyperfine warmup runs (default: 1)"
-    echo "  RUNS=N     Hyperfine measured runs (default: 5)"
+    cat <<EOF
+Usage: $0 <corpus-path> [label] [options]
+
+The corpus must be a clean Git repository root.
+
+Options:
+  --tools <list>       Tools to benchmark: arid,pylint,jscpd
+                       Default: arid,pylint,jscpd
+  --workers <list>     Arid worker counts for the scaling benchmark
+                       Default: 1,2,4,8
+  --no-worker-scaling  Skip the Arid worker-scaling benchmark
+  --warmup <N>         Hyperfine warmup runs
+                       Default: WARMUP or 1
+  --runs <N>           Hyperfine measured runs
+                       Default: RUNS or 5
+  --help               Show this help
+
+Environment:
+  WARMUP=N             Hyperfine warmup runs (default: 1)
+  RUNS=N               Hyperfine measured runs (default: 5)
+
+CLI options take precedence over environment variables.
+
+Examples:
+  # Full benchmark suite
+  $0 /path/to/corpus corpus
+
+  # Fast Arid-only regression benchmark
+  $0 /path/to/corpus corpus --tools arid --no-worker-scaling
+
+  # Arid benchmark plus worker scaling
+  $0 /path/to/corpus corpus --tools arid
+
+  # Cross-tool comparison without worker scaling
+  $0 /path/to/corpus corpus --tools arid,pylint,jscpd --no-worker-scaling
+
+  # Short development benchmark
+  $0 /path/to/corpus corpus --tools arid --workers 1,4 --warmup 0 --runs 3
+EOF
 }
 
-if [[ $# -lt 1 || $# -gt 2 ]]; then
+die() {
+    echo "error: $*" >&2
+    exit 2
+}
+
+CORPUS_INPUT=""
+LABEL=""
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --tools)
+            [[ $# -ge 2 ]] || die "--tools requires a value"
+            TOOLS="$2"
+            shift 2
+            ;;
+        --workers)
+            [[ $# -ge 2 ]] || die "--workers requires a value"
+            WORKERS="$2"
+            shift 2
+            ;;
+        --no-worker-scaling)
+            WORKER_SCALING=false
+            shift
+            ;;
+        --warmup)
+            [[ $# -ge 2 ]] || die "--warmup requires a value"
+            WARMUP="$2"
+            shift 2
+            ;;
+        --runs)
+            [[ $# -ge 2 ]] || die "--runs requires a value"
+            RUNS="$2"
+            shift 2
+            ;;
+        --help|-h)
+            usage
+            exit 0
+            ;;
+        -*)
+            die "unknown option: $1"
+            ;;
+        *)
+            if [[ -z "$CORPUS_INPUT" ]]; then
+                CORPUS_INPUT="$1"
+            elif [[ -z "$LABEL" ]]; then
+                LABEL="$1"
+            else
+                die "unexpected argument: $1"
+            fi
+            shift
+            ;;
+    esac
+done
+
+if [[ -z "$CORPUS_INPUT" ]]; then
     usage
     exit 2
 fi
 
-CORPUS="$(realpath "$1")"
-LABEL="${2:-$(basename "$CORPUS")}"
+if [[ ! "$WARMUP" =~ ^[0-9]+$ ]]; then
+    die "--warmup must be a non-negative integer"
+fi
+
+if [[ ! "$RUNS" =~ ^[1-9][0-9]*$ ]]; then
+    die "--runs must be a positive integer"
+fi
+
+if [[ ! "$TOOLS" =~ ^(arid|pylint|jscpd)(,(arid|pylint|jscpd))*$ ]]; then
+    die "--tools must be a comma-separated list containing arid, pylint, and/or jscpd"
+fi
+
+if [[ ! "$WORKERS" =~ ^[1-9][0-9]*(,[1-9][0-9]*)*$ ]]; then
+    die "--workers must be a comma-separated list of positive integers"
+fi
+
+IFS=',' read -r -a SELECTED_TOOLS <<< "$TOOLS"
+
+declare -A seen_tools=()
+
+for tool in "${SELECTED_TOOLS[@]}"; do
+    if [[ -n "${seen_tools[$tool]:-}" ]]; then
+        die "duplicate tool in --tools: $tool"
+    fi
+    seen_tools["$tool"]=1
+done
+
+contains_tool() {
+    local expected="$1"
+    local tool
+
+    for tool in "${SELECTED_TOOLS[@]}"; do
+        if [[ "$tool" == "$expected" ]]; then
+            return 0
+        fi
+    done
+
+    return 1
+}
+
+if [[ ! -d "$CORPUS_INPUT" ]]; then
+    die "corpus is not a directory: $CORPUS_INPUT"
+fi
+
+CORPUS="$(realpath "$CORPUS_INPUT")"
+LABEL="${LABEL:-$(basename "$CORPUS")}"
 
 if [[ ! "$LABEL" =~ ^[A-Za-z0-9._-]+$ ]]; then
-    echo "error: label may contain only letters, numbers, '.', '_', and '-'" >&2
-    exit 2
+    die "label may contain only letters, numbers, '.', '_', and '-'"
 fi
 
 RESULT_DIR="$ROOT_DIR/benchmarks/results/$LABEL"
 ARID_BIN="$ROOT_DIR/target/release/arid"
 
-if [[ ! -d "$CORPUS" ]]; then
-    echo "error: corpus is not a directory: $CORPUS" >&2
-    exit 2
+required_commands=(cargo git hyperfine jq lscpu nproc rustc)
+
+if contains_tool pylint; then
+    required_commands+=(pylint)
 fi
 
-for command in cargo git hyperfine jq jscpd lscpu nproc pylint rustc; do
+if contains_tool jscpd; then
+    required_commands+=(jscpd)
+fi
+
+for command in "${required_commands[@]}"; do
     if ! command -v "$command" >/dev/null 2>&1; then
-        echo "error: required command not found: $command" >&2
-        exit 2
+        die "required command not found: $command"
     fi
 done
 
 if ! git -C "$CORPUS" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-    echo "error: corpus is not a Git repository: $CORPUS" >&2
-    exit 2
+    die "corpus is not a Git repository: $CORPUS"
 fi
 
 CORPUS_ROOT="$(git -C "$CORPUS" rev-parse --show-toplevel)"
@@ -71,24 +206,29 @@ fi
 
 actual_hyperfine="$(hyperfine --version)"
 
-actual_pylint="$(pylint --version)"
-actual_pylint="${actual_pylint%%$'\n'*}"
-
-actual_jscpd="$(jscpd --version)"
-
 if [[ "$actual_hyperfine" != "$HYPERFINE_VERSION" ]]; then
-    echo "error: expected $HYPERFINE_VERSION, found $actual_hyperfine" >&2
-    exit 2
+    die "expected $HYPERFINE_VERSION, found $actual_hyperfine"
 fi
 
-if [[ "$actual_pylint" != "$PYLINT_VERSION" ]]; then
-    echo "error: expected $PYLINT_VERSION, found $actual_pylint" >&2
-    exit 2
+actual_pylint="not-run"
+
+if contains_tool pylint; then
+    actual_pylint="$(pylint --version)"
+    actual_pylint="${actual_pylint%%$'\n'*}"
+
+    if [[ "$actual_pylint" != "$PYLINT_VERSION" ]]; then
+        die "expected $PYLINT_VERSION, found $actual_pylint"
+    fi
 fi
 
-if [[ "$actual_jscpd" != "$JSCPD_VERSION" ]]; then
-    echo "error: expected $JSCPD_VERSION, found $actual_jscpd" >&2
-    exit 2
+actual_jscpd="not-run"
+
+if contains_tool jscpd; then
+    actual_jscpd="$(jscpd --version)"
+
+    if [[ "$actual_jscpd" != "$JSCPD_VERSION" ]]; then
+        die "expected $JSCPD_VERSION, found $actual_jscpd"
+    fi
 fi
 
 tracked_python_files="$(
@@ -110,8 +250,7 @@ tracked_pyi_files="$(
 )"
 
 if [[ "$tracked_python_files" -eq 0 ]]; then
-    echo "error: corpus contains no tracked Python files" >&2
-    exit 2
+    die "corpus contains no tracked Python files"
 fi
 
 rm -rf "$RESULT_DIR"
@@ -153,6 +292,12 @@ fi
 corpus_commit="$(git -C "$CORPUS" rev-parse HEAD)"
 corpus_remote="$(git -C "$CORPUS" remote get-url origin 2>/dev/null || true)"
 
+if [[ "$WORKER_SCALING" == true ]]; then
+    worker_metadata="$WORKERS"
+else
+    worker_metadata="disabled"
+fi
+
 {
     echo "date_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     echo "label=$LABEL"
@@ -164,9 +309,11 @@ corpus_remote="$(git -C "$CORPUS" remote get-url origin 2>/dev/null || true)"
     echo "pyi_files=$tracked_pyi_files"
     echo "physical_source_lines=$source_lines"
     echo "analyzed_effective_lines=$analyzed_lines"
+    echo "tools=$TOOLS"
     echo "warmup=$WARMUP"
     echo "runs=$RUNS"
-    echo "arid_worker_counts=1,2,4,8"
+    echo "worker_scaling=$WORKER_SCALING"
+    echo "arid_worker_counts=$worker_metadata"
     echo "hyperfine=$actual_hyperfine"
     echo "pylint=$actual_pylint"
     echo "jscpd=$actual_jscpd"
@@ -182,6 +329,13 @@ corpus_remote="$(git -C "$CORPUS" remote get-url origin 2>/dev/null || true)"
 
 printf -v corpus_q '%q' "$CORPUS"
 printf -v arid_q '%q' "$ARID_BIN"
+
+arid_cmd="$arid_q \
+$corpus_q \
+--hidden \
+--workers 1 \
+--json > /dev/null; \
+status=\$?; [[ \$status -eq 0 || \$status -eq 1 ]]"
 
 arid_pylint_cmd="$arid_q \
 $corpus_q \
@@ -250,55 +404,80 @@ echo "Python files: $arid_files"
 echo "  .py:  $tracked_py_files"
 echo "  .pyi: $tracked_pyi_files"
 echo "Physical Python source lines: $source_lines"
+echo "Tools: $TOOLS"
+echo "Worker scaling: $WORKER_SCALING"
 echo
 
-echo "Benchmarking Arid vs Pylint R0801..."
+if contains_tool arid; then
+    echo "Benchmarking Arid..."
 
-hyperfine \
-    --shell=bash \
-    --warmup "$WARMUP" \
-    --runs "$RUNS" \
-    --export-json "$RESULT_DIR/pylint.json" \
-    --export-markdown "$RESULT_DIR/pylint.md" \
-    "$arid_pylint_cmd" \
-    "$pylint_cmd"
+    hyperfine \
+        --shell=bash \
+        --warmup "$WARMUP" \
+        --runs "$RUNS" \
+        --export-json "$RESULT_DIR/arid.json" \
+        --export-markdown "$RESULT_DIR/arid.md" \
+        "$arid_cmd"
 
-echo
-echo "Benchmarking serial Arid vs serial jscpd..."
+    echo
+fi
 
-hyperfine \
-    --shell=bash \
-    --warmup "$WARMUP" \
-    --runs "$RUNS" \
-    --export-json "$RESULT_DIR/jscpd-serial.json" \
-    --export-markdown "$RESULT_DIR/jscpd-serial.md" \
-    "$arid_jscpd_cmd" \
-    "$jscpd_serial_cmd"
+if contains_tool pylint; then
+    echo "Benchmarking Arid vs Pylint R0801..."
 
-echo
-echo "Benchmarking serial Arid vs auto-parallel jscpd..."
+    hyperfine \
+        --shell=bash \
+        --warmup "$WARMUP" \
+        --runs "$RUNS" \
+        --export-json "$RESULT_DIR/pylint.json" \
+        --export-markdown "$RESULT_DIR/pylint.md" \
+        "$arid_pylint_cmd" \
+        "$pylint_cmd"
 
-hyperfine \
-    --shell=bash \
-    --warmup "$WARMUP" \
-    --runs "$RUNS" \
-    --export-json "$RESULT_DIR/jscpd-auto.json" \
-    --export-markdown "$RESULT_DIR/jscpd-auto.md" \
-    "$arid_jscpd_cmd" \
-    "$jscpd_auto_cmd"
+    echo
+fi
 
-echo
-echo "Benchmarking Arid worker scaling..."
+if contains_tool jscpd; then
+    echo "Benchmarking serial Arid vs serial jscpd..."
 
-hyperfine \
-    --shell=bash \
-    --warmup "$WARMUP" \
-    --runs "$RUNS" \
-    --parameter-list workers 1,2,4,8 \
-    --export-json "$RESULT_DIR/arid-workers.json" \
-    --export-markdown "$RESULT_DIR/arid-workers.md" \
-    "$arid_workers_cmd"
+    hyperfine \
+        --shell=bash \
+        --warmup "$WARMUP" \
+        --runs "$RUNS" \
+        --export-json "$RESULT_DIR/jscpd-serial.json" \
+        --export-markdown "$RESULT_DIR/jscpd-serial.md" \
+        "$arid_jscpd_cmd" \
+        "$jscpd_serial_cmd"
 
-echo
+    echo
+    echo "Benchmarking serial Arid vs auto-parallel jscpd..."
+
+    hyperfine \
+        --shell=bash \
+        --warmup "$WARMUP" \
+        --runs "$RUNS" \
+        --export-json "$RESULT_DIR/jscpd-auto.json" \
+        --export-markdown "$RESULT_DIR/jscpd-auto.md" \
+        "$arid_jscpd_cmd" \
+        "$jscpd_auto_cmd"
+
+    echo
+fi
+
+if [[ "$WORKER_SCALING" == true ]]; then
+    echo "Benchmarking Arid worker scaling..."
+
+    hyperfine \
+        --shell=bash \
+        --warmup "$WARMUP" \
+        --runs "$RUNS" \
+        --parameter-list workers "$WORKERS" \
+        --export-json "$RESULT_DIR/arid-workers.json" \
+        --export-markdown "$RESULT_DIR/arid-workers.md" \
+        "$arid_workers_cmd"
+
+    echo
+fi
+
 echo "Benchmark results written to:"
 echo "  $RESULT_DIR"
