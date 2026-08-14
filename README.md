@@ -727,6 +727,15 @@ at your option.
 
 ---
 
+## Development
+
+Arid includes dedicated tooling and documentation for performance benchmarking and real-world release validation:
+
+- [Benchmarks](benchmarks/README.md) — reproducible performance comparisons against Pylint `R0801` and jscpd, including corpus provisioning and benchmark execution.
+- [Validation](validation/README.md) — real-world correctness and robustness validation across Black, Django, mypy, Rich, determinism checks, malformed-source handling, and filesystem edge cases.
+
+---
+
 ## Contributing
 
 Arid is in early development. Contribution guidelines will be added once the initial architecture and v1 behavior are established.
