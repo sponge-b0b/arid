@@ -8,6 +8,7 @@
 **Configuration:** `[tool.arid]`  
 **Primary diagnostic:** `DUP001`  
 **Implementation language:** Rust
+**Version scope:** In this document, **v1** refers to the product functionality targeted for Arid's stable **1.0.0** release. Pre-1.0 alpha, beta, and release-candidate versions may implement some or all of this contract before `1.0.0` is released.
 
 ---
 
