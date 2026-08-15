@@ -3,7 +3,7 @@
 **Product:** Arid  
 **Stable v1 target:** `1.0.0`
 <!-- release-phase:start -->
-**Current phase:** Release Candidate
+**Current phase:** Stable
 <!-- release-phase:end -->
 
 ## Purpose
