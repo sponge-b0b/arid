@@ -37,15 +37,18 @@ Examples:
   $0 /home/bobt 1.0.1-rc.1
   $0 /home/bobt 1.0.1
 
-Release-candidate qualification verifies the source/release workflow, exercises
-both the published Linux standalone artifact and exact PyPI package through the
-real-world validation campaign, compares their JSON output byte-for-byte, and
-benchmarks the published standalone artifact.
+Release-candidate qualification verifies the tagged release source and production
+release workflow, exercises both the published Linux standalone artifact and
+exact PyPI package through the real-world validation campaign, compares their
+JSON output byte-for-byte, and benchmarks the published standalone artifact.
 
 Stable qualification requires the latest RC for the same base version to have a
 local PASS record, verifies the RC-to-stable change is exactly the metadata
 transition produced by release.sh, and smoke-tests the stable published
 artifacts.
+
+The qualification harness itself runs from a clean, synchronized main branch,
+but the release being qualified is always evaluated from its exact tag commit.
 EOF
 }
 
@@ -95,6 +98,7 @@ EXPECTED_ARID_VERSION="arid $VERSION"
 
 for command in \
     awk \
+    cargo \
     cmp \
     cp \
     diff \
@@ -118,12 +122,6 @@ do
     require_command "$command"
 done
 
-if [[ "$RELEASE_KIND" == "rc" ]]; then
-    for command in cargo rustc; do
-        require_command "$command"
-    done
-fi
-
 [[ -d "$GLOBAL_ROOT_INPUT" ]] ||
     die "global root is not a directory: $GLOBAL_ROOT_INPUT"
 
@@ -136,9 +134,6 @@ GLOBAL_ROOT="$(realpath "$GLOBAL_ROOT_INPUT")"
     die "published-artifact qualification currently requires x86_64"
 
 cd "$ROOT_DIR"
-
-[[ -x "$ROOT_DIR/release.sh" ]] ||
-    die "required executable not found: release.sh"
 
 [[ -x "$ROOT_DIR/validation/run.sh" ]] ||
     die "required executable not found: validation/run.sh"
@@ -160,7 +155,7 @@ CURRENT_BRANCH="$(
 )"
 
 [[ "$CURRENT_BRANCH" == "main" ]] ||
-    die "qualification must run from the main branch"
+    die "qualification harness must run from the main branch"
 
 echo "Fetching release refs..."
 
@@ -178,8 +173,9 @@ fi
 
 TAG_COMMIT="$(git rev-parse "$TAG^{commit}")"
 
-[[ "$TAG_COMMIT" == "$HEAD_COMMIT" ]] ||
-    die "$TAG does not point at the current main commit"
+if ! git merge-base --is-ancestor "$TAG_COMMIT" "$ORIGIN_MAIN_COMMIT"; then
+    die "$TAG is not part of origin/main history"
+fi
 
 REMOTE_TAG="$(
     {
@@ -199,24 +195,78 @@ REMOTE_TAG="$(
 [[ "$REMOTE_TAG" == "$TAG_COMMIT" ]] ||
     die "origin tag $TAG does not resolve to the local tag commit"
 
+pass "release tag"
+
+TMP_ROOT="$(mktemp -d)"
+RELEASE_WORKTREE="$TMP_ROOT/release-source"
+PREDICTED_WORKTREE=""
+
+cleanup() {
+    if [[ -n "$PREDICTED_WORKTREE" && -d "$PREDICTED_WORKTREE" ]]; then
+        git \
+            -C "$ROOT_DIR" \
+            worktree remove \
+            --force \
+            "$PREDICTED_WORKTREE" \
+            >/dev/null 2>&1 ||
+            true
+    fi
+
+    if [[ -n "$RELEASE_WORKTREE" && -d "$RELEASE_WORKTREE" ]]; then
+        git \
+            -C "$ROOT_DIR" \
+            worktree remove \
+            --force \
+            "$RELEASE_WORKTREE" \
+            >/dev/null 2>&1 ||
+            true
+    fi
+
+    rm -rf "$TMP_ROOT"
+}
+
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+echo "Preparing tagged release source..."
+
+git worktree add \
+    --detach \
+    "$RELEASE_WORKTREE" \
+    "$TAG" \
+    >/dev/null
+
+[[ "$(git -C "$RELEASE_WORKTREE" rev-parse HEAD)" == "$TAG_COMMIT" ]] ||
+    die "release worktree does not resolve to $TAG_COMMIT"
+
+[[ -x "$RELEASE_WORKTREE/release.sh" ]] ||
+    die "$TAG does not contain executable release.sh"
+
 CURRENT_VERSION="$(
     sed -n \
         's/^version = "\([^"]*\)"/\1/p' \
-        Cargo.toml |
+        "$RELEASE_WORKTREE/Cargo.toml" |
         head -n 1
 )"
 
 [[ "$CURRENT_VERSION" == "$VERSION" ]] ||
-    die "Cargo.toml version is $CURRENT_VERSION, expected $VERSION"
+    die "$TAG Cargo.toml version is $CURRENT_VERSION, expected $VERSION"
 
-./release.sh --check
+(
+    cd "$RELEASE_WORKTREE"
+    ./release.sh --check
+)
+
+[[ -z "$(git -C "$RELEASE_WORKTREE" status --porcelain --untracked-files=all)" ]] ||
+    die "release metadata check modified the tagged release worktree"
 
 pass "release metadata"
 
 git diff --check
 
 [[ -z "$(git status --porcelain --untracked-files=all)" ]] ||
-    die "working tree changed during preflight"
+    die "qualification harness working tree changed during preflight"
 
 pass "repository cleanliness"
 
@@ -330,24 +380,31 @@ verify_github_release() {
 
 run_rc_source_gate() {
     echo
-    echo "Running release-candidate source gate..."
+    echo "Running release-candidate source gate against $TAG..."
 
-    cargo fmt --check
+    (
+        cd "$RELEASE_WORKTREE"
 
-    cargo test \
-        --locked
+        cargo fmt --check
 
-    cargo clippy \
-        --locked \
-        --all-targets \
-        --all-features \
-        -- \
-        -D warnings
+        cargo test \
+            --locked
 
-    git diff --check
+        cargo clippy \
+            --locked \
+            --all-targets \
+            --all-features \
+            -- \
+            -D warnings
 
-    [[ -z "$(git status --porcelain --untracked-files=all)" ]] ||
-        die "source gate modified the working tree"
+        git diff --check
+
+        if [[ -n "$(git status --porcelain --untracked-files=all)" ]]; then
+            echo "error: source gate modified the tagged release worktree" >&2
+            git status --short >&2
+            exit 2
+        fi
+    )
 
     pass "release-candidate source gate"
 }
@@ -441,9 +498,7 @@ verify_stable_promotion() {
 
     (
         cd "$predicted_worktree"
-
-        ./release.sh "$VERSION" \
-            >/dev/null
+        ./release.sh "$VERSION" >/dev/null
     )
 
     for release_file in "${RELEASE_METADATA_FILES[@]}"; do
@@ -581,7 +636,6 @@ preserve_validation_results() {
     local destination="$1"
 
     rm -rf "$destination"
-
     mkdir -p "$destination"
 
     cp \
@@ -848,27 +902,6 @@ write_report() {
     } >"$report"
 }
 
-TMP_ROOT="$(mktemp -d)"
-PREDICTED_WORKTREE=""
-
-cleanup() {
-    if [[ -n "$PREDICTED_WORKTREE" && -d "$PREDICTED_WORKTREE" ]]; then
-        git \
-            -C "$ROOT_DIR" \
-            worktree remove \
-            --force \
-            "$PREDICTED_WORKTREE" \
-            >/dev/null 2>&1 ||
-            true
-    fi
-
-    rm -rf "$TMP_ROOT"
-}
-
-trap cleanup EXIT
-trap 'exit 130' INT
-trap 'exit 143' TERM
-
 if [[ "$RELEASE_KIND" == "rc" ]]; then
     run_rc_source_gate
 fi
@@ -893,7 +926,6 @@ fi
 write_report
 
 trap - EXIT INT TERM
-
 cleanup
 
 echo
