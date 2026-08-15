@@ -19,6 +19,7 @@ TOOLS="arid,pylint,jscpd"
 WORKERS="1,2,4,8"
 WORKER_SCALING=true
 LABEL=""
+ARID_BIN_INPUT=""
 
 usage() {
     cat <<EOF
@@ -29,17 +30,19 @@ Benchmark Arid against corpora beneath:
 
 Options:
   --repos <list>        Repositories to benchmark: $REPOSITORIES
-                        Default: $REPOSITORIES
+                         Default: $REPOSITORIES
   --label <label>       Suffix applied to each result directory
   --tools <list>        Tools to benchmark: arid,pylint,jscpd
-                        Default: arid,pylint,jscpd
+                         Default: arid,pylint,jscpd
   --workers <list>      Arid worker counts for the scaling benchmark
-                        Default: 1,2,4,8
+                         Default: 1,2,4,8
   --no-worker-scaling   Skip the Arid worker-scaling benchmark
   --warmup <N>          Hyperfine warmup runs
-                        Default: WARMUP or 1
+                         Default: WARMUP or 1
   --runs <N>            Hyperfine measured runs
-                        Default: RUNS or 5
+                         Default: RUNS or 5
+  --arid-bin <path>     Benchmark an existing Arid executable instead of
+                         building target/release/arid from the current repository
   --help                Show this help
 
 Environment:
@@ -49,7 +52,7 @@ Environment:
 CLI options take precedence over environment variables.
 
 Examples:
-  # Full benchmark suite
+  # Full benchmark suite using the current repository release build
   $0 /home/bobt
 
   # Full benchmark suite with labeled result directories
@@ -76,6 +79,11 @@ Examples:
     --workers 1,4 \
     --warmup 0 \
     --runs 3
+
+  # Benchmark a previously built or published Arid executable
+  $0 /home/bobt \
+    --arid-bin /path/to/arid \
+    --label 1.0.1-rc.1
 EOF
 }
 
@@ -133,6 +141,12 @@ while [[ $# -gt 0 ]]; do
         --runs)
             [[ $# -ge 2 ]] || die "--runs requires a value"
             RUNS="$2"
+            shift 2
+            ;;
+        --arid-bin)
+            [[ $# -ge 2 ]] || die "--arid-bin requires a value"
+            [[ -z "$ARID_BIN_INPUT" ]] || die "duplicate option: --arid-bin"
+            ARID_BIN_INPUT="$2"
             shift 2
             ;;
         --help|-h)
@@ -204,7 +218,11 @@ for tool in "${SELECTED_TOOLS[@]}"; do
     seen_tools["$tool"]=1
 done
 
-required_commands=(cargo git hyperfine jq lscpu nproc realpath rustc)
+required_commands=(git hyperfine jq lscpu nproc realpath sha256sum)
+
+if [[ -z "$ARID_BIN_INPUT" ]]; then
+    required_commands+=(cargo rustc)
+fi
 
 if contains_tool pylint; then
     required_commands+=(pylint)
@@ -226,7 +244,19 @@ fi
 
 GLOBAL_ROOT="$(realpath "$GLOBAL_ROOT_INPUT")"
 CORPUS_ROOT="$GLOBAL_ROOT/$CORPUS_RELATIVE_PATH"
-ARID_BIN="$ROOT_DIR/target/release/arid"
+
+if [[ -n "$ARID_BIN_INPUT" ]]; then
+    [[ -f "$ARID_BIN_INPUT" ]] ||
+        die "Arid executable does not exist: $ARID_BIN_INPUT"
+    [[ -x "$ARID_BIN_INPUT" ]] ||
+        die "Arid executable is not executable: $ARID_BIN_INPUT"
+
+    ARID_BIN="$(realpath "$ARID_BIN_INPUT")"
+    ARID_SOURCE="external"
+else
+    ARID_BIN="$ROOT_DIR/target/release/arid"
+    ARID_SOURCE="repository"
+fi
 
 if [[ ! -d "$CORPUS_ROOT" ]]; then
     die "benchmark corpus root does not exist: $CORPUS_ROOT; run benchmarks/build.sh $GLOBAL_ROOT first"
@@ -267,12 +297,34 @@ if contains_tool jscpd; then
     fi
 fi
 
-echo "Building Arid release binary..."
+if [[ "$ARID_SOURCE" == "repository" ]]; then
+    echo "Building Arid release binary..."
 
-cargo build \
-    --release \
-    --locked \
-    --manifest-path "$ROOT_DIR/Cargo.toml"
+    cargo build \
+        --release \
+        --locked \
+        --manifest-path "$ROOT_DIR/Cargo.toml"
+
+    actual_rustc="$(rustc --version)"
+    actual_cargo="$(cargo --version)"
+else
+    echo "Using existing Arid executable:"
+    echo "  $ARID_BIN"
+
+    actual_rustc="not-used"
+    actual_cargo="not-used"
+fi
+
+ARID_VERSION="$("$ARID_BIN" --version)"
+
+if [[ "$ARID_VERSION" != arid\ * ]]; then
+    die "executable does not identify itself as Arid: $ARID_BIN"
+fi
+
+ARID_SHA256="$(sha256sum "$ARID_BIN" | awk '{print $1}')"
+HARNESS_COMMIT="$(git -C "$ROOT_DIR" rev-parse HEAD)"
+
+echo "Arid version: $ARID_VERSION"
 
 benchmark_repository() {
     local repository="$1"
@@ -365,7 +417,7 @@ benchmark_repository() {
         "$corpus" \
         --hidden \
         --json \
-        > "$result_dir/arid-baseline.json"
+        >"$result_dir/arid-baseline.json"
     arid_status=$?
     set -e
 
@@ -413,15 +465,24 @@ benchmark_repository() {
         echo "hyperfine=$actual_hyperfine"
         echo "pylint=$actual_pylint"
         echo "jscpd=$actual_jscpd"
-        echo "rustc=$(rustc --version)"
-        echo "cargo=$(cargo --version)"
+        echo "rustc=$actual_rustc"
+        echo "cargo=$actual_cargo"
         echo "os=$(uname -srmo)"
         echo "cpu=$(lscpu | awk -F: '/Model name/ {gsub(/^[ \t]+/, "", $2); print $2; exit}')"
         echo "logical_cpus=$(nproc)"
-        echo "arid_commit=$(git -C "$ROOT_DIR" rev-parse HEAD)"
+        echo "harness_commit=$HARNESS_COMMIT"
+        echo "arid_source=$ARID_SOURCE"
+        echo "arid_binary=$ARID_BIN"
+        echo "arid_sha256=$ARID_SHA256"
+        echo "arid_version=$ARID_VERSION"
+
+        if [[ "$ARID_SOURCE" == "repository" ]]; then
+            echo "arid_commit=$HARNESS_COMMIT"
+        fi
+
         echo "corpus_definition=clean pinned Git repository"
         echo "invocation=repository root with native recursive discovery"
-    } > "$result_dir/metadata.txt"
+    } >"$result_dir/metadata.txt"
 
     printf -v corpus_q '%q' "$corpus"
     printf -v arid_q '%q' "$ARID_BIN"

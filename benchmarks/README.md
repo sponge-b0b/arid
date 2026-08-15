@@ -2,23 +2,35 @@
 
 Arid's v1 benchmarks compare duplicate-code detection performance against:
 
-* Pylint `R0801` / `symilar`
-* jscpd v5
+- Pylint `R0801` / `symilar`
+- jscpd v5
 
 The benchmark suite measures performance on fixed, publicly reproducible Python repositories using identical hardware.
+
+It supports benchmarking either:
+
+- `target/release/arid` built from the current repository, or
+- an existing Arid executable supplied with `--arid-bin`
+
+The second mode allows release qualification to benchmark the exact published artifact rather than another local build.
 
 ## Goals
 
 The v1 benchmark suite MUST:
 
-* include representative small, medium, and large Python corpora
-* use fixed repository revisions
-* record tool versions and hardware metadata
-* build Arid in release mode
-* compare Arid with Pylint's duplicate-code checker in isolation
-* compare Arid with jscpd using Python-only scanning
-* use the same pinned repository revision and repository root for each comparison
-* preserve the distinction between semantic compatibility and general tool performance
+- include representative small, medium, and large Python corpora
+- use fixed repository revisions for published measurements
+- record tool versions and hardware metadata
+- compare Arid with Pylint's duplicate-code checker in isolation
+- compare Arid with jscpd using Python-only scanning
+- use the same pinned repository revision and repository root for each comparison
+- preserve the distinction between semantic compatibility and general tool performance
+- support benchmarking exact previously built or published Arid executables
+- fail when corpus integrity or benchmark preconditions are violated
+
+Correctness remains more important than benchmark performance.
+
+## Tooling
 
 The benchmark tooling consists of:
 
@@ -27,39 +39,90 @@ benchmarks/build.sh <global-root> [options]
 benchmarks/run.sh <global-root> [options]
 ```
 
-`build.sh` provisions the canonical benchmark corpora beneath:
+`build.sh` provisions benchmark corpora beneath:
 
 ```text
 <global-root>/benchmarks/arid-corpora/
 ```
 
-`run.sh` benchmarks those corpora and writes local results beneath `benchmarks/results/`.
+`run.sh` executes benchmarks and writes generated artifacts beneath:
+
+```text
+<project-root>/benchmarks/results/
+```
 
 The canonical repositories are:
 
-* `polaris`
-* `pydantic`
-* `requests`
+- `polaris`
+- `pydantic`
+- `requests`
 
-All three are benchmarked by default. Use `--repos` to select a subset.
+All three are benchmarked by default.
+
+Use `--repos` to select a subset.
+
+### Repository build mode
+
+When `--arid-bin` is omitted, `run.sh` builds:
+
+```text
+target/release/arid
+```
+
+from the current Arid repository with:
+
+```bash
+cargo build --release --locked
+```
+
+This is the default mode for development and source-tree performance qualification.
+
+### External binary mode
+
+Benchmark an existing Arid executable with:
+
+```bash
+benchmarks/run.sh /home/bobt \
+    --arid-bin /path/to/arid
+```
+
+When `--arid-bin` is supplied, `run.sh` does not build Arid.
+
+The executable MUST:
+
+- exist
+- be executable
+- identify itself as Arid through `--version`
+
+This mode is intended for benchmarking previously built or published release artifacts.
+
+For example:
+
+```bash
+benchmarks/run.sh /home/bobt \
+    --arid-bin /path/to/published/arid \
+    --label 1.0.1-rc.1
+```
+
+The benchmark methodology is otherwise unchanged.
 
 ## Canonical corpora
 
-Canonical benchmark corpora MUST be publicly available repositories pinned to exact Git commits.
+Canonical benchmark corpora MUST be publicly available repositories pinned to exact Git commits for published measurements.
 
 Each corpus records:
 
-* repository URL
-* commit SHA
-* number of Python files
-* physical Python source lines
-* benchmark size classification: small, medium, or large
+- repository URL
+- commit SHA
+- number of Python files
+- physical Python source lines
+- benchmark size classification
 
 The size classifications describe the selected benchmark set rather than imposing product behavior based on repository size.
 
 The canonical corpora exercise meaningfully different repository scales. They are real projects rather than artificial copies of the same source repeated to manufacture larger inputs.
 
-Private repositories MAY be used as supplemental benchmarks but MUST NOT be required to reproduce the published v1 benchmark results.
+Private repositories MAY be used as supplemental benchmarks but MUST NOT be required to reproduce published benchmark results.
 
 ### Small: Requests
 
@@ -121,8 +184,6 @@ Repository:
 https://github.com/sponge-b0b/Polaris
 ```
 
-Polaris is a substantial, actively developed Python application and serves as Arid's canonical large benchmark corpus.
-
 The v1 benchmark revision is:
 
 ```text
@@ -138,23 +199,27 @@ Python files:                  1,452
 Physical Python source lines: 319,994
 ```
 
-Polaris remains under active development, so benchmark results apply to this pinned revision rather than the repository's moving development state.
+Polaris is a substantial Python application and serves as Arid's canonical large benchmark corpus.
+
+Benchmark results apply to the pinned revision rather than the repository's moving development state.
 
 ## Corpus integrity
 
 Benchmark corpora MUST be clean Git repository roots.
 
-Before benchmarking each selected repository, the runner verifies:
+Before benchmarking, the runner verifies:
 
-* the corpus exists
-* the corpus is a Git repository root
-* the working tree is clean
-* the repository contains tracked Python files
-* Arid's discovered Python-file count with `--hidden` matches the number of Git-tracked `.py` and `.pyi` files
+- the corpus exists
+- the corpus is a Git repository root
+- the working tree is clean
+- the repository contains tracked Python files
+- Arid's discovered Python-file count with `--hidden` matches the number of Git-tracked `.py` and `.pyi` files
 
 The last check prevents a benchmark from silently omitting tracked Python files because of hidden-path discovery behavior.
 
-Benchmarks operate directly on the original repository layout. Files are not copied, flattened, renamed, or transformed before measurement.
+Benchmarks operate directly on the original repository layout.
+
+Files are not copied, flattened, renamed, or transformed before measurement.
 
 ## Comparison semantics
 
@@ -162,29 +227,29 @@ Benchmarks operate directly on the original repository layout. Files are not cop
 
 The Pylint comparison is intended to approximate Arid's Pylint-compatible detection configuration as closely as practical:
 
-* minimum duplicate length: 4 lines
-* comments ignored
-* docstrings ignored
-* imports ignored
-* function signatures ignored
-* same-file detection disabled in Arid
-* hidden-path discovery enabled in Arid
-* Arid run with one worker
-* Pylint run with one worker
-* unrelated Pylint checks disabled
-* persistent Pylint state disabled
-* reports and score disabled
-* no project Pylint configuration loaded
+- minimum duplicate length: 4 lines
+- comments ignored
+- docstrings ignored
+- imports ignored
+- function signatures ignored
+- same-file detection disabled in Arid
+- hidden-path discovery enabled in Arid
+- Arid run with one worker
+- Pylint run with one worker
+- unrelated Pylint checks disabled
+- persistent Pylint state disabled
+- reports and score disabled
+- no project Pylint configuration loaded
 
 This is the primary benchmark for Arid's v1 performance target.
 
-The benchmark runner uses:
+The benchmark runner requires:
 
 ```text
 Pylint 4.0.6
 ```
 
-The Pylint comparison is serial so that serial Arid is compared directly against the isolated duplicate checker without multiprocessing affecting the result.
+The Pylint comparison is serial so serial Arid is compared directly against the isolated duplicate checker without multiprocessing affecting the result.
 
 The Arid side is equivalent to:
 
@@ -222,15 +287,15 @@ The jscpd comparison is a general duplicate-detector performance comparison, not
 
 The benchmark uses:
 
-* Python-only scanning
-* `.py` and `.pyi` mapped to the Python format
-* minimum duplicate length: 4 lines
-* weak mode
-* jscpd's native 50-token minimum
-* normal `.gitignore` handling
-* a sufficiently high file-size limit so corpus files are not excluded because of the benchmark configuration
+- Python-only scanning
+- `.py` and `.pyi` mapped to the Python format
+- minimum duplicate length: 4 lines
+- weak mode
+- jscpd's native 50-token minimum
+- normal `.gitignore` handling
+- a sufficiently high file-size limit so corpus files are not excluded because of the benchmark configuration
 
-The benchmark runner uses:
+The benchmark runner requires:
 
 ```text
 jscpd 5.0.12
@@ -249,7 +314,7 @@ Because jscpd is token-based and uses different normalization and clone semantic
 
 Benchmarks use Hyperfine.
 
-The benchmark runner uses:
+The benchmark runner requires:
 
 ```text
 hyperfine 1.20.0
@@ -264,43 +329,52 @@ WARMUP=1
 RUNS=5
 ```
 
-Published v1 measurements use three warmup runs and ten measured runs:
+CLI options take precedence over environment variables.
 
-```bash
-WARMUP=3 RUNS=10 \
-    benchmarks/run.sh <global-root> \
-    --label <label>
+Published v1 measurements use:
+
+```text
+Warmup runs:   3
+Measured runs: 10
 ```
 
-The equivalent CLI form is:
+Equivalent runner options are:
 
 ```bash
-benchmarks/run.sh <global-root> \
-    --label <label> \
+benchmarks/run.sh /home/bobt \
     --warmup 3 \
     --runs 10
 ```
 
-CLI options take precedence over `WARMUP` and `RUNS`.
+or:
+
+```bash
+WARMUP=3 RUNS=10 benchmarks/run.sh /home/bobt
+```
 
 Benchmark output records:
 
-* mean execution time
-* run variance
-* user CPU time
-* system CPU time
-* tool versions
-* Rust toolchain version
-* operating system
-* CPU model
-* logical CPU count
-* Arid Git commit
-* corpus Git commit
-* corpus repository URL
-* Python file counts
-* physical source lines
-* analyzed effective lines
-* Arid worker counts used for worker-scaling measurements
+- mean execution time
+- run variance
+- user CPU time
+- system CPU time
+- tool versions
+- Rust toolchain version when Arid is built by the runner
+- operating system
+- CPU model
+- logical CPU count
+- validation harness Git commit
+- Arid source mode
+- Arid executable path
+- Arid executable SHA-256
+- Arid reported version
+- Arid Git commit when built from the current repository
+- corpus Git commit
+- corpus repository URL
+- Python file counts
+- physical source lines
+- analyzed effective lines
+- Arid worker counts used for worker-scaling measurements
 
 Performance conclusions are based on repeated measurements rather than a single run.
 
@@ -317,6 +391,107 @@ The runner explicitly accepts those finding statuses inside the benchmark comman
 
 Unexpected execution statuses remain benchmark failures rather than being globally ignored by Hyperfine.
 
+## Running benchmarks
+
+Run the complete benchmark suite:
+
+```bash
+benchmarks/run.sh /home/bobt
+```
+
+Benchmark selected repositories:
+
+```bash
+benchmarks/run.sh /home/bobt \
+    --repos requests,pydantic
+```
+
+Run an Arid-only regression benchmark:
+
+```bash
+benchmarks/run.sh /home/bobt \
+    --repos pydantic \
+    --tools arid \
+    --no-worker-scaling
+```
+
+Run a cross-tool comparison without worker scaling:
+
+```bash
+benchmarks/run.sh /home/bobt \
+    --repos requests,polaris \
+    --tools arid,pylint,jscpd \
+    --no-worker-scaling
+```
+
+Control Hyperfine measurement counts:
+
+```bash
+benchmarks/run.sh /home/bobt \
+    --warmup 3 \
+    --runs 10
+```
+
+Control worker-scaling measurements:
+
+```bash
+benchmarks/run.sh /home/bobt \
+    --workers 1,2,4,8
+```
+
+Label result directories:
+
+```bash
+benchmarks/run.sh /home/bobt \
+    --label rc1
+```
+
+This produces directories such as:
+
+```text
+benchmarks/results/
+├── polaris-rc1/
+├── pydantic-rc1/
+└── requests-rc1/
+```
+
+### Published-artifact benchmarking
+
+Benchmark an exact previously built or published Arid executable:
+
+```bash
+benchmarks/run.sh /home/bobt \
+    --arid-bin /path/to/arid \
+    --label 1.0.1-rc.1
+```
+
+External-binary mode records:
+
+```text
+arid_source=external
+arid_binary=<absolute path>
+arid_sha256=<sha256>
+arid_version=<reported version>
+```
+
+and records:
+
+```text
+rustc=not-used
+cargo=not-used
+```
+
+because the benchmark runner did not build that executable.
+
+When the runner builds Arid itself, metadata instead records:
+
+```text
+arid_source=repository
+arid_commit=<repository commit>
+```
+
+This distinction allows performance results to identify the exact executable under test.
+
 ## Final v1 benchmark results
 
 The following cross-tool results use:
@@ -330,11 +505,11 @@ The cross-tool results were produced using the same benchmark methodology.
 
 ### Summary
 
-| Corpus            | Python files |     Arid vs Pylint | Arid vs serial jscpd |     Arid vs auto jscpd |
-| ----------------- | -----------: | -----------------: | -------------------: | ---------------------: |
-| Requests 2.34.2   |           37 | **196.79x faster** |     **4.97x faster** |       **4.57x faster** |
-| Pydantic 2.13.4   |          404 | **192.88x faster** |     **2.13x faster** |       **1.13x faster** |
-| Polaris `00e208e` |        1,452 | **264.45x faster** |     **1.68x faster** | jscpd **1.02x faster** |
+| Corpus | Python files | Arid vs Pylint | Arid vs serial jscpd | Arid vs auto jscpd |
+| --- | ---: | ---: | ---: | ---: |
+| Requests 2.34.2 | 37 | **196.79x faster** | **4.97x faster** | **4.57x faster** |
+| Pydantic 2.13.4 | 404 | **192.88x faster** | **2.13x faster** | **1.13x faster** |
+| Polaris `00e208e` | 1,452 | **264.45x faster** | **1.68x faster** | jscpd **1.02x faster** |
 
 ### Requests 2.34.2
 
@@ -517,13 +692,15 @@ The small Requests corpus demonstrates that the advantage is not limited to larg
 
 ## Parallelism decision
 
-The finalized cross-tool benchmarks did not justify making parallel execution the default. Serial Arid already:
+The finalized cross-tool benchmarks did not justify making parallel execution the default.
 
-* exceeds the Pylint performance target by a large margin at every tested scale
-* outperforms serial jscpd at every tested scale
-* outperforms auto-parallel jscpd on the small and medium corpora
-* remains effectively tied with auto-parallel jscpd on the large corpus
-* uses substantially less aggregate CPU than auto-parallel jscpd on Polaris
+Serial Arid already:
+
+- exceeds the Pylint performance target by a large margin at every tested scale
+- outperforms serial jscpd at every tested scale
+- outperforms auto-parallel jscpd on the small and medium corpora
+- remains effectively tied with auto-parallel jscpd on the large corpus
+- uses substantially less aggregate CPU than auto-parallel jscpd on Polaris
 
 Arid therefore defaults to one worker and provides optional parallel per-file preparation through `--workers <N>`.
 
@@ -551,38 +728,36 @@ arid <corpus> \
 
 Results:
 
-| Workers |             Mean time | User CPU | System CPU | Speedup vs 1 worker |
-| ------: | --------------------: | -------: | ---------: | ------------------: |
-|       1 |     468.9 ms ± 7.6 ms | 446.5 ms |    28.3 ms |               1.00x |
-|       2 |     334.1 ms ± 1.9 ms | 464.6 ms |    25.5 ms |               1.40x |
-|       4 | **266.4 ms ± 4.2 ms** | 483.2 ms |    17.4 ms |           **1.76x** |
-|       8 |    269.0 ms ± 10.3 ms | 495.1 ms |    93.1 ms |               1.74x |
+| Workers | Mean time | User CPU | System CPU | Speedup vs 1 worker |
+| ---: | ---: | ---: | ---: | ---: |
+| 1 | 468.9 ms ± 7.6 ms | 446.5 ms | 28.3 ms | 1.00x |
+| 2 | 334.1 ms ± 1.9 ms | 464.6 ms | 25.5 ms | 1.40x |
+| 4 | **266.4 ms ± 4.2 ms** | 483.2 ms | 17.4 ms | **1.76x** |
+| 8 | 269.0 ms ± 10.3 ms | 495.1 ms | 93.1 ms | 1.74x |
 
 On this corpus and benchmark host:
 
-* two workers reduced wall-clock time by approximately 28.7%
-* four workers reduced wall-clock time by approximately 43.2%
-* eight workers provided no meaningful wall-clock improvement over four and consumed substantially more system CPU
+- two workers reduced wall-clock time by approximately 28.7%
+- four workers reduced wall-clock time by approximately 43.2%
+- eight workers provided no meaningful wall-clock improvement over four and consumed substantially more system CPU
 
 Four workers therefore provided the best measured latency/CPU tradeoff for Polaris on the tested hardware.
 
-This is not a universal worker-count recommendation. The useful level of parallelism depends on repository shape, preparation cost, available CPUs, and the proportion of total execution time spent in the serial global stages.
+This is not a universal worker-count recommendation.
 
-Serial execution remains the default because it is already fast, minimizes CPU consumption, and satisfies Arid's v1 performance target. `--workers` is an opt-in latency optimization rather than an analysis setting or a reason to parallelize the global detection pipeline.
+The useful level of parallelism depends on repository shape, preparation cost, available CPUs, and the proportion of total execution time spent in the serial global stages.
+
+Serial execution remains the default because it is already fast, minimizes CPU consumption, and satisfies Arid's v1 performance target.
+
+`--workers` is an opt-in latency optimization rather than an analysis setting or a reason to parallelize the global detection pipeline.
 
 The worker-scaling measurement was produced from a newer Arid commit than the published cross-tool Polaris measurements. The measured values are recorded here rather than being merged into the historical cross-tool result set.
 
-Generated benchmark artifacts are written beneath `benchmarks/results/`. That directory is intentionally ignored by Git and contains local reproducibility artifacts rather than version-controlled benchmark data.
-
 ## Setting up benchmark corpora
 
-Benchmark corpora are provisioned with:
+Keep benchmark corpora outside the Arid repository so benchmark inputs remain independent of Arid's working tree.
 
-```bash
-benchmarks/build.sh <global-root> [options]
-```
-
-The script owns the canonical local layout:
+The benchmark tooling owns this layout:
 
 ```text
 <global-root>/
@@ -593,182 +768,138 @@ The script owns the canonical local layout:
         └── requests/
 ```
 
-The repository names and upstream URLs are defined by the benchmark harness.
-
-With no revision options, `build.sh` resolves each repository to the current upstream default-branch `HEAD`:
+Provision all corpora at their current upstream default-branch `HEAD`:
 
 ```bash
 benchmarks/build.sh /home/bobt
 ```
 
-This mode is convenient for exploratory benchmarking.
-
-Published and release-qualification measurements MUST instead use explicit revisions so the corpus inputs remain reproducible:
+For reproducible measurements, pin the exact revisions:
 
 ```bash
 benchmarks/build.sh /home/bobt \
-    --requests 6e83187b8feb273ed4c6cdab5efd8d54901dfab3 \
+    --polaris 00e208e7f5dcb3329c3d8d1ee5f13aec7fbe1031 \
     --pydantic cf67d4b3193c3fe43ede18612ed62785eee11382 \
-    --polaris 00e208e7f5dcb3329c3d8d1ee5f13aec7fbe1031
+    --requests 6e83187b8feb273ed4c6cdab5efd8d54901dfab3
 ```
 
-Revision options accept Git commit SHAs, tags, or branches:
+Revision values may be commit SHAs, tags, or branches.
 
-```text
---requests <revision>
---pydantic <revision>
---polaris <revision>
-```
-
-Any omitted repository defaults to its current upstream `HEAD`.
+When a revision is omitted, `build.sh` resolves that repository to the current upstream default-branch `HEAD`.
 
 `build.sh`:
 
-* clones missing repositories
-* fetches existing repositories
-* verifies the expected upstream `origin`
-* refuses to modify a dirty working tree
-* resolves the requested revision to an exact commit
-* leaves the corpus detached at that exact commit
+- clones missing repositories
+- fetches existing repositories
+- verifies the expected `origin`
+- refuses to modify dirty working trees
+- resolves requested revisions to exact commits
+- leaves each corpus detached at the resolved commit
 
-Existing corpus repositories are therefore safe from accidental destruction of local changes.
+Published or release-qualification measurements SHOULD use explicit pinned revisions.
 
-The canonical v1 revisions are:
+## Reproducing the v1 benchmark
 
-```text
-requests: 6e83187b8feb273ed4c6cdab5efd8d54901dfab3
-pydantic: cf67d4b3193c3fe43ede18612ed62785eee11382
-polaris:  00e208e7f5dcb3329c3d8d1ee5f13aec7fbe1031
-```
-
-These repositories are benchmark fixtures. Keep them clean and use explicit revisions for published measurements.
-
-## Reproducing a benchmark
-
-First provision the canonical corpora at the documented revisions:
+Provision the exact canonical revisions:
 
 ```bash
 benchmarks/build.sh /home/bobt \
-    --requests 6e83187b8feb273ed4c6cdab5efd8d54901dfab3 \
+    --polaris 00e208e7f5dcb3329c3d8d1ee5f13aec7fbe1031 \
     --pydantic cf67d4b3193c3fe43ede18612ed62785eee11382 \
-    --polaris 00e208e7f5dcb3329c3d8d1ee5f13aec7fbe1031
+    --requests 6e83187b8feb273ed4c6cdab5efd8d54901dfab3
 ```
 
-Then run the full published benchmark suite from the Arid repository:
-
-```bash
-WARMUP=3 RUNS=10 \
-    benchmarks/run.sh /home/bobt \
-    --label v1
-```
-
-By default, `run.sh` benchmarks all three canonical repositories:
-
-```text
-polaris,pydantic,requests
-```
-
-A subset may be selected with `--repos`:
+Then run:
 
 ```bash
 benchmarks/run.sh /home/bobt \
-    --repos requests,pydantic
+    --label v1 \
+    --warmup 3 \
+    --runs 10
 ```
 
-Repository names are comma-separated and may not be repeated.
+The runner benchmarks:
 
-A label is applied as a suffix to each selected repository's result directory:
+```text
+polaris
+pydantic
+requests
+```
+
+with:
+
+```text
+Arid
+Pylint
+jscpd
+```
+
+and performs Arid worker-scaling measurements at:
+
+```text
+1,2,4,8
+```
+
+The resulting directories are:
+
+```text
+benchmarks/results/
+├── polaris-v1/
+├── pydantic-v1/
+└── requests-v1/
+```
+
+## Release-candidate benchmarking
+
+Release qualification SHOULD benchmark the exact published standalone executable rather than another local build.
+
+For example:
 
 ```bash
 benchmarks/run.sh /home/bobt \
-    --repos requests,pydantic \
-    --label beta-entry
+    --arid-bin /path/to/arid \
+    --label 1.0.1-rc.1 \
+    --warmup 3 \
+    --runs 10
 ```
 
-produces:
+This keeps the canonical benchmark corpora and cross-tool methodology unchanged while tying the Arid measurements to the exact release artifact identified by:
 
 ```text
-benchmarks/results/requests-beta-entry/
-benchmarks/results/pydantic-beta-entry/
+arid_binary
+arid_sha256
+arid_version
 ```
 
-Without `--label`, result directories use the repository name alone:
+in each result directory's metadata.
 
-```text
-benchmarks/results/requests/
-benchmarks/results/pydantic/
-benchmarks/results/polaris/
-```
-
-### Selective benchmarks
-
-The runner supports selective development and regression measurements without changing the canonical corpus layout.
-
-Select benchmark tools with:
-
-```text
---tools arid,pylint,jscpd
-```
-
-All three are enabled by default.
-
-For example, an Arid-only benchmark on Pydantic is:
-
-```bash
-benchmarks/run.sh /home/bobt \
-    --repos pydantic \
-    --tools arid \
-    --no-worker-scaling
-```
-
-Arid worker-scaling measurements use worker counts `1,2,4,8` by default. Override them with:
-
-```bash
-benchmarks/run.sh /home/bobt \
-    --repos pydantic \
-    --tools arid \
-    --workers 1,4,8
-```
-
-Skip worker scaling with:
-
-```text
---no-worker-scaling
-```
-
-Warmup and measured-run counts may be supplied either through `WARMUP` and `RUNS` or explicitly:
-
-```bash
-benchmarks/run.sh /home/bobt \
-    --repos requests \
-    --tools arid \
-    --no-worker-scaling \
-    --warmup 0 \
-    --runs 3
-```
-
-### Corpus validation
-
-Before benchmarking each selected repository, `run.sh` verifies that:
-
-* the corpus exists beneath `<global-root>/benchmarks/arid-corpora/`
-* the corpus is a Git repository root
-* the working tree is clean
-* the repository contains tracked Python files
-* Arid successfully scans the corpus
-* Arid's discovered `.py` and `.pyi` file count matches Git's tracked Python-file count
-
-A validation failure stops the benchmark rather than silently continuing with an incomplete corpus.
-
-### Results
+## Result layout
 
 Generated benchmark artifacts are written beneath:
 
 ```text
-benchmarks/results/<repository>[-<label>]/
+benchmarks/results/
 ```
 
-Depending on the selected tools and worker-scaling options, a result directory may contain:
+Without a label:
+
+```text
+benchmarks/results/<repository>/
+```
+
+With:
+
+```bash
+--label rc1
+```
+
+the result directory becomes:
+
+```text
+benchmarks/results/<repository>-rc1/
+```
+
+A complete result directory contains:
 
 ```text
 metadata.txt
@@ -785,26 +916,45 @@ arid-workers.json
 arid-workers.md
 ```
 
-`metadata.txt` records the repository, corpus revision, environment, tool versions, Arid revision, benchmark configuration, and worker-count matrix.
+Files are present only for the tools and benchmark modes selected for that run.
 
-`benchmarks/results/` is intentionally ignored by Git. These files support local inspection and reproduction but are not committed benchmark artifacts. Published performance claims are recorded in this README and MUST identify the relevant corpus revision, Arid revision, hardware, and benchmark configuration.
+`metadata.txt` records the corpus, environment, tool versions, measurement configuration, worker-count matrix, and exact Arid executable identity.
+
+`benchmarks/results/` is intentionally ignored by Git.
+
+These files support local inspection, release qualification, and reproduction but are not committed benchmark artifacts.
+
+Published performance claims SHOULD identify the relevant:
+
+- corpus revision
+- Arid revision or artifact SHA-256
+- hardware
+- benchmark configuration
+- comparison tool versions
 
 ## Benchmark interpretation
 
-Performance results describe the tested tool versions, corpus revisions, hardware, Arid revisions, and benchmark configuration.
+Performance results describe the tested:
+
+- tool versions
+- corpus revisions
+- hardware
+- Arid executable
+- benchmark configuration
 
 They MUST NOT be generalized into claims about all repositories or all duplicate-detection workloads without supporting measurements.
 
 In particular:
 
-* Pylint is the primary performance target because Arid is designed as a focused replacement for `R0801`.
-* The Pylint comparison is configured for the closest practical behavioral comparison, including disabling Arid's same-file detection.
-* jscpd provides a useful comparison with another high-performance duplicate detector but does not have equivalent detection semantics.
-* Arid's same-file detection remains enabled for the jscpd comparisons.
-* cross-tool Arid measurements use one worker so optional parallel preparation does not change the meaning of the existing comparisons.
-* worker-scaling measurements evaluate Arid separately using identical analysis semantics across worker counts.
-* wall-clock time and aggregate CPU consumption provide different information and SHOULD both be considered when evaluating parallel implementations.
-* small-corpus results are particularly sensitive to process startup and fixed overhead.
-* correctness remains more important than benchmark performance.
+- Pylint is the primary performance target because Arid is designed as a focused replacement for `R0801`.
+- The Pylint comparison is configured for the closest practical behavioral comparison, including disabling Arid's same-file detection.
+- jscpd provides a useful comparison with another high-performance duplicate detector but does not have equivalent detection semantics.
+- Arid's same-file detection remains enabled for the jscpd comparisons.
+- cross-tool Arid measurements use one worker so optional parallel preparation does not change the meaning of the existing comparisons.
+- worker-scaling measurements evaluate Arid separately using identical analysis semantics across worker counts.
+- wall-clock time and aggregate CPU consumption provide different information and SHOULD both be considered when evaluating parallel implementations.
+- small-corpus results are particularly sensitive to process startup and fixed overhead.
+- an external executable should be identified by its SHA-256 when results are used for release qualification.
+- correctness remains more important than benchmark performance.
 
 Arid MUST NOT sacrifice duplicate-detection correctness, deterministic output, or source-location accuracy solely to improve benchmark results.
