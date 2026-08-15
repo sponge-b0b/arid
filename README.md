@@ -733,8 +733,9 @@ at your option.
 
 ## Development
 
-Arid includes dedicated tooling and documentation for performance benchmarking and real-world release validation:
+Arid includes dedicated tooling and documentation for release qualification, performance benchmarking, and real-world validation:
 
+- [Release qualification](qualification/README.md) — automated acceptance of published release candidates and stable releases, including artifact validation, equivalence checks, benchmarks, and stable-promotion enforcement.
 - [Benchmarks](benchmarks/README.md) — reproducible performance comparisons against Pylint `R0801` and jscpd, including corpus provisioning and benchmark execution.
 - [Validation](validation/README.md) — real-world correctness and robustness validation across Black, Django, mypy, Rich, determinism checks, malformed-source handling, and filesystem edge cases.
 - [Release roadmap](docs/arid-v1-release-roadmap.md) — release stages, qualification gates, and release metadata preparation with `./release.sh`.
