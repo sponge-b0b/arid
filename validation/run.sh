@@ -9,6 +9,7 @@ CORPUS_RELATIVE_PATH="validation/arid-corpora"
 REPOSITORIES="black,django,mypy,rich"
 
 REPOS="$REPOSITORIES"
+ARID_BIN_INPUT=""
 
 usage() {
     cat <<EOF
@@ -18,16 +19,21 @@ Validate Arid against corpora beneath:
   <global-root>/$CORPUS_RELATIVE_PATH
 
 Options:
-  --repos <list>  Repositories to validate: $REPOSITORIES
-                  Default: $REPOSITORIES
-  --help          Show this help
+  --repos <list>      Repositories to validate: $REPOSITORIES
+                      Default: $REPOSITORIES
+  --arid-bin <path>  Validate an existing Arid executable instead of building
+                     target/release/arid from the current repository
+  --help             Show this help
 
 Examples:
-  # Validate all repositories
+  # Validate all repositories using the current repository release build
   $0 /home/bobt
 
   # Validate selected repositories
   $0 /home/bobt --repos rich,mypy
+
+  # Validate a previously built or published Arid executable
+  $0 /home/bobt --arid-bin /path/to/arid
 EOF
 }
 
@@ -43,6 +49,12 @@ while [[ $# -gt 0 ]]; do
         --repos)
             [[ $# -ge 2 ]] || die "--repos requires a value"
             REPOS="$2"
+            shift 2
+            ;;
+        --arid-bin)
+            [[ $# -ge 2 ]] || die "--arid-bin requires a value"
+            [[ -z "$ARID_BIN_INPUT" ]] || die "duplicate option: --arid-bin"
+            ARID_BIN_INPUT="$2"
             shift 2
             ;;
         --help|-h)
@@ -84,10 +96,15 @@ for repository in "${SELECTED_REPOS[@]}"; do
     seen_repos["$repository"]=1
 done
 
-for command in cargo cmp git grep jq realpath rg sha256sum; do
+for command in cmp git grep jq realpath rg sha256sum; do
     command -v "$command" >/dev/null 2>&1 ||
         die "required command not found: $command"
 done
+
+if [[ -z "$ARID_BIN_INPUT" ]]; then
+    command -v cargo >/dev/null 2>&1 ||
+        die "required command not found: cargo"
+fi
 
 if [[ ! -d "$GLOBAL_ROOT_INPUT" ]]; then
     die "global root is not a directory: $GLOBAL_ROOT_INPUT"
@@ -96,7 +113,19 @@ fi
 GLOBAL_ROOT="$(realpath "$GLOBAL_ROOT_INPUT")"
 CORPUS_ROOT="$GLOBAL_ROOT/$CORPUS_RELATIVE_PATH"
 RESULTS_DIR="$ROOT_DIR/validation/results"
-ARID_BIN="$ROOT_DIR/target/release/arid"
+
+if [[ -n "$ARID_BIN_INPUT" ]]; then
+    [[ -f "$ARID_BIN_INPUT" ]] ||
+        die "Arid executable does not exist: $ARID_BIN_INPUT"
+    [[ -x "$ARID_BIN_INPUT" ]] ||
+        die "Arid executable is not executable: $ARID_BIN_INPUT"
+
+    ARID_BIN="$(realpath "$ARID_BIN_INPUT")"
+    ARID_SOURCE="external"
+else
+    ARID_BIN="$ROOT_DIR/target/release/arid"
+    ARID_SOURCE="repository"
+fi
 
 if [[ ! -d "$CORPUS_ROOT" ]]; then
     die "validation corpus root does not exist: $CORPUS_ROOT; run validation/build.sh $GLOBAL_ROOT first"
@@ -140,12 +169,24 @@ for repository in "${SELECTED_REPOS[@]}"; do
     validate_repository "$repository"
 done
 
-echo "Building Arid release binary..."
+if [[ "$ARID_SOURCE" == "repository" ]]; then
+    echo "Building Arid release binary..."
 
-cargo build \
-    --release \
-    --locked \
-    --manifest-path "$ROOT_DIR/Cargo.toml"
+    cargo build \
+        --release \
+        --locked \
+        --manifest-path "$ROOT_DIR/Cargo.toml"
+else
+    echo "Using existing Arid executable:"
+    echo "  $ARID_BIN"
+fi
+
+ARID_VERSION="$("$ARID_BIN" --version)"
+[[ "$ARID_VERSION" == arid\ * ]] ||
+    die "executable does not identify itself as Arid: $ARID_BIN"
+ARID_SHA256="$(sha256sum "$ARID_BIN" | awk '{print $1}')"
+
+echo "Arid version: $ARID_VERSION"
 
 mkdir -p "$RESULTS_DIR"
 
@@ -801,8 +842,16 @@ PY
 
 {
     echo "date_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-    echo "arid_commit=$(git -C "$ROOT_DIR" rev-parse HEAD)"
-    echo "arid_version=$("$ARID_BIN" --version)"
+    echo "harness_commit=$(git -C "$ROOT_DIR" rev-parse HEAD)"
+    echo "arid_source=$ARID_SOURCE"
+    echo "arid_binary=$ARID_BIN"
+    echo "arid_sha256=$ARID_SHA256"
+    echo "arid_version=$ARID_VERSION"
+
+    if [[ "$ARID_SOURCE" == "repository" ]]; then
+        echo "arid_commit=$(git -C "$ROOT_DIR" rev-parse HEAD)"
+    fi
+
     echo "global_root=$GLOBAL_ROOT"
     echo "corpus_root=$CORPUS_ROOT"
     echo "selected_repositories=$REPOS"
