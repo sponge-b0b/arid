@@ -1,8 +1,10 @@
 # Arid Release Roadmap
 
 **Product:** Arid  
-**Stable v1 target:** `1.0.0`  
+**Stable v1 target:** `1.0.0`
+<!-- release-phase:start -->
 **Current phase:** Beta
+<!-- release-phase:end -->
 
 ## Purpose
 
@@ -15,6 +17,26 @@ In this roadmap:
 > **v1 is the product functionality targeted for Arid's stable `1.0.0` release.**
 
 Prerelease versions may implement some or all of the v1 contract before `1.0.0` is released.
+
+---
+
+## Release Metadata
+
+Release metadata is prepared from the repository root with:
+
+    ./release.sh <version>
+
+Use:
+
+    ./release.sh --check
+
+to verify that release metadata agrees with the current `Cargo.toml` version, or:
+
+    ./release.sh --dry-run <version>
+
+to validate the current state and preview the metadata for another release.
+
+`release.sh` manages release metadata only. It does not commit, tag, push, or publish a release.
 
 ---
 

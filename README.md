@@ -3,7 +3,9 @@
 </p>
 
 <p align="center">
+<!-- release-badge:start -->
   <a href="#project-status"><img alt="Status: Beta" src="https://img.shields.io/badge/status-beta-blue"></a>
+<!-- release-badge:end -->
   <a href="#what-is-arid"><img alt="Scope: Python-only" src="https://img.shields.io/badge/scope-Python--only-3776AB"></a>
   <a href="#what-is-arid"><img alt="Purpose: Duplicate-code detection" src="https://img.shields.io/badge/purpose-duplicate--code%20detection-D79A3B"></a>
   <a href="#configuration"><img alt="Config: tool.arid" src="https://img.shields.io/badge/config-tool.arid-4B5563"></a>
@@ -33,8 +35,10 @@
 
 ## Project status
 
+<!-- release-status:start -->
 > [!IMPORTANT]
-> **Arid is currently in beta.** The intended v1 feature set is frozen and the core CLI, configuration, output, and duplicate-detection semantics are considered substantially complete. Arid remains prerelease software until `1.0.0`.
+> **Arid is currently in beta.** The intended release feature set and core interfaces are frozen while prerelease validation and bug fixing continue toward stable release.
+<!-- release-status:end -->
 
 Arid is a **small, focused CLI** for one job:
 
@@ -670,7 +674,7 @@ Duplicate detection operates on Arid's normalized source representation. Structu
 ## Installation
 
 > [!NOTE]
-> Arid is currently in beta. The v1 feature set and core interfaces are frozen while prerelease validation and bug fixing continue toward `1.0.0`.
+> See [Project status](#project-status) for the current release stage and stability expectations.
 
 ### uv
 
@@ -733,9 +737,10 @@ Arid includes dedicated tooling and documentation for performance benchmarking a
 
 - [Benchmarks](benchmarks/README.md) — reproducible performance comparisons against Pylint `R0801` and jscpd, including corpus provisioning and benchmark execution.
 - [Validation](validation/README.md) — real-world correctness and robustness validation across Black, Django, mypy, Rich, determinism checks, malformed-source handling, and filesystem edge cases.
+- [Release roadmap](docs/arid-v1-release-roadmap.md) — release stages, qualification gates, and release metadata preparation with `./release.sh`.
 
 ---
 
 ## Contributing
 
-Arid is currently in beta. Until `1.0.0`, contributions should focus on correctness, compatibility, portability, packaging, performance regressions, documentation, and release-process fixes rather than expanding the frozen v1 feature set.
+Contributions should preserve Arid's focused scope and existing product contract. Bug fixes, compatibility improvements, tests, documentation, and performance work are welcome; scope-expanding features should be discussed before implementation.
