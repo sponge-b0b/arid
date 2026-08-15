@@ -63,7 +63,7 @@ dependencies = [
 
 [[package]]
 name = "arid-cli"
-version = "0.1.0-beta.1"
+version = "1.0.0-rc.1"
 dependencies = [
  "clap",
  "ignore",

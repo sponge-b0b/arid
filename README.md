@@ -4,7 +4,7 @@
 
 <p align="center">
 <!-- release-badge:start -->
-  <a href="#project-status"><img alt="Status: Beta" src="https://img.shields.io/badge/status-beta-blue"></a>
+  <a href="#project-status"><img alt="Status: Release Candidate" src="https://img.shields.io/badge/status-release%20candidate-blue"></a>
 <!-- release-badge:end -->
   <a href="#what-is-arid"><img alt="Scope: Python-only" src="https://img.shields.io/badge/scope-Python--only-3776AB"></a>
   <a href="#what-is-arid"><img alt="Purpose: Duplicate-code detection" src="https://img.shields.io/badge/purpose-duplicate--code%20detection-D79A3B"></a>
@@ -37,7 +37,7 @@
 
 <!-- release-status:start -->
 > [!IMPORTANT]
-> **Arid is currently in beta.** The intended release feature set and core interfaces are frozen while prerelease validation and bug fixing continue toward stable release.
+> **Arid is currently a release candidate.** The release feature set and core interfaces are frozen, and the current build is believed ready for stable release without product-code changes.
 <!-- release-status:end -->
 
 Arid is a **small, focused CLI** for one job:
