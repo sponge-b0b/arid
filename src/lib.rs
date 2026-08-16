@@ -4,6 +4,7 @@ use std::path::PathBuf;
 
 use rayon::prelude::*;
 
+pub mod baseline;
 pub mod cli;
 pub mod config;
 pub mod corpus;
