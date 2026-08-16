@@ -1,5 +1,7 @@
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
+use std::fs;
+use std::io;
 use std::path::{Component, Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -14,6 +16,7 @@ pub const BASELINE_SCHEMA_VERSION: u8 = 1;
 const GROUP_FINGERPRINT_DOMAIN: &[u8] = b"arid-baseline-group-v1\0";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Baseline {
     pub version: u8,
     pub normalization: BaselineNormalization,
@@ -21,6 +24,7 @@ pub struct Baseline {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct BaselineNormalization {
     pub ignore_comments: bool,
     pub ignore_docstrings: bool,
@@ -40,6 +44,7 @@ impl From<NormalizationOptions> for BaselineNormalization {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct BaselineGroup {
     pub fingerprint: String,
     pub lines: u32,
@@ -47,6 +52,7 @@ pub struct BaselineGroup {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct BaselinePathCount {
     pub path: String,
     pub count: u32,
@@ -97,6 +103,64 @@ pub enum BaselineError {
 
     #[error("multiple detected groups have the same baseline fingerprint {fingerprint}")]
     DuplicateFingerprint { fingerprint: String },
+
+    #[error("failed to read baseline {path:?}: {source}")]
+    Read {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+
+    #[error("failed to parse baseline {path:?}: {source}")]
+    Parse {
+        path: PathBuf,
+        #[source]
+        source: serde_json::Error,
+    },
+
+    #[error("failed to serialize baseline: {0}")]
+    Serialize(#[source] serde_json::Error),
+
+    #[error(
+        "unsupported baseline schema version {found}; supported version is {supported}"
+    )]
+    UnsupportedSchemaVersion { found: u8, supported: u8 },
+
+    #[error(
+        "baseline normalization settings do not match current settings: \
+         baseline {baseline:?}, current {current:?}"
+    )]
+    NormalizationMismatch {
+        baseline: BaselineNormalization,
+        current: BaselineNormalization,
+    },
+
+    #[error("invalid baseline fingerprint {fingerprint:?}")]
+    InvalidFingerprint { fingerprint: String },
+
+    #[error("baseline group {fingerprint} must contain at least one duplicate line")]
+    InvalidBaselineLines { fingerprint: String },
+
+    #[error("baseline group {fingerprint} has no occurrence paths")]
+    EmptyBaselineOccurrences { fingerprint: String },
+
+    #[error("invalid baseline path {path:?}")]
+    InvalidBaselinePath { path: String },
+
+    #[error("baseline occurrence count for {path:?} in group {fingerprint} must be at least 1")]
+    ZeroBaselineOccurrenceCount {
+        fingerprint: String,
+        path: String,
+    },
+
+    #[error("baseline contains duplicate group fingerprint {fingerprint}")]
+    DuplicateBaselineGroup { fingerprint: String },
+
+    #[error("baseline group {fingerprint} contains duplicate path entry {path:?}")]
+    DuplicateBaselinePath {
+        fingerprint: String,
+        path: String,
+    },
 }
 
 /// Constructs a canonical baseline from already-detected duplicate groups.
@@ -135,6 +199,46 @@ pub fn build_baseline(
         normalization: normalization.into(),
         groups: baseline_groups,
     })
+}
+
+/// Serializes a validated baseline using deterministic pretty JSON.
+pub fn serialize_baseline(baseline: &Baseline) -> Result<String, BaselineError> {
+    let mut canonical = baseline.clone();
+    validate_and_canonicalize_baseline(&mut canonical)?;
+
+    serde_json::to_string_pretty(&canonical).map_err(BaselineError::Serialize)
+}
+
+/// Reads, validates, and canonicalizes a baseline for the current normalization settings.
+pub fn read_baseline(
+    path: &Path,
+    normalization: NormalizationOptions,
+) -> Result<Baseline, BaselineError> {
+    let contents = fs::read_to_string(path).map_err(|source| BaselineError::Read {
+        path: path.to_path_buf(),
+        source,
+    })?;
+
+    let mut baseline: Baseline =
+        serde_json::from_str(&contents).map_err(|source| BaselineError::Parse {
+            path: path.to_path_buf(),
+            source,
+        })?;
+
+    validate_schema_version(&baseline)?;
+
+    let current = BaselineNormalization::from(normalization);
+
+    if baseline.normalization != current {
+        return Err(BaselineError::NormalizationMismatch {
+            baseline: baseline.normalization,
+            current,
+        });
+    }
+
+    validate_baseline_groups(&mut baseline)?;
+
+    Ok(baseline)
 }
 
 /// Returns the stable identity of one exact normalized duplicate block.
@@ -185,6 +289,113 @@ pub fn group_fingerprint(
     }
 
     Ok(fingerprint)
+}
+
+fn validate_and_canonicalize_baseline(baseline: &mut Baseline) -> Result<(), BaselineError> {
+    validate_schema_version(baseline)?;
+    validate_baseline_groups(baseline)
+}
+
+fn validate_schema_version(baseline: &Baseline) -> Result<(), BaselineError> {
+    if baseline.version != BASELINE_SCHEMA_VERSION {
+        return Err(BaselineError::UnsupportedSchemaVersion {
+            found: baseline.version,
+            supported: BASELINE_SCHEMA_VERSION,
+        });
+    }
+
+    Ok(())
+}
+
+fn validate_baseline_groups(baseline: &mut Baseline) -> Result<(), BaselineError> {
+    for group in &mut baseline.groups {
+        if !valid_fingerprint(&group.fingerprint) {
+            return Err(BaselineError::InvalidFingerprint {
+                fingerprint: group.fingerprint.clone(),
+            });
+        }
+
+        if group.lines == 0 {
+            return Err(BaselineError::InvalidBaselineLines {
+                fingerprint: group.fingerprint.clone(),
+            });
+        }
+
+        if group.occurrences.is_empty() {
+            return Err(BaselineError::EmptyBaselineOccurrences {
+                fingerprint: group.fingerprint.clone(),
+            });
+        }
+
+        for occurrence in &group.occurrences {
+            if !valid_serialized_path(&occurrence.path) {
+                return Err(BaselineError::InvalidBaselinePath {
+                    path: occurrence.path.clone(),
+                });
+            }
+
+            if occurrence.count == 0 {
+                return Err(BaselineError::ZeroBaselineOccurrenceCount {
+                    fingerprint: group.fingerprint.clone(),
+                    path: occurrence.path.clone(),
+                });
+            }
+        }
+
+        group.occurrences.sort();
+
+        for pair in group.occurrences.windows(2) {
+            if pair[0].path == pair[1].path {
+                return Err(BaselineError::DuplicateBaselinePath {
+                    fingerprint: group.fingerprint.clone(),
+                    path: pair[0].path.clone(),
+                });
+            }
+        }
+    }
+
+    baseline.groups.sort();
+
+    for pair in baseline.groups.windows(2) {
+        if pair[0].fingerprint == pair[1].fingerprint {
+            return Err(BaselineError::DuplicateBaselineGroup {
+                fingerprint: pair[0].fingerprint.clone(),
+            });
+        }
+    }
+
+    Ok(())
+}
+
+fn valid_fingerprint(fingerprint: &str) -> bool {
+    let Some(digest) = fingerprint.strip_prefix("sha256:") else {
+        return false;
+    };
+
+    digest.len() == 64
+        && digest
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
+}
+
+fn valid_serialized_path(path: &str) -> bool {
+    if path.is_empty()
+        || path.starts_with('/')
+        || path.ends_with('/')
+        || path.contains('\\')
+        || path.contains('\0')
+    {
+        return false;
+    }
+
+    let bytes = path.as_bytes();
+
+    if bytes.len() >= 2 && bytes[1] == b':' && bytes[0].is_ascii_alphabetic() {
+        return false;
+    }
+
+    path.split('/')
+        .all(|component| !component.is_empty() && component != "." && component != "..")
 }
 
 fn group_path_counts(
@@ -302,6 +513,7 @@ fn baseline_path(path: &Path, project_root: &Path) -> Result<String, BaselineErr
 mod tests {
     use std::ops::Range;
     use std::path::PathBuf;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     use crate::corpus::build_corpus;
     use crate::model::{
@@ -310,6 +522,36 @@ mod tests {
     };
 
     use super::*;
+
+    static TEMP_COUNTER: AtomicUsize = AtomicUsize::new(0);
+
+    struct TempFile {
+        path: PathBuf,
+    }
+
+    impl TempFile {
+        fn new(contents: &str) -> Self {
+            let id = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+            let path = std::env::temp_dir().join(format!(
+                "arid-baseline-test-{}-{id}.json",
+                std::process::id()
+            ));
+
+            fs::write(&path, contents).unwrap();
+
+            Self { path }
+        }
+
+        fn path(&self) -> &Path {
+            &self.path
+        }
+    }
+
+    impl Drop for TempFile {
+        fn drop(&mut self) {
+            let _ = fs::remove_file(&self.path);
+        }
+    }
 
     fn prepared(path: &str, text_lines: &[&str]) -> PreparedFile {
         let mut normalized = String::new();
@@ -366,6 +608,21 @@ mod tests {
             ignore_docstrings: false,
             ignore_imports: true,
             ignore_signatures: false,
+        }
+    }
+
+    fn fingerprint(byte: char) -> String {
+        format!("sha256:{}", byte.to_string().repeat(64))
+    }
+
+    fn baseline_group(fingerprint: String, path: &str, count: u32) -> BaselineGroup {
+        BaselineGroup {
+            fingerprint,
+            lines: 2,
+            occurrences: vec![BaselinePathCount {
+                path: path.to_owned(),
+                count,
+            }],
         }
     }
 
@@ -664,6 +921,202 @@ mod tests {
         assert!(matches!(
             baseline_path(Path::new("project/../outside.py"), Path::new("project")),
             Err(BaselineError::InvalidProjectRelativePath { .. })
+        ));
+    }
+
+    #[test]
+    fn serialize_baseline_canonicalizes_group_and_path_order() {
+        let mut first = baseline_group(fingerprint('b'), "z.py", 1);
+        first.occurrences.push(BaselinePathCount {
+            path: "a.py".to_owned(),
+            count: 2,
+        });
+
+        let second = baseline_group(fingerprint('a'), "m.py", 1);
+
+        let unordered = Baseline {
+            version: BASELINE_SCHEMA_VERSION,
+            normalization: normalization().into(),
+            groups: vec![first, second],
+        };
+
+        let serialized = serialize_baseline(&unordered).unwrap();
+        let parsed: Baseline = serde_json::from_str(&serialized).unwrap();
+
+        assert_eq!(parsed.groups[0].fingerprint, fingerprint('a'));
+        assert_eq!(parsed.groups[1].fingerprint, fingerprint('b'));
+        assert_eq!(parsed.groups[1].occurrences[0].path, "a.py");
+        assert_eq!(parsed.groups[1].occurrences[1].path, "z.py");
+        assert_eq!(serialized, serialize_baseline(&parsed).unwrap());
+    }
+
+    #[test]
+    fn read_baseline_validates_normalization_and_canonicalizes_order() {
+        let baseline = Baseline {
+            version: BASELINE_SCHEMA_VERSION,
+            normalization: normalization().into(),
+            groups: vec![
+                baseline_group(fingerprint('b'), "z.py", 1),
+                baseline_group(fingerprint('a'), "a.py", 1),
+            ],
+        };
+
+        let file = TempFile::new(&serde_json::to_string_pretty(&baseline).unwrap());
+        let loaded = read_baseline(file.path(), normalization()).unwrap();
+
+        assert_eq!(loaded.groups[0].fingerprint, fingerprint('a'));
+        assert_eq!(loaded.groups[1].fingerprint, fingerprint('b'));
+    }
+
+    #[test]
+    fn read_baseline_rejects_normalization_mismatch() {
+        let baseline = Baseline {
+            version: BASELINE_SCHEMA_VERSION,
+            normalization: normalization().into(),
+            groups: Vec::new(),
+        };
+
+        let file = TempFile::new(&serde_json::to_string_pretty(&baseline).unwrap());
+        let mut current = normalization();
+        current.ignore_comments = false;
+
+        assert!(matches!(
+            read_baseline(file.path(), current),
+            Err(BaselineError::NormalizationMismatch { .. })
+        ));
+    }
+
+    #[test]
+    fn read_baseline_rejects_unsupported_schema_version() {
+        let baseline = Baseline {
+            version: BASELINE_SCHEMA_VERSION + 1,
+            normalization: normalization().into(),
+            groups: Vec::new(),
+        };
+
+        let file = TempFile::new(&serde_json::to_string_pretty(&baseline).unwrap());
+
+        assert!(matches!(
+            read_baseline(file.path(), normalization()),
+            Err(BaselineError::UnsupportedSchemaVersion { .. })
+        ));
+    }
+
+    #[test]
+    fn read_baseline_rejects_invalid_fingerprint() {
+        let baseline = Baseline {
+            version: BASELINE_SCHEMA_VERSION,
+            normalization: normalization().into(),
+            groups: vec![baseline_group("sha256:ABC".to_owned(), "a.py", 1)],
+        };
+
+        let file = TempFile::new(&serde_json::to_string_pretty(&baseline).unwrap());
+
+        assert!(matches!(
+            read_baseline(file.path(), normalization()),
+            Err(BaselineError::InvalidFingerprint { .. })
+        ));
+    }
+
+    #[test]
+    fn read_baseline_rejects_duplicate_group_identity() {
+        let fingerprint = fingerprint('a');
+        let baseline = Baseline {
+            version: BASELINE_SCHEMA_VERSION,
+            normalization: normalization().into(),
+            groups: vec![
+                baseline_group(fingerprint.clone(), "a.py", 1),
+                baseline_group(fingerprint, "b.py", 1),
+            ],
+        };
+
+        let file = TempFile::new(&serde_json::to_string_pretty(&baseline).unwrap());
+
+        assert!(matches!(
+            read_baseline(file.path(), normalization()),
+            Err(BaselineError::DuplicateBaselineGroup { .. })
+        ));
+    }
+
+    #[test]
+    fn read_baseline_rejects_duplicate_path_entry() {
+        let mut group = baseline_group(fingerprint('a'), "a.py", 1);
+        group.occurrences.push(BaselinePathCount {
+            path: "a.py".to_owned(),
+            count: 2,
+        });
+
+        let baseline = Baseline {
+            version: BASELINE_SCHEMA_VERSION,
+            normalization: normalization().into(),
+            groups: vec![group],
+        };
+
+        let file = TempFile::new(&serde_json::to_string_pretty(&baseline).unwrap());
+
+        assert!(matches!(
+            read_baseline(file.path(), normalization()),
+            Err(BaselineError::DuplicateBaselinePath { .. })
+        ));
+    }
+
+    #[test]
+    fn read_baseline_rejects_malformed_json() {
+        let file = TempFile::new("{not-json");
+
+        assert!(matches!(
+            read_baseline(file.path(), normalization()),
+            Err(BaselineError::Parse { .. })
+        ));
+    }
+
+    #[test]
+    fn read_baseline_rejects_unknown_fields() {
+        let contents = r#"{
+  "version": 1,
+  "normalization": {
+    "ignore_comments": true,
+    "ignore_docstrings": false,
+    "ignore_imports": true,
+    "ignore_signatures": false
+  },
+  "groups": [],
+  "unexpected": true
+}"#;
+        let file = TempFile::new(contents);
+
+        assert!(matches!(
+            read_baseline(file.path(), normalization()),
+            Err(BaselineError::Parse { .. })
+        ));
+    }
+
+    #[test]
+    fn read_baseline_rejects_nonportable_paths_and_zero_counts() {
+        for path in ["/a.py", "../a.py", "src\\a.py", "C:/a.py"] {
+            let baseline = Baseline {
+                version: BASELINE_SCHEMA_VERSION,
+                normalization: normalization().into(),
+                groups: vec![baseline_group(fingerprint('a'), path, 1)],
+            };
+            let file = TempFile::new(&serde_json::to_string_pretty(&baseline).unwrap());
+
+            assert!(matches!(
+                read_baseline(file.path(), normalization()),
+                Err(BaselineError::InvalidBaselinePath { .. })
+            ));
+        }
+
+        let baseline = Baseline {
+            version: BASELINE_SCHEMA_VERSION,
+            normalization: normalization().into(),
+            groups: vec![baseline_group(fingerprint('a'), "a.py", 0)],
+        };
+        let file = TempFile::new(&serde_json::to_string_pretty(&baseline).unwrap());
+
+        assert!(matches!(
+            read_baseline(file.path(), normalization()),
+            Err(BaselineError::ZeroBaselineOccurrenceCount { .. })
         ));
     }
 }
