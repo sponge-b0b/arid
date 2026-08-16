@@ -7,10 +7,11 @@ use crate::report::{FindingContext, FindingDistribution, FindingScope, Report, r
 #[derive(Debug, Clone, Copy)]
 struct TextStyles {
     diagnostic: Style,
+    problem: Style,
     heading: Style,
+    grouping: Style,
     path: Style,
     location: Style,
-    secondary: Style,
     source_gutter: Style,
 }
 
@@ -18,10 +19,11 @@ impl TextStyles {
     const fn colored() -> Self {
         Self {
             diagnostic: AnsiColor::Yellow.on_default().bold(),
+            problem: AnsiColor::Red.on_default().bold(),
             heading: Style::new().bold(),
+            grouping: AnsiColor::Magenta.on_default().bold(),
             path: AnsiColor::Cyan.on_default().bold(),
             location: AnsiColor::Cyan.on_default(),
-            secondary: Style::new().dimmed(),
             source_gutter: Style::new().dimmed(),
         }
     }
@@ -42,8 +44,12 @@ pub fn render_text(report: &Report, color: bool) -> String {
 
         write_styled(&mut output, styles.diagnostic, &finding.code);
         output.push(' ');
-        write_styled(&mut output, styles.heading, finding.lines);
-        writeln!(&mut output, " duplicated {unit}").expect("writing to String cannot fail");
+        write_styled(
+            &mut output,
+            styles.problem,
+            format_args!("{} duplicated {unit}", finding.lines),
+        );
+        output.push('\n');
 
         write_styled(&mut output, styles.heading, "Context:");
         writeln!(&mut output, " {}", context_name(finding.context))
@@ -63,7 +69,7 @@ pub fn render_text(report: &Report, color: bool) -> String {
         output.push(' ');
         write_styled(
             &mut output,
-            styles.secondary,
+            styles.grouping,
             format_args!("({})", distribution_name(finding.distribution)),
         );
         output.push('\n');
@@ -105,12 +111,13 @@ pub fn render_text(report: &Report, color: bool) -> String {
             "groups"
         };
 
+        output.push_str("Found ");
         write_styled(
             &mut output,
-            styles.heading,
-            format_args!("Found {} duplicate {group_unit}.", report.duplicate_groups),
+            styles.grouping,
+            format_args!("{} duplicate {group_unit}", report.duplicate_groups),
         );
-        output.push('\n');
+        output.push_str(".\n");
     }
 
     let line_unit = if report.duplicate_lines == 1 {
@@ -121,13 +128,16 @@ pub fn render_text(report: &Report, color: bool) -> String {
 
     write_styled(
         &mut output,
-        styles.heading,
-        format_args!(
-            "{} duplicate {line_unit} ({:.2}%).",
-            report.duplicate_lines, report.duplication_percent,
-        ),
+        styles.problem,
+        format_args!("{} duplicate {line_unit}", report.duplicate_lines),
     );
-    output.push('\n');
+    output.push(' ');
+    write_styled(
+        &mut output,
+        styles.problem,
+        format_args!("({:.2}%)", report.duplication_percent),
+    );
+    output.push_str(".\n");
 
     output
 }
@@ -216,6 +226,22 @@ mod tests {
         assert!(rendered.contains(&format!(
             "{}DUP001{:#}",
             styles.diagnostic, styles.diagnostic,
+        )));
+        assert!(rendered.contains(&format!(
+            "{}2 duplicated lines{:#}",
+            styles.problem, styles.problem,
+        )));
+        assert!(rendered.contains(&format!(
+            "{}(cross-file){:#}",
+            styles.grouping, styles.grouping,
+        )));
+        assert!(rendered.contains(&format!(
+            "{}1 duplicate group{:#}",
+            styles.grouping, styles.grouping,
+        )));
+        assert!(rendered.contains(&format!(
+            "{}(50.00%){:#}",
+            styles.problem, styles.problem,
         )));
         assert!(rendered.contains(&format!("{}a.py{:#}", styles.path, styles.path)));
         assert!(rendered.contains(&format!(
