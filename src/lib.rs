@@ -17,7 +17,7 @@ pub mod suffix;
 
 mod python;
 
-use cli::Cli;
+use cli::{Cli, OutputFormat};
 use config::{SettingsOverrides, load_settings};
 use corpus::build_corpus;
 use detect::detect_duplicates;
@@ -69,10 +69,17 @@ pub fn run(cli: &Cli) -> Result<RunResult, String> {
     )
     .map_err(|error| format!("failed to build report: {error}"))?;
 
-    let output = if cli.json {
-        render_json(&report).map_err(|error| format!("failed to render JSON report: {error}"))?
-    } else {
-        render_human(&report)
+    let output = match cli.output_format() {
+        OutputFormat::Text => render_human(&report),
+        OutputFormat::Json => {
+            render_json(&report).map_err(|error| format!("failed to render JSON report: {error}"))?
+        }
+        OutputFormat::Markdown => {
+            return Err("Markdown output is not implemented yet".to_owned());
+        }
+        OutputFormat::Sarif => {
+            return Err("SARIF output is not implemented yet".to_owned());
+        }
     };
 
     Ok(RunResult {
@@ -230,6 +237,7 @@ min-lines = 2
             no_hidden: false,
             exclude: Vec::new(),
             workers: 1,
+            format: None,
             json: false,
             show_source: false,
         }
@@ -317,8 +325,42 @@ min-lines = 2
 
         assert_eq!(value["version"], 3);
         assert_eq!(value["duplicate_groups"], 1);
-
         assert_eq!(value["findings"][0]["code"], "DUP001");
+    }
+
+    #[test]
+    fn format_json_matches_json_flag() {
+        let temp = TempDir::new();
+        write_test_config(&temp);
+
+        temp.write("a.py", "alpha = 1\nbeta = 2\n");
+        temp.write("b.py", "alpha = 1\nbeta = 2\n");
+
+        let mut via_flag = test_cli(vec![temp.path().to_path_buf()]);
+        via_flag.json = true;
+
+        let mut via_format = test_cli(vec![temp.path().to_path_buf()]);
+        via_format.format = Some(OutputFormat::Json);
+
+        assert_eq!(run(&via_format).unwrap(), run(&via_flag).unwrap());
+    }
+
+    #[test]
+    fn unsupported_formats_return_clear_errors() {
+        let temp = TempDir::new();
+        write_test_config(&temp);
+
+        temp.write("example.py", "alpha = 1\nbeta = 2\n");
+
+        for (format, expected) in [
+            (OutputFormat::Markdown, "Markdown output is not implemented yet"),
+            (OutputFormat::Sarif, "SARIF output is not implemented yet"),
+        ] {
+            let mut cli = test_cli(vec![temp.path().to_path_buf()]);
+            cli.format = Some(format);
+
+            assert_eq!(run(&cli).unwrap_err(), expected);
+        }
     }
 
     #[test]

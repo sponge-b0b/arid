@@ -1,6 +1,14 @@
 use std::path::PathBuf;
 
-use clap::Parser;
+use clap::{Parser, ValueEnum};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum OutputFormat {
+    Text,
+    Json,
+    Markdown,
+    Sarif,
+}
 
 /// Fast Python duplicate-code checker written in Rust.
 #[derive(Debug, Parser)]
@@ -75,13 +83,28 @@ pub struct Cli {
     )]
     pub workers: usize,
 
-    /// Emit JSON instead of human-readable output.
-    #[arg(long)]
+    /// Select the report representation.
+    #[arg(long, value_enum, value_name = "FORMAT", conflicts_with = "json")]
+    pub format: Option<OutputFormat>,
+
+    /// Emit JSON instead of text output. Equivalent to --format json.
+    #[arg(long, conflicts_with = "format")]
     pub json: bool,
 
     /// Include source text in reported duplicate locations.
     #[arg(long)]
     pub show_source: bool,
+}
+
+impl Cli {
+    #[must_use]
+    pub fn output_format(&self) -> OutputFormat {
+        if self.json {
+            OutputFormat::Json
+        } else {
+            self.format.unwrap_or(OutputFormat::Text)
+        }
+    }
 }
 
 fn parse_worker_count(value: &str) -> Result<usize, String> {
@@ -122,6 +145,8 @@ mod tests {
 
         assert!(cli.exclude.is_empty());
         assert_eq!(cli.workers, 1);
+        assert_eq!(cli.format, None);
+        assert_eq!(cli.output_format(), OutputFormat::Text);
         assert!(!cli.json);
         assert!(!cli.show_source);
     }
@@ -148,8 +173,31 @@ mod tests {
 
         assert_eq!(cli.min_lines, Some(6));
         assert_eq!(cli.workers, 4);
+        assert_eq!(cli.output_format(), OutputFormat::Json);
         assert!(cli.json);
         assert!(cli.show_source);
+    }
+
+    #[test]
+    fn accepts_output_formats() {
+        for (value, expected) in [
+            ("text", OutputFormat::Text),
+            ("json", OutputFormat::Json),
+            ("markdown", OutputFormat::Markdown),
+            ("sarif", OutputFormat::Sarif),
+        ] {
+            let cli = Cli::try_parse_from(["arid", "--format", value]).unwrap();
+
+            assert_eq!(cli.format, Some(expected));
+            assert_eq!(cli.output_format(), expected);
+        }
+    }
+
+    #[test]
+    fn rejects_json_with_explicit_format() {
+        let result = Cli::try_parse_from(["arid", "--json", "--format", "json"]);
+
+        assert!(result.is_err());
     }
 
     #[test]
