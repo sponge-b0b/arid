@@ -1,35 +1,30 @@
 use std::fmt::{Display, Write};
 
+use clap::builder::styling::{AnsiColor, Style};
+
 use crate::report::{
     FindingContext, FindingDistribution, FindingScope, Report, render_human,
 };
 
-const RESET: &str = "\x1b[0m";
-const BOLD: &str = "\x1b[1m";
-const DIM: &str = "\x1b[2m";
-const CYAN: &str = "\x1b[36m";
-const BOLD_CYAN: &str = "\x1b[1;36m";
-const BOLD_YELLOW: &str = "\x1b[1;33m";
-
 #[derive(Debug, Clone, Copy)]
 struct TextStyles {
-    diagnostic: &'static str,
-    heading: &'static str,
-    path: &'static str,
-    location: &'static str,
-    secondary: &'static str,
-    source_gutter: &'static str,
+    diagnostic: Style,
+    heading: Style,
+    path: Style,
+    location: Style,
+    secondary: Style,
+    source_gutter: Style,
 }
 
 impl TextStyles {
     const fn colored() -> Self {
         Self {
-            diagnostic: BOLD_YELLOW,
-            heading: BOLD,
-            path: BOLD_CYAN,
-            location: CYAN,
-            secondary: DIM,
-            source_gutter: DIM,
+            diagnostic: AnsiColor::Yellow.on_default().bold(),
+            heading: Style::new().bold(),
+            path: AnsiColor::Cyan.on_default().bold(),
+            location: AnsiColor::Cyan.on_default(),
+            secondary: Style::new().dimmed(),
+            source_gutter: Style::new().dimmed(),
         }
     }
 }
@@ -139,8 +134,8 @@ pub fn render_text(report: &Report, color: bool) -> String {
     output
 }
 
-fn write_styled(output: &mut String, style: &str, value: impl Display) {
-    write!(output, "{style}{value}{RESET}").expect("writing to String cannot fail");
+fn write_styled(output: &mut String, style: Style, value: impl Display) {
+    write!(output, "{style}{value}{style:#}").expect("writing to String cannot fail");
 }
 
 const fn context_name(context: FindingContext) -> &'static str {
@@ -217,11 +212,21 @@ mod tests {
 
     #[test]
     fn colored_text_uses_semantic_styles() {
+        let styles = TextStyles::colored();
         let rendered = render_text(&report(), true);
 
-        assert!(rendered.contains("\x1b[1;33mDUP001\x1b[0m"));
-        assert!(rendered.contains("\x1b[1;36ma.py\x1b[0m"));
-        assert!(rendered.contains("\x1b[36m:1-2\x1b[0m"));
-        assert!(rendered.contains("\x1b[2m       1 | \x1b[0malpha()"));
+        assert!(rendered.contains(&format!(
+            "{}DUP001{:#}",
+            styles.diagnostic, styles.diagnostic,
+        )));
+        assert!(rendered.contains(&format!("{}a.py{:#}", styles.path, styles.path)));
+        assert!(rendered.contains(&format!(
+            "{}:1-2{:#}",
+            styles.location, styles.location,
+        )));
+        assert!(rendered.contains(&format!(
+            "{}       1 | {:#}alpha()",
+            styles.source_gutter, styles.source_gutter,
+        )));
     }
 }
