@@ -1,0 +1,8 @@
+- id: arid
+  name: arid
+  description: Find duplicated Python code with Arid
+  entry: arid .
+  language: unsupported
+  minimum_pre_commit_version: "4.4.0"
+  pass_filenames: false
+  always_run: true
