@@ -2,7 +2,7 @@
 
 **Product:** Arid  
 **Stable target:** `1.1.0`  
-**Current phase:** Phase 2 — Baseline Domain and Enforcement
+**Current phase:** Phase 3 — Markdown Output
 
 ## Purpose
 
@@ -201,7 +201,7 @@ feat(report): add colored text output
 
 # Phase 2 — Baseline Domain and Enforcement
 
-**Status:** In progress
+**Status:** Complete
 
 ## Goal
 
@@ -279,6 +279,8 @@ Before advancing:
 ---
 
 # Phase 3 — Markdown Output
+
+**Status:** In progress
 
 ## Goal
 
