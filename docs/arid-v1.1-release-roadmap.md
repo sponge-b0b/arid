@@ -2,7 +2,7 @@
 
 **Product:** Arid  
 **Stable target:** `1.1.0`  
-**Current phase:** Phase 3 — Markdown Output
+**Current phase:** Phase 4 — SARIF Output
 
 ## Purpose
 
@@ -280,7 +280,7 @@ Before advancing:
 
 # Phase 3 — Markdown Output
 
-**Status:** In progress
+**Status:** Complete
 
 ## Goal
 
@@ -312,6 +312,8 @@ Provide a clean document-oriented report suitable for GitHub rendering, CI summa
 ---
 
 # Phase 4 — SARIF Output
+
+**Status:** In progress
 
 ## Goal
 
