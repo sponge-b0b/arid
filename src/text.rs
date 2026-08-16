@@ -8,6 +8,7 @@ use crate::report::{FindingContext, FindingDistribution, FindingScope, Report, r
 struct TextStyles {
     diagnostic: Style,
     problem: Style,
+    success: Style,
     heading: Style,
     grouping: Style,
     path: Style,
@@ -20,6 +21,7 @@ impl TextStyles {
         Self {
             diagnostic: AnsiColor::Yellow.on_default().bold(),
             problem: AnsiColor::Red.on_default().bold(),
+            success: AnsiColor::Green.on_default().bold(),
             heading: Style::new().bold(),
             grouping: AnsiColor::Magenta.on_default().bold(),
             path: AnsiColor::Cyan.on_default().bold(),
@@ -52,12 +54,14 @@ pub fn render_text(report: &Report, color: bool) -> String {
         output.push('\n');
 
         write_styled(&mut output, styles.heading, "Context:");
-        writeln!(&mut output, " {}", context_name(finding.context))
-            .expect("writing to String cannot fail");
+        output.push(' ');
+        write_context(&mut output, styles, finding.context);
+        output.push('\n');
 
         write_styled(&mut output, styles.heading, "Scope:");
-        writeln!(&mut output, " {}", scope_name(finding.scope))
-            .expect("writing to String cannot fail");
+        output.push(' ');
+        write_scope(&mut output, styles, finding.scope);
+        output.push('\n');
 
         write_styled(&mut output, styles.heading, "Occurrences:");
         output.push(' ');
@@ -102,7 +106,7 @@ pub fn render_text(report: &Report, color: bool) -> String {
     }
 
     if report.findings.is_empty() {
-        write_styled(&mut output, styles.heading, "No duplicate code found.");
+        write_styled(&mut output, styles.success, "No duplicate code found.");
         output.push('\n');
     } else {
         let group_unit = if report.duplicate_groups == 1 {
@@ -125,16 +129,21 @@ pub fn render_text(report: &Report, color: bool) -> String {
     } else {
         "lines"
     };
+    let line_style = if report.duplicate_lines == 0 {
+        styles.success
+    } else {
+        styles.problem
+    };
 
     write_styled(
         &mut output,
-        styles.problem,
+        line_style,
         format_args!("{} duplicate {line_unit}", report.duplicate_lines),
     );
     output.push(' ');
     write_styled(
         &mut output,
-        styles.problem,
+        styles.heading,
         format_args!("({:.2}%)", report.duplication_percent),
     );
     output.push_str(".\n");
@@ -144,6 +153,26 @@ pub fn render_text(report: &Report, color: bool) -> String {
 
 fn write_styled(output: &mut String, style: Style, value: impl Display) {
     write!(output, "{style}{value}{style:#}").expect("writing to String cannot fail");
+}
+
+fn write_context(output: &mut String, styles: TextStyles, context: FindingContext) {
+    let value = context_name(context);
+
+    if context == FindingContext::Mixed {
+        write_styled(output, styles.grouping, value);
+    } else {
+        output.push_str(value);
+    }
+}
+
+fn write_scope(output: &mut String, styles: TextStyles, scope: FindingScope) {
+    let value = scope_name(scope);
+
+    if scope == FindingScope::Mixed {
+        write_styled(output, styles.grouping, value);
+    } else {
+        output.push_str(value);
+    }
 }
 
 const fn context_name(context: FindingContext) -> &'static str {
@@ -241,7 +270,7 @@ mod tests {
         )));
         assert!(rendered.contains(&format!(
             "{}(50.00%){:#}",
-            styles.problem, styles.problem,
+            styles.heading, styles.heading,
         )));
         assert!(rendered.contains(&format!("{}a.py{:#}", styles.path, styles.path)));
         assert!(rendered.contains(&format!(
@@ -251,6 +280,49 @@ mod tests {
         assert!(rendered.contains(&format!(
             "{}       1 | {:#}alpha()",
             styles.source_gutter, styles.source_gutter,
+        )));
+    }
+
+    #[test]
+    fn mixed_context_and_scope_use_grouping_style() {
+        let styles = TextStyles::colored();
+        let mut report = report();
+        report.findings[0].context = FindingContext::Mixed;
+        report.findings[0].scope = FindingScope::Mixed;
+
+        let rendered = render_text(&report, true);
+        let mixed = format!("{}mixed{:#}", styles.grouping, styles.grouping);
+
+        assert_eq!(rendered.matches(&mixed).count(), 2);
+    }
+
+    #[test]
+    fn zero_duplication_uses_success_style() {
+        let styles = TextStyles::colored();
+        let report = Report {
+            version: 3,
+            files: 1,
+            source_lines: 1,
+            analyzed_lines: 1,
+            duplicate_groups: 0,
+            duplicate_lines: 0,
+            duplication_percent: 0.0,
+            findings: Vec::new(),
+        };
+
+        let rendered = render_text(&report, true);
+
+        assert!(rendered.contains(&format!(
+            "{}No duplicate code found.{:#}",
+            styles.success, styles.success,
+        )));
+        assert!(rendered.contains(&format!(
+            "{}0 duplicate lines{:#}",
+            styles.success, styles.success,
+        )));
+        assert!(rendered.contains(&format!(
+            "{}(0.00%){:#}",
+            styles.heading, styles.heading,
         )));
     }
 }
