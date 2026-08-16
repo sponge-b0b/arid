@@ -1,6 +1,6 @@
 use std::fmt::{Display, Write};
 
-use clap::builder::styling::{AnsiColor, Style};
+use clap::builder::styling::{Ansi256Color, AnsiColor, Style};
 
 use crate::report::{FindingContext, FindingDistribution, FindingScope, Report, render_text_plain};
 
@@ -27,7 +27,7 @@ impl TextStyles {
             heading: Style::new().bold(),
             classification: AnsiColor::Magenta.on_default().bold(),
             distribution: AnsiColor::Blue.on_default().bold(),
-            group: AnsiColor::BrightCyan.on_default().bold(),
+            group: Ansi256Color(208).on_default().bold(),
             path: AnsiColor::Cyan.on_default().bold(),
             location: AnsiColor::Cyan.on_default(),
             source_gutter: Style::new().dimmed(),
