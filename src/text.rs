@@ -160,23 +160,11 @@ fn write_styled(output: &mut String, style: Style, value: impl Display) {
 }
 
 fn write_context(output: &mut String, styles: TextStyles, context: FindingContext) {
-    let value = context_name(context);
-
-    if context == FindingContext::Mixed {
-        write_styled(output, styles.classification, value);
-    } else {
-        output.push_str(value);
-    }
+    write_styled(output, styles.classification, context_name(context));
 }
 
 fn write_scope(output: &mut String, styles: TextStyles, scope: FindingScope) {
-    let value = scope_name(scope);
-
-    if scope == FindingScope::Mixed {
-        write_styled(output, styles.classification, value);
-    } else {
-        output.push_str(value);
-    }
+    write_styled(output, styles.classification, scope_name(scope));
 }
 
 const fn context_name(context: FindingContext) -> &'static str {
@@ -263,6 +251,14 @@ mod tests {
         assert!(rendered.contains(&format!(
             "{}2 duplicated lines{:#}",
             styles.problem, styles.problem,
+        )));
+        assert!(rendered.contains(&format!(
+            "{}executable{:#}",
+            styles.classification, styles.classification,
+        )));
+        assert!(rendered.contains(&format!(
+            "{}function{:#}",
+            styles.classification, styles.classification,
         )));
         assert!(rendered.contains(&format!(
             "{}(cross-file){:#}",
