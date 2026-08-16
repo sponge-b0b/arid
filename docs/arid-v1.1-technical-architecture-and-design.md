@@ -90,8 +90,8 @@ Neither output selection nor baseline enforcement may change normalized equality
 | JSON compatibility | existing `--json` retained; schema v3 preserved |
 | Color selector | `--color auto|always|never` |
 | Color scope | text output only |
-| Styling model | semantic roles using `anstyle` |
-| Terminal adaptation | `anstream` for capability-aware stdout behavior |
+| Styling model | semantic roles using `anstyle` through Clap's public styling API |
+| Terminal adaptation | `std::io::IsTerminal` at the binary boundary with injected `RunContext` |
 | Markdown | concrete deterministic renderer |
 | SARIF | concrete typed SARIF 2.1.0 renderer |
 | Baseline storage | deterministic JSON |
@@ -112,19 +112,17 @@ Cargo dependency versions remain controlled by `Cargo.toml` and `Cargo.lock`; th
 
 # **4. Repository Structure**
 
-The current `report.rs` already owns the stable report model plus human and JSON rendering. Adding multiple concrete renderers makes a module split justified in v1.1.
+The v1 `report.rs` owns the stable report model plus plain-text and JSON rendering. V1.1 extracts the styled text path into a concrete text renderer while leaving the stable report model in place.
 
-The intended structure is:
+The intended incremental structure is:
 
 ```text
 src/
 ├── baseline.rs
-├── report/
-│   ├── mod.rs
-│   ├── text.rs
-│   ├── json.rs
-│   ├── markdown.rs
-│   └── sarif.rs
+├── report.rs
+├── text.rs
+├── markdown.rs
+├── sarif.rs
 └── ... existing v1 modules
 ```
 
@@ -138,23 +136,23 @@ baseline.rs
     normalization compatibility check
     active-group filtering
 
-report/mod.rs
+report.rs
     Report
     Finding
     Location
     report construction
     canonical report ordering
+    plain-text compatibility helper
+    existing schema-v3 JSON serialization
 
-report/text.rs
-    plain/colored developer output
+text.rs
+    canonical text renderer
+    semantic plain/colored presentation
 
-report/json.rs
-    existing schema-v3 serialization
-
-report/markdown.rs
+markdown.rs
     Markdown document rendering
 
-report/sarif.rs
+sarif.rs
     SARIF 2.1.0 model + rendering
 ```
 
@@ -431,13 +429,13 @@ For non-text formats, color resolution is skipped entirely.
 
 # **10. Color Implementation**
 
-V1.1 SHOULD use the Rust CLI `anstyle` / `anstream` ecosystem rather than hand-building escape sequences.
+V1.1 SHOULD use `anstyle` semantic style types rather than hand-building ANSI escape sequences.
 
-`anstyle` provides semantic ANSI styles with low coupling.
+Arid MAY use Clap's public `anstyle` re-export instead of adding a redundant direct dependency when the required styling API is already available through Clap.
 
-`anstream` provides stream adaptation including non-terminal stripping and Windows console handling.
+TTY detection belongs at the binary boundary via `std::io::IsTerminal`. Arid owns `NO_COLOR`, `CLICOLOR_FORCE`, and `CLICOLOR` precedence and injects the resolved terminal context into library orchestration.
 
-Arid still owns its own product-level environment precedence; terminal adaptation is delegated to the stream layer.
+A separate stream-adaptation layer is not required while rendering remains a deterministic `String`; adding one solely for color would duplicate responsibility.
 
 The text renderer SHOULD define a small fixed stylesheet:
 
@@ -460,10 +458,10 @@ heading        bold
 path           bold cyan
 location       cyan
 secondary      dim
-source_gutter  dim
+source-gutter  dim
 ```
 
-The disabled stylesheet uses plain styles.
+The disabled path preserves the existing plain-text bytes.
 
 Python source text itself is never syntax-highlighted by Arid.
 
@@ -473,7 +471,9 @@ The renderer MUST reset styling after every styled fragment so one field cannot 
 
 # **11. Text Renderer**
 
-`render_human` SHOULD be renamed or wrapped as `render_text` while preserving the existing output contract when color is disabled.
+`render_text` is the canonical v1.1 text renderer.
+
+The legacy v1 `render_human` name MUST be retired in v1.1 rather than retained as a second name for the same output representation. A compatibility helper used internally to preserve the original unstyled bytes MAY be named `render_text_plain`.
 
 Text rendering accepts explicit rendering context rather than reading environment variables itself.
 
@@ -591,7 +591,7 @@ Markdown uses no ANSI styling.
 
 # **14. SARIF Renderer**
 
-V1.1 emits SARIF 2.1.0 through concrete Serde-owned structures in `report/sarif.rs`.
+V1.1 emits SARIF 2.1.0 through concrete Serde-owned structures in `sarif.rs`.
 
 Arid SHOULD NOT expose SARIF types throughout the detection or report model.
 
@@ -1173,17 +1173,17 @@ The historical v1 roadmap MUST remain stable after v1.1 development begins.
 
 V1.1 SHOULD add only dependencies that directly support the committed features.
 
-Expected direct additions are limited to:
+For Phase 1, color styling SHOULD reuse Clap's public `anstyle` styling API; no additional direct color dependency is required.
+
+The expected new direct dependency for the remaining committed features is:
 
 ```text
-anstyle   semantic ANSI styles
-anstream  terminal-aware output adaptation
 sha2      deterministic cryptographic baseline fingerprints
 ```
 
 SARIF and Markdown SHOULD be implemented with existing standard-library and Serde capabilities unless implementation evidence justifies a small focused dependency.
 
-No template engine, Markdown parser, syntax-highlighting library, async runtime, plugin framework, or Git library is required.
+No template engine, Markdown parser, syntax-highlighting library, async runtime, plugin framework, Git library, or redundant stream-adaptation layer is required.
 
 ---
 
@@ -1192,7 +1192,7 @@ No template engine, Markdown parser, syntax-highlighting library, async runtime,
 The preferred inside-out implementation order is:
 
 1. CLI output/color domain enums and resolution
-2. report module split without changing behavior
+2. extract the concrete text renderer without changing report semantics
 3. plain text compatibility tests
 4. semantic color rendering
 5. baseline domain model and fingerprinting
