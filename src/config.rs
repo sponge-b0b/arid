@@ -18,6 +18,7 @@ pub struct Settings {
     pub same_file: bool,
     pub hidden: bool,
     pub exclude: Vec<String>,
+    pub baseline: Option<PathBuf>,
 }
 
 impl Default for Settings {
@@ -31,6 +32,7 @@ impl Default for Settings {
             same_file: true,
             hidden: false,
             exclude: Vec::new(),
+            baseline: None,
         }
     }
 }
@@ -146,6 +148,7 @@ pub fn load_settings(
     };
 
     apply_overrides(&mut settings, overrides);
+    resolve_project_paths(&mut settings, &project_root);
     validate_settings(&settings)?;
 
     Ok(LoadedSettings {
@@ -247,6 +250,10 @@ fn apply_project_config(settings: &mut Settings, config: AridConfig) {
     if let Some(value) = config.exclude {
         settings.exclude = value;
     }
+
+    if let Some(value) = config.baseline {
+        settings.baseline = Some(value);
+    }
 }
 
 fn apply_overrides(settings: &mut Settings, overrides: SettingsOverrides) {
@@ -283,6 +290,16 @@ fn apply_overrides(settings: &mut Settings, overrides: SettingsOverrides) {
     }
 }
 
+fn resolve_project_paths(settings: &mut Settings, project_root: &Path) {
+    let Some(path) = settings.baseline.as_mut() else {
+        return;
+    };
+
+    if path.is_relative() {
+        *path = project_root.join(&*path);
+    }
+}
+
 fn validate_settings(settings: &Settings) -> Result<(), ConfigError> {
     if settings.min_lines == 0 {
         return Err(ConfigError::InvalidMinLines);
@@ -314,6 +331,7 @@ struct AridConfig {
     same_file: Option<bool>,
     hidden: Option<bool>,
     exclude: Option<Vec<String>>,
+    baseline: Option<PathBuf>,
 }
 
 #[cfg(test)]
@@ -378,6 +396,7 @@ ignore-comments = false
 same-file = false
 hidden = true
 exclude = ["generated/**"]
+baseline = "config/arid-baseline.json"
 "#,
         )
         .unwrap();
@@ -389,10 +408,33 @@ exclude = ["generated/**"]
         assert!(!loaded.settings.same_file);
         assert!(loaded.settings.hidden);
         assert_eq!(loaded.settings.exclude, vec!["generated/**"]);
+        assert_eq!(
+            loaded.settings.baseline,
+            Some(temp.path().join("config/arid-baseline.json"))
+        );
 
         assert_eq!(loaded.config_path, Some(temp.path().join("pyproject.toml")));
 
         assert_eq!(loaded.project_root, temp.path());
+    }
+
+    #[test]
+    fn preserves_absolute_configured_baseline_path() {
+        let temp = TempDir::new();
+        let baseline = temp.path().join("debt.json");
+
+        fs::write(
+            temp.path().join("pyproject.toml"),
+            format!(
+                "[tool.arid]\nbaseline = {:?}\n",
+                baseline.to_string_lossy()
+            ),
+        )
+        .unwrap();
+
+        let loaded = load_settings(temp.path(), SettingsOverrides::default()).unwrap();
+
+        assert_eq!(loaded.settings.baseline, Some(baseline));
     }
 
     #[test]
@@ -501,6 +543,7 @@ min-lines = 0
             same_file: false,
             hidden: true,
             exclude: Vec::new(),
+            baseline: None,
         };
 
         assert_eq!(

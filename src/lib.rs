@@ -16,11 +16,14 @@ pub mod normalize;
 pub mod outcome;
 pub mod report;
 pub mod suffix;
+mod baseline_filter;
 mod python;
 mod text;
 
+use baseline::{build_baseline, read_baseline, write_baseline};
+use baseline_filter::filter_active_groups;
 use cli::{Cli, ColorWhen, OutputFormat};
-use config::{SettingsOverrides, load_settings};
+use config::{LoadedSettings, SettingsOverrides, load_settings};
 use corpus::build_corpus;
 use detect::detect_duplicates;
 use files::discover_python_files;
@@ -86,7 +89,7 @@ pub fn run(cli: &Cli) -> Result<RunResult, String> {
 ///
 /// Application pipeline:
 ///
-/// discover → read → normalize → corpus → detect → report
+/// discover → read → normalize → corpus → detect → baseline → report
 pub fn run_with_context(cli: &Cli, context: RunContext) -> Result<RunResult, String> {
     let output_format = cli.output_format();
 
@@ -96,21 +99,47 @@ pub fn run_with_context(cli: &Cli, context: RunContext) -> Result<RunResult, Str
 
     let loaded = load_settings(&paths[0], settings_overrides(cli))
         .map_err(|error| format!("failed to load configuration: {error}"))?;
+    let normalization = loaded.settings.normalization_options();
 
     let discovered = discover_python_files(&paths, &loaded.settings, &loaded.project_root)
         .map_err(|error| format!("failed to discover Python files: {error}"))?;
 
-    let prepared = prepare_files(
-        discovered,
-        loaded.settings.normalization_options(),
-        cli.workers,
-    )?;
+    let prepared = prepare_files(discovered, normalization, cli.workers)?;
 
     let corpus = build_corpus(prepared)
         .map_err(|error| format!("failed to build source corpus: {error}"))?;
 
     let groups = detect_duplicates(&corpus, loaded.settings.detection_options())
         .map_err(|error| format!("failed to detect duplicates: {error}"))?;
+
+    if let Some(path) = &cli.write_baseline {
+        let baseline = build_baseline(&corpus, &groups, normalization, &loaded.project_root)
+            .map_err(|error| format!("failed to build baseline: {error}"))?;
+
+        write_baseline(path, &baseline)
+            .map_err(|error| format!("failed to write baseline: {error}"))?;
+
+        return Ok(RunResult {
+            output: String::new(),
+            exit_status: ExitStatus::Success,
+        });
+    }
+
+    let groups = if let Some(path) = selected_baseline_path(cli, &loaded) {
+        let baseline = read_baseline(&path, normalization)
+            .map_err(|error| format!("failed to load baseline: {error}"))?;
+
+        filter_active_groups(
+            &corpus,
+            groups,
+            &baseline,
+            normalization,
+            &loaded.project_root,
+        )
+        .map_err(|error| format!("failed to apply baseline: {error}"))?
+    } else {
+        groups
+    };
 
     let report = build_report(
         &corpus,
@@ -136,6 +165,12 @@ pub fn run_with_context(cli: &Cli, context: RunContext) -> Result<RunResult, Str
         exit_status: report.exit_status(),
         output,
     })
+}
+
+fn selected_baseline_path(cli: &Cli, loaded: &LoadedSettings) -> Option<PathBuf> {
+    cli.baseline
+        .clone()
+        .or_else(|| loaded.settings.baseline.clone())
 }
 
 fn validate_output_options(cli: &Cli, output_format: OutputFormat) -> Result<(), String> {
@@ -325,6 +360,8 @@ min-lines = 2
             color: None,
             json: false,
             show_source: false,
+            baseline: None,
+            write_baseline: None,
         }
     }
 
@@ -353,6 +390,74 @@ min-lines = 2
         assert!(result.output.contains("b.py:1-2"));
         assert!(result.output.contains("Found 1 duplicate group."));
         assert!(!result.output.contains('\u{1b}'));
+    }
+
+    #[test]
+    fn baseline_write_and_enforcement_are_end_to_end() {
+        let (temp, mut write_cli) = duplicate_fixture();
+        let baseline_path = temp.path().join("arid-baseline.json");
+        write_cli.write_baseline = Some(baseline_path.clone());
+
+        let written = run(&write_cli).unwrap();
+        assert_eq!(written.exit_status, ExitStatus::Success);
+        assert!(written.output.is_empty());
+        assert!(baseline_path.is_file());
+
+        let mut enforce_cli = test_cli(vec![temp.path().to_path_buf()]);
+        enforce_cli.baseline = Some(baseline_path.clone());
+
+        let accepted = run(&enforce_cli).unwrap();
+        assert_eq!(accepted.exit_status, ExitStatus::Success);
+        assert!(accepted.output.contains("No duplicate code found."));
+
+        temp.write("c.py", "alpha = 1\nbeta = 2\n");
+
+        let active = run(&enforce_cli).unwrap();
+        assert_eq!(active.exit_status, ExitStatus::Findings);
+        assert!(active.output.contains("a.py:1-2"));
+        assert!(active.output.contains("b.py:1-2"));
+        assert!(active.output.contains("c.py:1-2"));
+    }
+
+    #[test]
+    fn configured_baseline_is_used_and_cli_baseline_wins() {
+        let (temp, mut write_cli) = duplicate_fixture();
+        let configured_path = temp.path().join("configured.json");
+        write_cli.write_baseline = Some(configured_path.clone());
+        run(&write_cli).unwrap();
+
+        temp.write(
+            "pyproject.toml",
+            r#"
+[tool.arid]
+min-lines = 2
+baseline = "configured.json"
+"#,
+        );
+
+        let configured = run(&test_cli(vec![temp.path().to_path_buf()])).unwrap();
+        assert_eq!(configured.exit_status, ExitStatus::Success);
+
+        let mut cli = test_cli(vec![temp.path().to_path_buf()]);
+        cli.baseline = Some(temp.path().join("missing.json"));
+
+        let error = run(&cli).unwrap_err();
+        assert!(error.contains("missing.json"));
+    }
+
+    #[test]
+    fn baseline_normalization_mismatch_is_rejected() {
+        let (temp, mut write_cli) = duplicate_fixture();
+        let baseline_path = temp.path().join("arid-baseline.json");
+        write_cli.write_baseline = Some(baseline_path.clone());
+        run(&write_cli).unwrap();
+
+        let mut cli = test_cli(vec![temp.path().to_path_buf()]);
+        cli.baseline = Some(baseline_path);
+        cli.no_ignore_comments = true;
+
+        let error = run(&cli).unwrap_err();
+        assert!(error.contains("normalization settings do not match"));
     }
 
     #[test]

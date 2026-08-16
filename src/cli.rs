@@ -105,6 +105,18 @@ pub struct Cli {
     /// Include source text in reported duplicate locations.
     #[arg(long)]
     pub show_source: bool,
+
+    /// Accept duplicate debt recorded in the baseline file.
+    #[arg(long, value_name = "PATH", conflicts_with = "write_baseline")]
+    pub baseline: Option<PathBuf>,
+
+    /// Write the current duplicate debt as a baseline and exit successfully.
+    #[arg(
+        long,
+        value_name = "PATH",
+        conflicts_with_all = ["baseline", "format", "json", "color", "show_source"]
+    )]
+    pub write_baseline: Option<PathBuf>,
 }
 
 impl Cli {
@@ -161,6 +173,8 @@ mod tests {
         assert_eq!(cli.color, None);
         assert!(!cli.json);
         assert!(!cli.show_source);
+        assert_eq!(cli.baseline, None);
+        assert_eq!(cli.write_baseline, None);
     }
 
     #[test]
@@ -219,10 +233,62 @@ mod tests {
     }
 
     #[test]
+    fn accepts_baseline_options() {
+        let cli = Cli::try_parse_from(["arid", "--baseline", "debt.json"]).unwrap();
+        assert_eq!(cli.baseline, Some(PathBuf::from("debt.json")));
+
+        let cli = Cli::try_parse_from(["arid", "--write-baseline", "debt.json"]).unwrap();
+        assert_eq!(cli.write_baseline, Some(PathBuf::from("debt.json")));
+    }
+
+    #[test]
     fn rejects_json_with_explicit_format() {
         let result = Cli::try_parse_from(["arid", "--json", "--format", "json"]);
 
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn rejects_conflicting_baseline_modes() {
+        let result = Cli::try_parse_from([
+            "arid",
+            "--baseline",
+            "old.json",
+            "--write-baseline",
+            "new.json",
+        ]);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn write_baseline_rejects_presentation_options() {
+        for option in ["--json", "--show-source"] {
+            let result =
+                Cli::try_parse_from(["arid", "--write-baseline", "debt.json", option]);
+            assert!(result.is_err());
+        }
+
+        assert!(
+            Cli::try_parse_from([
+                "arid",
+                "--write-baseline",
+                "debt.json",
+                "--format",
+                "text",
+            ])
+            .is_err()
+        );
+        assert!(
+            Cli::try_parse_from([
+                "arid",
+                "--write-baseline",
+                "debt.json",
+                "--color",
+                "never",
+            ])
+            .is_err()
+        );
     }
 
     #[test]

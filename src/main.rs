@@ -28,6 +28,10 @@ fn main() -> ExitCode {
 }
 
 fn write_output(output: &str) {
+    if output.is_empty() {
+        return;
+    }
+
     if output.ends_with('\n') {
         print!("{output}");
     } else {

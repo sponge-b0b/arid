@@ -33,6 +33,8 @@ fn test_cli(path: PathBuf) -> Cli {
         color: None,
         json: true,
         show_source: false,
+        baseline: None,
+        write_baseline: None,
     }
 }
 
