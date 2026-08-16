@@ -425,10 +425,7 @@ baseline = "config/arid-baseline.json"
 
         fs::write(
             temp.path().join("pyproject.toml"),
-            format!(
-                "[tool.arid]\nbaseline = {:?}\n",
-                baseline.to_string_lossy()
-            ),
+            format!("[tool.arid]\nbaseline = {:?}\n", baseline.to_string_lossy()),
         )
         .unwrap();
 

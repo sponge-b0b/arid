@@ -268,15 +268,9 @@ mod tests {
             "{}1 duplicate group{:#}",
             styles.group, styles.group,
         )));
-        assert!(rendered.contains(&format!(
-            "{}(50.00%){:#}",
-            styles.heading, styles.heading,
-        )));
+        assert!(rendered.contains(&format!("{}(50.00%){:#}", styles.heading, styles.heading,)));
         assert!(rendered.contains(&format!("{}a.py{:#}", styles.path, styles.path)));
-        assert!(rendered.contains(&format!(
-            "{}:1-2{:#}",
-            styles.location, styles.location,
-        )));
+        assert!(rendered.contains(&format!("{}:1-2{:#}", styles.location, styles.location,)));
         assert!(rendered.contains(&format!(
             "{}       1 | {:#}alpha()",
             styles.source_gutter, styles.source_gutter,
@@ -291,10 +285,7 @@ mod tests {
         report.findings[0].scope = FindingScope::Mixed;
 
         let rendered = render_text(&report, true);
-        let mixed = format!(
-            "{}mixed{:#}",
-            styles.classification, styles.classification,
-        );
+        let mixed = format!("{}mixed{:#}", styles.classification, styles.classification,);
 
         assert_eq!(rendered.matches(&mixed).count(), 2);
     }
@@ -337,9 +328,6 @@ mod tests {
             "{}0 duplicate lines{:#}",
             styles.success, styles.success,
         )));
-        assert!(rendered.contains(&format!(
-            "{}(0.00%){:#}",
-            styles.heading, styles.heading,
-        )));
+        assert!(rendered.contains(&format!("{}(0.00%){:#}", styles.heading, styles.heading,)));
     }
 }

@@ -62,8 +62,12 @@ pub fn render_markdown(report: &Report) -> String {
     writeln!(&mut output, "- **Files:** {}", report.files).expect("writing to String cannot fail");
     writeln!(&mut output, "- **Source lines:** {}", report.source_lines)
         .expect("writing to String cannot fail");
-    writeln!(&mut output, "- **Analyzed lines:** {}", report.analyzed_lines)
-        .expect("writing to String cannot fail");
+    writeln!(
+        &mut output,
+        "- **Analyzed lines:** {}",
+        report.analyzed_lines
+    )
+    .expect("writing to String cannot fail");
     writeln!(
         &mut output,
         "- **Duplicate groups:** {}",

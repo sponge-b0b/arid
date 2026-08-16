@@ -5,21 +5,21 @@ use std::path::PathBuf;
 use rayon::prelude::*;
 
 pub mod baseline;
+mod baseline_filter;
 pub mod cli;
 pub mod config;
 pub mod corpus;
 pub mod detect;
 pub mod files;
+mod markdown;
 pub mod metrics;
 pub mod model;
 pub mod normalize;
 pub mod outcome;
-pub mod report;
-pub mod suffix;
-mod baseline_filter;
-mod markdown;
 mod python;
+pub mod report;
 mod sarif;
+pub mod suffix;
 mod text;
 
 use baseline::{build_baseline, read_baseline, write_baseline};
@@ -157,9 +157,8 @@ pub fn run_with_context(cli: &Cli, context: RunContext) -> Result<RunResult, Str
 
     let output = match output_format {
         OutputFormat::Text => render_text(&report, resolve_text_color(cli.color, context)),
-        OutputFormat::Json => {
-            render_json(&report).map_err(|error| format!("failed to render JSON report: {error}"))?
-        }
+        OutputFormat::Json => render_json(&report)
+            .map_err(|error| format!("failed to render JSON report: {error}"))?,
         OutputFormat::Markdown => render_markdown(&report),
         OutputFormat::Sarif => render_sarif(&report)
             .map_err(|error| format!("failed to render SARIF report: {error}"))?,
@@ -539,10 +538,18 @@ baseline = "configured.json"
         let result = run(&cli).unwrap();
 
         assert_eq!(result.exit_status, ExitStatus::Findings);
-        assert!(result.output.starts_with("# Arid duplicate-code report\n\n"));
+        assert!(
+            result
+                .output
+                .starts_with("# Arid duplicate-code report\n\n")
+        );
         assert!(result.output.contains("## `DUP001` — 2 duplicated lines"));
         assert!(result.output.contains("### `a.py:1-2`"));
-        assert!(result.output.contains("```python\nalpha = 1\nbeta = 2\n```"));
+        assert!(
+            result
+                .output
+                .contains("```python\nalpha = 1\nbeta = 2\n```")
+        );
         assert!(result.output.contains("- **Duplicate groups:** 1"));
         assert!(!result.output.contains('\u{1b}'));
     }
@@ -563,7 +570,8 @@ baseline = "configured.json"
         assert_eq!(value["runs"][0]["tool"]["driver"]["name"], "Arid");
         assert_eq!(value["runs"][0]["results"][0]["ruleId"], "DUP001");
         assert_eq!(
-            value["runs"][0]["results"][0]["locations"][0]["physicalLocation"]["artifactLocation"]["uri"],
+            value["runs"][0]["results"][0]["locations"][0]["physicalLocation"]["artifactLocation"]
+                ["uri"],
             "a.py"
         );
     }
@@ -649,7 +657,10 @@ baseline = "configured.json"
             }),
         ));
 
-        assert!(resolve_text_color(None, terminal(ColorEnvironment::default())));
+        assert!(resolve_text_color(
+            None,
+            terminal(ColorEnvironment::default())
+        ));
         assert!(!resolve_text_color(
             None,
             redirected(ColorEnvironment::default()),

@@ -23,11 +23,7 @@ impl TempDir {
         ));
 
         fs::create_dir_all(&path).unwrap();
-        fs::write(
-            path.join("pyproject.toml"),
-            "[tool.arid]\nmin-lines = 2\n",
-        )
-        .unwrap();
+        fs::write(path.join("pyproject.toml"), "[tool.arid]\nmin-lines = 2\n").unwrap();
 
         Self { path }
     }
@@ -72,7 +68,10 @@ fn write_baseline(temp: &TempDir) -> PathBuf {
     let path = temp.path().join("arid-baseline.json");
     let result = arid::run(&cli(
         temp,
-        [OsString::from("--write-baseline"), path.as_os_str().to_owned()],
+        [
+            OsString::from("--write-baseline"),
+            path.as_os_str().to_owned(),
+        ],
     ))
     .unwrap();
 
@@ -123,10 +122,7 @@ fn new_occurrence_in_existing_file_is_active() {
     let temp = duplicate_project();
     let baseline = write_baseline(&temp);
 
-    temp.write(
-        "a.py",
-        "alpha = 1\nbeta = 2\nalpha = 1\nbeta = 2\n",
-    );
+    temp.write("a.py", "alpha = 1\nbeta = 2\nalpha = 1\nbeta = 2\n");
 
     let result = enforce(&temp, &baseline);
 

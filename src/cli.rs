@@ -264,30 +264,17 @@ mod tests {
     #[test]
     fn write_baseline_rejects_presentation_options() {
         for option in ["--json", "--show-source"] {
-            let result =
-                Cli::try_parse_from(["arid", "--write-baseline", "debt.json", option]);
+            let result = Cli::try_parse_from(["arid", "--write-baseline", "debt.json", option]);
             assert!(result.is_err());
         }
 
         assert!(
-            Cli::try_parse_from([
-                "arid",
-                "--write-baseline",
-                "debt.json",
-                "--format",
-                "text",
-            ])
-            .is_err()
+            Cli::try_parse_from(["arid", "--write-baseline", "debt.json", "--format", "text",])
+                .is_err()
         );
         assert!(
-            Cli::try_parse_from([
-                "arid",
-                "--write-baseline",
-                "debt.json",
-                "--color",
-                "never",
-            ])
-            .is_err()
+            Cli::try_parse_from(["arid", "--write-baseline", "debt.json", "--color", "never",])
+                .is_err()
         );
     }
 

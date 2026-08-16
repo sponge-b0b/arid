@@ -22,11 +22,7 @@ impl TempDir {
         ));
 
         fs::create_dir_all(&path).unwrap();
-        fs::write(
-            path.join("pyproject.toml"),
-            "[tool.arid]\nmin-lines = 2\n",
-        )
-        .unwrap();
+        fs::write(path.join("pyproject.toml"), "[tool.arid]\nmin-lines = 2\n").unwrap();
 
         Self { path }
     }
@@ -122,7 +118,11 @@ fn baseline_filtering_applies_to_markdown_output() {
 
     let active = arid::run(&markdown_cli).unwrap();
     assert_eq!(active.exit_status, ExitStatus::Findings);
-    assert!(active.output.contains("**Occurrences:** 3 across 3 files _(cross-file)_"));
+    assert!(
+        active
+            .output
+            .contains("**Occurrences:** 3 across 3 files _(cross-file)_")
+    );
     assert!(active.output.contains("### `a.py:1-2`"));
     assert!(active.output.contains("### `b.py:1-2`"));
     assert!(active.output.contains("### `c.py:1-2`"));

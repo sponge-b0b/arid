@@ -22,11 +22,7 @@ impl TempDir {
         ));
 
         fs::create_dir_all(&path).unwrap();
-        fs::write(
-            path.join("pyproject.toml"),
-            "[tool.arid]\nmin-lines = 2\n",
-        )
-        .unwrap();
+        fs::write(path.join("pyproject.toml"), "[tool.arid]\nmin-lines = 2\n").unwrap();
 
         Self { path }
     }
@@ -138,10 +134,12 @@ fn baseline_filtering_applies_to_sarif_output() {
     let accepted = arid::run(&sarif_cli).unwrap();
     assert_eq!(accepted.exit_status, ExitStatus::Success);
     let accepted_value: serde_json::Value = serde_json::from_str(&accepted.output).unwrap();
-    assert!(accepted_value["runs"][0]["results"]
-        .as_array()
-        .unwrap()
-        .is_empty());
+    assert!(
+        accepted_value["runs"][0]["results"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
 
     temp.write("new.py", "alpha = 1\nbeta = 2\n");
 
@@ -150,7 +148,10 @@ fn baseline_filtering_applies_to_sarif_output() {
     let active_value: serde_json::Value = serde_json::from_str(&active.output).unwrap();
     let result = &active_value["runs"][0]["results"][0];
 
-    assert_eq!(active_value["runs"][0]["results"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        active_value["runs"][0]["results"].as_array().unwrap().len(),
+        1
+    );
     assert_eq!(result["locations"].as_array().unwrap().len(), 1);
     assert_eq!(result["relatedLocations"].as_array().unwrap().len(), 2);
     assert_eq!(result["properties"]["occurrences"], 3);

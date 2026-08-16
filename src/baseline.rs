@@ -10,7 +10,9 @@ use sha2::{Digest, Sha256};
 use thiserror::Error;
 
 use crate::corpus::Corpus;
-use crate::model::{DuplicateGroup, NormalizationOptions, NormalizedLine, Occurrence, PreparedFile};
+use crate::model::{
+    DuplicateGroup, NormalizationOptions, NormalizedLine, Occurrence, PreparedFile,
+};
 
 pub const BASELINE_SCHEMA_VERSION: u8 = 1;
 
@@ -81,11 +83,7 @@ pub enum BaselineError {
         "{path:?}: normalized line range {start}..{end} is outside the \
          normalized source buffer"
     )]
-    InvalidLineRange {
-        path: PathBuf,
-        start: u32,
-        end: u32,
-    },
+    InvalidLineRange { path: PathBuf, start: u32, end: u32 },
 
     #[error("normalized line exceeds u32 byte-length capacity")]
     LineTooLong,
@@ -129,9 +127,7 @@ pub enum BaselineError {
     #[error("failed to serialize baseline: {0}")]
     Serialize(#[source] serde_json::Error),
 
-    #[error(
-        "unsupported baseline schema version {found}; supported version is {supported}"
-    )]
+    #[error("unsupported baseline schema version {found}; supported version is {supported}")]
     UnsupportedSchemaVersion { found: u8, supported: u8 },
 
     #[error(
@@ -156,19 +152,13 @@ pub enum BaselineError {
     InvalidBaselinePath { path: String },
 
     #[error("baseline occurrence count for {path:?} in group {fingerprint} must be at least 1")]
-    ZeroBaselineOccurrenceCount {
-        fingerprint: String,
-        path: String,
-    },
+    ZeroBaselineOccurrenceCount { fingerprint: String, path: String },
 
     #[error("baseline contains duplicate group fingerprint {fingerprint}")]
     DuplicateBaselineGroup { fingerprint: String },
 
     #[error("baseline group {fingerprint} contains duplicate path entry {path:?}")]
-    DuplicateBaselinePath {
-        fingerprint: String,
-        path: String,
-    },
+    DuplicateBaselinePath { fingerprint: String, path: String },
 }
 
 /// Constructs a canonical baseline from already-detected duplicate groups.
@@ -276,10 +266,7 @@ pub fn read_baseline(
 /// metadata, and occurrence distribution. The canonical first occurrence is
 /// sufficient because every occurrence in a valid duplicate group is exactly
 /// equal after normalization.
-pub fn group_fingerprint(
-    corpus: &Corpus,
-    group: &DuplicateGroup,
-) -> Result<String, BaselineError> {
+pub fn group_fingerprint(corpus: &Corpus, group: &DuplicateGroup) -> Result<String, BaselineError> {
     let occurrence = group
         .occurrences
         .first()
@@ -483,14 +470,14 @@ fn occurrence_lines<'a>(
             length: occurrence.normalized_len,
         })?;
 
-    let lines = file
-        .lines
-        .get(start..end)
-        .ok_or_else(|| BaselineError::InvalidOccurrenceRange {
-            path: file.path.clone(),
-            start: occurrence.normalized_start,
-            length: occurrence.normalized_len,
-        })?;
+    let lines =
+        file.lines
+            .get(start..end)
+            .ok_or_else(|| BaselineError::InvalidOccurrenceRange {
+                path: file.path.clone(),
+                start: occurrence.normalized_start,
+                length: occurrence.normalized_len,
+            })?;
 
     if lines.is_empty() {
         return Err(BaselineError::InvalidOccurrenceRange {
@@ -746,8 +733,7 @@ mod tests {
 
     #[test]
     fn group_fingerprint_ignores_path_and_physical_line_numbers() {
-        let first =
-            build_corpus(vec![prepared("src/a.py", &["alpha = 1", "beta = 2"])]).unwrap();
+        let first = build_corpus(vec![prepared("src/a.py", &["alpha = 1", "beta = 2"])]).unwrap();
 
         let mut moved = prepared("renamed/b.py", &["alpha = 1", "beta = 2"]);
         moved.lines[0].source_line = 100;
@@ -929,7 +915,11 @@ mod tests {
     fn baseline_path_uses_forward_slashes_between_components() {
         assert_eq!(
             baseline_path(
-                Path::new("project").join("src").join("pkg").join("a.py").as_path(),
+                Path::new("project")
+                    .join("src")
+                    .join("pkg")
+                    .join("a.py")
+                    .as_path(),
                 Path::new("project"),
             )
             .unwrap(),
