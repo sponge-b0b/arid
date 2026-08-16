@@ -159,6 +159,11 @@ cd "$ROOT_DIR"
 [[ -x "$ROOT_DIR/validation/run.sh" ]] ||
     die "required executable not found: validation/run.sh"
 
+if [[ "$RELEASE_KIND" == "rc" && "$BASE_VERSION" == 1.1.* ]]; then
+    [[ -x "$ROOT_DIR/validation/v1.1.sh" ]] ||
+        die "required executable not found: validation/v1.1.sh"
+fi
+
 [[ -x "$ROOT_DIR/benchmarks/build.sh" ]] ||
     die "required executable not found: benchmarks/build.sh"
 
@@ -665,6 +670,25 @@ preserve_validation_results() {
         "$destination/"
 }
 
+run_v1_1_validation() {
+    [[ "$BASE_VERSION" == 1.1.* ]] ||
+        return 0
+
+    echo
+    echo "Validating v1.1 integration surface with published standalone artifact..."
+
+    "$ROOT_DIR/validation/v1.1.sh" "$STANDALONE_BIN"
+
+    pass "standalone v1.1 integration validation"
+
+    echo
+    echo "Validating v1.1 integration surface with exact PyPI-installed executable..."
+
+    "$ROOT_DIR/validation/v1.1.sh" "$PYPI_BIN"
+
+    pass "PyPI v1.1 integration validation"
+}
+
 run_full_validation() {
     echo
     echo "Validating published standalone artifact..."
@@ -905,6 +929,11 @@ write_report() {
         echo "pypi_arid_version=$PYPI_ARID_VERSION"
 
         if [[ "$RELEASE_KIND" == "rc" ]]; then
+            if [[ "$BASE_VERSION" == 1.1.* ]]; then
+                echo "standalone_v1_1_validation=PASS"
+                echo "pypi_v1_1_validation=PASS"
+            fi
+
             echo "standalone_validation=$STANDALONE_RESULTS"
             echo "pypi_validation=$PYPI_RESULTS"
             echo "validation_json_files=$VALIDATION_JSON_COUNT"
@@ -939,6 +968,7 @@ download_standalone
 install_pypi
 
 if [[ "$RELEASE_KIND" == "rc" ]]; then
+    run_v1_1_validation
     run_full_validation
     compare_validation_json
     run_benchmarks
