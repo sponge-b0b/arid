@@ -4,6 +4,7 @@ use std::fs;
 use std::io;
 use std::path::{Component, Path, PathBuf};
 
+use atomic_write_file::AtomicWriteFile;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
@@ -111,6 +112,13 @@ pub enum BaselineError {
         source: io::Error,
     },
 
+    #[error("failed to write baseline {path:?}: {source}")]
+    Write {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+
     #[error("failed to parse baseline {path:?}: {source}")]
     Parse {
         path: PathBuf,
@@ -207,6 +215,27 @@ pub fn serialize_baseline(baseline: &Baseline) -> Result<String, BaselineError> 
     validate_and_canonicalize_baseline(&mut canonical)?;
 
     serde_json::to_string_pretty(&canonical).map_err(BaselineError::Serialize)
+}
+
+/// Writes a validated baseline with atomic replacement semantics.
+pub fn write_baseline(path: &Path, baseline: &Baseline) -> Result<(), BaselineError> {
+    let contents = serialize_baseline(baseline)?;
+    let mut file = AtomicWriteFile::open(path).map_err(|source| BaselineError::Write {
+        path: path.to_path_buf(),
+        source,
+    })?;
+
+    std::io::Write::write_all(&mut file, contents.as_bytes()).map_err(|source| {
+        BaselineError::Write {
+            path: path.to_path_buf(),
+            source,
+        }
+    })?;
+
+    file.commit().map_err(|source| BaselineError::Write {
+        path: path.to_path_buf(),
+        source,
+    })
 }
 
 /// Reads, validates, and canonicalizes a baseline for the current normalization settings.
@@ -948,6 +977,50 @@ mod tests {
         assert_eq!(parsed.groups[1].occurrences[0].path, "a.py");
         assert_eq!(parsed.groups[1].occurrences[1].path, "z.py");
         assert_eq!(serialized, serialize_baseline(&parsed).unwrap());
+    }
+
+    #[test]
+    fn write_baseline_creates_and_replaces_destination() {
+        let file = TempFile::new("old contents");
+        let first = Baseline {
+            version: BASELINE_SCHEMA_VERSION,
+            normalization: normalization().into(),
+            groups: vec![baseline_group(fingerprint('a'), "a.py", 1)],
+        };
+
+        write_baseline(file.path(), &first).unwrap();
+        assert_eq!(
+            fs::read_to_string(file.path()).unwrap(),
+            serialize_baseline(&first).unwrap()
+        );
+
+        let second = Baseline {
+            version: BASELINE_SCHEMA_VERSION,
+            normalization: normalization().into(),
+            groups: vec![baseline_group(fingerprint('b'), "b.py", 2)],
+        };
+
+        write_baseline(file.path(), &second).unwrap();
+        assert_eq!(
+            fs::read_to_string(file.path()).unwrap(),
+            serialize_baseline(&second).unwrap()
+        );
+    }
+
+    #[test]
+    fn write_baseline_does_not_touch_destination_when_validation_fails() {
+        let file = TempFile::new("preserve me");
+        let invalid = Baseline {
+            version: BASELINE_SCHEMA_VERSION,
+            normalization: normalization().into(),
+            groups: vec![baseline_group("not-a-fingerprint".to_owned(), "a.py", 1)],
+        };
+
+        assert!(matches!(
+            write_baseline(file.path(), &invalid),
+            Err(BaselineError::InvalidFingerprint { .. })
+        ));
+        assert_eq!(fs::read_to_string(file.path()).unwrap(), "preserve me");
     }
 
     #[test]

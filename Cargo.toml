@@ -24,6 +24,7 @@ name = "arid"
 path = "src/main.rs"
 
 [dependencies]
+atomic-write-file = "0.3.0"
 clap = { version = "4.6", features = ["derive"] }
 ignore = "0.4"
 rayon = "1.12"
