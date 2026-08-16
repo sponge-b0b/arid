@@ -19,6 +19,7 @@ pub mod suffix;
 mod baseline_filter;
 mod markdown;
 mod python;
+mod sarif;
 mod text;
 
 use baseline::{build_baseline, read_baseline, write_baseline};
@@ -33,6 +34,7 @@ use model::{NormalizationOptions, PreparedFile};
 use normalize::prepare_file;
 use outcome::ExitStatus;
 use report::{ReportOptions, build_report, render_json};
+use sarif::render_sarif;
 use text::render_text;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -159,9 +161,8 @@ pub fn run_with_context(cli: &Cli, context: RunContext) -> Result<RunResult, Str
             render_json(&report).map_err(|error| format!("failed to render JSON report: {error}"))?
         }
         OutputFormat::Markdown => render_markdown(&report),
-        OutputFormat::Sarif => {
-            unreachable!("unsupported formats are rejected before scanning")
-        }
+        OutputFormat::Sarif => render_sarif(&report)
+            .map_err(|error| format!("failed to render SARIF report: {error}"))?,
     };
 
     Ok(RunResult {
@@ -182,8 +183,9 @@ fn validate_output_options(cli: &Cli, output_format: OutputFormat) -> Result<(),
     }
 
     match output_format {
-        OutputFormat::Text | OutputFormat::Json | OutputFormat::Markdown => Ok(()),
-        OutputFormat::Sarif => Err("SARIF output is not implemented yet".to_owned()),
+        OutputFormat::Text | OutputFormat::Json | OutputFormat::Markdown | OutputFormat::Sarif => {
+            Ok(())
+        }
     }
 }
 
@@ -546,15 +548,24 @@ baseline = "configured.json"
     }
 
     #[test]
-    fn sarif_returns_clear_error() {
-        let temp = TempDir::new();
-        write_test_config(&temp);
-        temp.write("example.py", "alpha = 1\nbeta = 2\n");
-
-        let mut cli = test_cli(vec![temp.path().to_path_buf()]);
+    fn end_to_end_scan_can_emit_sarif() {
+        let (_temp, mut cli) = duplicate_fixture();
         cli.format = Some(OutputFormat::Sarif);
+        cli.show_source = true;
 
-        assert_eq!(run(&cli).unwrap_err(), "SARIF output is not implemented yet");
+        let result = run(&cli).unwrap();
+
+        assert_eq!(result.exit_status, ExitStatus::Findings);
+        assert!(!result.output.contains('\u{1b}'));
+
+        let value: serde_json::Value = serde_json::from_str(&result.output).unwrap();
+        assert_eq!(value["version"], "2.1.0");
+        assert_eq!(value["runs"][0]["tool"]["driver"]["name"], "Arid");
+        assert_eq!(value["runs"][0]["results"][0]["ruleId"], "DUP001");
+        assert_eq!(
+            value["runs"][0]["results"][0]["locations"][0]["physicalLocation"]["artifactLocation"]["uri"],
+            "a.py"
+        );
     }
 
     #[test]
