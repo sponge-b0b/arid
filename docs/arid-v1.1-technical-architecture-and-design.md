@@ -101,7 +101,7 @@ Neither output selection nor baseline enforcement may change normalized equality
 | Baseline enforcement | filter fully accepted groups before `Report` construction |
 | Baseline configuration | optional `[tool.arid].baseline` plus CLI override |
 | Baseline writing | explicit CLI-only `--write-baseline` mode |
-| Pre-commit | official `language: system` hook; whole-project scan |
+| Pre-commit | official `language: unsupported` hook; whole-project scan; pre-commit 4.4.0+ |
 | Reporter abstraction | concrete modules; no plugin/trait registry |
 | Cache | none |
 | Git-diff engine | none |
@@ -473,7 +473,7 @@ Semantic use is intentionally narrow:
 
 - `problem` marks duplicated-line counts when duplication is present
 - `success` marks the zero-duplication result
-- `classification` marks structural `mixed` values
+- `classification` marks structural context and scope values
 - `distribution` marks `same-file`, `cross-file`, and distribution `mixed`
 - `group` marks duplicate-group summary values
 - `heading` is also used for the neutral percentage summary
@@ -1015,21 +1015,20 @@ The repository SHOULD add:
 .pre-commit-hooks.yaml
 ```
 
-The initial hook SHOULD be conceptually:
+The official hook is:
 
 ```yaml
 - id: arid
   name: arid
-  description: Check Python source for duplicate code with Arid
+  description: Find duplicated Python code with Arid
   entry: arid .
-  language: system
+  language: unsupported
+  minimum_pre_commit_version: "4.4.0"
   pass_filenames: false
   always_run: true
 ```
 
-The exact manifest syntax MUST be validated against supported pre-commit behavior during implementation.
-
-`language: system` is deliberate:
+`language: unsupported` is deliberate and requires pre-commit 4.4.0 or newer:
 
 - Arid is already distributed as an installable CLI
 - the hook should use the exact Arid executable selected by the developer/CI environment

@@ -10,6 +10,7 @@ release.sh
 release workflow
     ↓
 qualification/run.sh
+    ├── validation/v1.1.sh
     ├── validation/run.sh
     └── benchmarks/run.sh
 ```
@@ -26,6 +27,7 @@ The qualification harness MUST:
 - verify the corresponding GitHub release
 - verify the exact published PyPI package
 - verify the published Linux x86-64 standalone artifact
+- run focused v1.1 integration validation against both published 1.1 RC executables
 - run the real-world validation campaign against published RC artifacts
 - compare standalone and PyPI validation JSON byte-for-byte
 - benchmark the exact published standalone RC artifact
@@ -141,6 +143,8 @@ clean PyPI installation
     ↓
 PyPI smoke test
     ↓
+v1.1 targeted integration validation, when qualifying a 1.1 RC
+    ↓
 standalone real-world validation
     ↓
 PyPI real-world validation
@@ -188,6 +192,15 @@ The tagged release source MUST pass:
 This verifies that the metadata stored in the release tag is internally consistent.
 
 Qualification therefore does not rely on the release metadata currently present on `main`.
+
+Release metadata files are selected by release series. The active roadmap mapping is:
+
+```text
+1.0.x  → docs/arid-v1-release-roadmap.md
+1.1.x  → docs/arid-v1.1-release-roadmap.md
+```
+
+The historical v1 roadmap is therefore not part of a 1.1 RC-to-stable metadata transition.
 
 ### Production release workflow
 
@@ -266,6 +279,29 @@ The installed executable MUST:
 - execute `--help` successfully
 
 No existing local Python environment is reused.
+
+### V1.1 targeted integration validation
+
+When the release being qualified belongs to the 1.1 series, both published executables must pass:
+
+```bash
+validation/v1.1.sh <arid-executable>
+```
+
+The targeted smoke runs first against the downloaded standalone executable and then against the exact PyPI-installed executable.
+
+It validates:
+
+- plain and colored text behavior
+- redirected auto color
+- JSON selector compatibility
+- Markdown
+- SARIF
+- baseline creation
+- unchanged baseline enforcement
+- new duplicate debt against a baseline
+
+This gate runs before the larger real-world validation and benchmark campaign so a broken v1.1 integration surface fails qualification early.
 
 ### Real-world validation
 
@@ -390,14 +426,20 @@ A successful stable qualification therefore reuses the complete evidence from th
 
 ## Stable metadata transition
 
-The only files permitted to change between the qualified RC and stable release are:
+The common files permitted to change between the qualified RC and stable release are:
 
 ```text
 Cargo.toml
 Cargo.lock
 pyproject.toml
 README.md
-docs/arid-v1-release-roadmap.md
+```
+
+The release-series roadmap is also permitted:
+
+```text
+1.0.x  → docs/arid-v1-release-roadmap.md
+1.1.x  → docs/arid-v1.1-release-roadmap.md
 ```
 
 Allowing a file name alone is not sufficient.
@@ -477,6 +519,13 @@ artifact-equivalence result
 benchmark configuration
 Pydantic/Pylint speedup
 Polaris/Pylint speedup
+```
+
+For a 1.1 RC, the record additionally includes:
+
+```text
+standalone_v1_1_validation=PASS
+pypi_v1_1_validation=PASS
 ```
 
 A successful stable record additionally identifies:

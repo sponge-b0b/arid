@@ -347,7 +347,7 @@ source-gutter   dim
 source           terminal-default foreground
 ```
 
-`problem` is used for duplicated-line counts when duplication is present. `success` is used for the zero-duplication state. `classification` is used for structural `mixed` values. `distribution` is used for `same-file`, `cross-file`, and distribution `mixed`. `group` is reserved for duplicate-group summary values. Percentages remain bold but neutral regardless of value.
+`problem` is used for duplicated-line counts when duplication is present. `success` is used for the zero-duplication state. `classification` is used for structural context and scope values. `distribution` is used for `same-file`, `cross-file`, and distribution `mixed`. `group` is reserved for duplicate-group summary values. Percentages remain bold but neutral regardless of value.
 
 The exact ANSI implementation is a technical-design concern.
 

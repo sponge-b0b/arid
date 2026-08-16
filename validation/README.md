@@ -1,11 +1,11 @@
 # Arid validation
 
-Arid's validation suite exercises Arid against unfamiliar real-world Python repositories and targeted filesystem edge cases.
+Arid's validation suite exercises Arid against unfamiliar real-world Python repositories, targeted filesystem edge cases, and the focused v1.1 integration surface.
 
 It complements the automated test suite and benchmarks:
 
 - tests verify known behavior with controlled fixtures
-- validation looks for correctness and robustness defects on real repositories
+- validation looks for correctness and robustness defects on real repositories and release-facing integrations
 - benchmarks measure performance on fixed benchmark corpora
 
 Validation is intended primarily for prerelease stabilization and release qualification.
@@ -36,6 +36,7 @@ The validation tooling consists of:
 ```bash
 validation/build.sh <global-root> [options]
 validation/run.sh <global-root> [options]
+validation/v1.1.sh <arid-bin>
 ```
 
 `build.sh` provisions the validation corpora beneath:
@@ -49,7 +50,9 @@ validation/run.sh <global-root> [options]
 - `target/release/arid` built from the current Arid repository, or
 - an existing Arid executable supplied with `--arid-bin`
 
-Generated validation artifacts are written beneath:
+`v1.1.sh` performs a focused end-to-end smoke against an existing Arid executable. It uses a temporary synthetic project and does not depend on the real-world corpora.
+
+Generated real-world validation artifacts are written beneath:
 
 ```text
 <project-root>/validation/results/
@@ -65,6 +68,30 @@ The validation repositories are:
 All four are validated by default.
 
 Use `--repos` to select a subset.
+
+## V1.1 targeted integration validation
+
+Run the focused v1.1 smoke against an existing executable with:
+
+```bash
+validation/v1.1.sh /path/to/arid
+```
+
+The harness validates the release-facing v1.1 surface without multiplying every real-world corpus by every output format. It covers:
+
+- plain text output
+- redirected auto color with no ANSI leakage
+- forced text color
+- `--json` equivalence with `--format json`
+- Markdown output
+- SARIF output
+- baseline creation
+- unchanged baseline enforcement
+- a deliberate new duplicate against an existing baseline
+
+The harness creates and removes its own temporary project and does not write persistent validation results.
+
+During 1.1 release-candidate qualification, this smoke runs against both the published standalone executable and the exact PyPI-installed executable before the larger real-world validation campaign.
 
 ## Validation corpora
 
@@ -598,9 +625,17 @@ extract executable
 validation/run.sh --arid-bin <artifact>
 ```
 
-The second form is especially useful during release-candidate qualification because it verifies the exact published bytes rather than another locally rebuilt executable.
+For v1.1 release candidates, each published executable also passes through:
 
-The SHA-256 recorded in `metadata.txt` provides a stable identity for that artifact.
+```text
+validation/v1.1.sh <artifact>
+```
+
+before the full real-world campaign.
+
+The published-artifact checks are especially useful during release-candidate qualification because they verify the exact published bytes rather than another locally rebuilt executable.
+
+The SHA-256 recorded in `metadata.txt` provides a stable identity for artifacts exercised by `validation/run.sh`.
 
 Platform-specific release workflows SHOULD still smoke-test their native artifacts on their native CI runners. The real-world validation harness complements those platform smoke tests by exercising the release executable against large and varied Python corpora.
 
@@ -634,10 +669,12 @@ Validation SHOULD stop once the release criteria are satisfied rather than expan
 
 Validation is one part of the release process.
 
-A typical prerelease qualification flow is:
+A typical v1.1 prerelease qualification flow is:
 
 ```text
 Automated tests
+    ↓
+Targeted v1.1 integration validation
     ↓
 Real-world validation
     ↓
@@ -652,7 +689,7 @@ Release
 
 During development, the validation suite normally qualifies the current repository release binary.
 
-During release-candidate qualification, `--arid-bin` can additionally qualify the exact published executable.
+During release-candidate qualification, published standalone and PyPI executables are exercised by the targeted v1.1 smoke and `--arid-bin` qualifies them against the full real-world campaign.
 
 The benchmark suite separately measures performance using the canonical benchmark corpora.
 

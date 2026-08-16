@@ -27,6 +27,7 @@
   <a href="#usage">Usage</a> ·
   <a href="#understanding-arids-output">Output</a> ·
   <a href="#configuration">Configuration</a> ·
+  <a href="#pre-commit">Pre-commit</a> ·
   <a href="#architecture">Architecture</a> ·
   <a href="#license">License</a>
 </p>
@@ -106,7 +107,9 @@ Arid v1 is designed to:
 - describe duplicate findings using Python structural context
 - provide deterministic duplication metrics
 - support `pyproject.toml` configuration via `[tool.arid]`
-- provide machine-readable JSON output
+- provide deterministic text, JSON, Markdown, and SARIF output
+- support baseline-based incremental adoption
+- integrate with pre-commit while preserving whole-project detection
 - run substantially faster than Pylint's duplicate-code checker
 - require no Python runtime to analyze Python source
 
@@ -201,11 +204,42 @@ Include the original source in each finding:
 arid . --show-source
 ```
 
-Emit machine-readable JSON:
+Choose an output format:
+
+```bash
+arid . --format text
+arid . --format json
+arid . --format markdown
+arid . --format sarif
+```
+
+`text` is the default. The existing JSON shorthand remains supported:
 
 ```bash
 arid . --json
 ```
+
+Control text color explicitly when needed:
+
+```bash
+arid . --color auto
+arid . --color always
+arid . --color never
+```
+
+Create a baseline for existing duplicate debt:
+
+```bash
+arid . --write-baseline arid-baseline.json
+```
+
+Then enforce it explicitly:
+
+```bash
+arid . --baseline arid-baseline.json
+```
+
+or configure it in `[tool.arid]` so normal `arid .` scans enforce the baseline automatically.
 
 Example diagnostic:
 
@@ -513,6 +547,7 @@ Current defaults are:
 | `same-file` | `true` | Detect non-overlapping duplicate regions within the same file. |
 | `hidden` | `false` | Include hidden files and directories during directory discovery. |
 | `exclude` | `[]` | Path patterns excluded from discovery. |
+| `baseline` | none | Optional baseline file used to accept existing duplicate debt while reporting new debt. |
 
 Configuration precedence is:
 
@@ -575,7 +610,34 @@ arid . \
     --exclude 'generated/**'
 ```
 
-`--json` and `--show-source` control report output and are CLI-only options.
+To enforce an existing baseline on every normal scan:
+
+```toml
+[tool.arid]
+baseline = "arid-baseline.json"
+```
+
+An explicit `--baseline` path overrides the configured baseline for that scan. `--format`, `--color`, `--json`, `--write-baseline`, and `--show-source` are CLI-only presentation or administrative options.
+
+---
+
+## Pre-commit
+
+Arid provides an official pre-commit hook that runs a whole-project `arid .` scan rather than limiting duplicate detection to staged Python files.
+
+Arid must already be installed and available as `arid` on `PATH`, and the official hook requires pre-commit 4.4.0 or newer.
+
+```yaml
+repos:
+  - repo: https://github.com/sponge-b0b/arid
+    rev: v1.1.0
+    hooks:
+      - id: arid
+```
+
+The hook honors normal `[tool.arid]` configuration, including `baseline = "arid-baseline.json"`.
+
+See [Arid pre-commit integration](docs/pre-commit.md) for installation details and behavior.
 
 ---
 
