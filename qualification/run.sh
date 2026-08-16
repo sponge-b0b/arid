@@ -15,13 +15,14 @@ POLARIS_REVISION="00e208e7f5dcb3329c3d8d1ee5f13aec7fbe1031"
 PYDANTIC_REVISION="cf67d4b3193c3fe43ede18612ed62785eee11382"
 REQUESTS_REVISION="6e83187b8feb273ed4c6cdab5efd8d54901dfab3"
 
-RELEASE_METADATA_FILES=(
+COMMON_RELEASE_METADATA_FILES=(
     Cargo.toml
     Cargo.lock
     pyproject.toml
     README.md
-    docs/arid-v1-release-roadmap.md
 )
+RELEASE_METADATA_FILES=()
+RELEASE_ROADMAP=""
 
 usage() {
     cat <<EOF
@@ -92,6 +93,26 @@ elif [[ "$VERSION" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
 else
     die "supported qualification versions are X.Y.Z-rc.N and X.Y.Z"
 fi
+
+case "$BASE_VERSION" in
+    1.0.*)
+        RELEASE_ROADMAP="docs/arid-v1-release-roadmap.md"
+        ;;
+    1.1.*)
+        RELEASE_ROADMAP="docs/arid-v1.1-release-roadmap.md"
+        ;;
+    *)
+        die "no qualification release roadmap configured for version: $VERSION"
+        ;;
+esac
+
+[[ -f "$ROOT_DIR/$RELEASE_ROADMAP" ]] ||
+    die "required release roadmap not found: $RELEASE_ROADMAP"
+
+RELEASE_METADATA_FILES=(
+    "${COMMON_RELEASE_METADATA_FILES[@]}"
+    "$RELEASE_ROADMAP"
+)
 
 TAG="v$VERSION"
 EXPECTED_ARID_VERSION="arid $VERSION"
