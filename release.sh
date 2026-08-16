@@ -6,7 +6,9 @@ export LC_ALL=C
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT_DIR"
 
-FILES=(Cargo.toml Cargo.lock pyproject.toml README.md docs/arid-v1-release-roadmap.md)
+COMMON_FILES=(Cargo.toml Cargo.lock pyproject.toml README.md)
+FILES=()
+ROADMAP=""
 MODE="prepare"
 VERSION=""
 
@@ -58,7 +60,7 @@ esac
 command -v python3 >/dev/null 2>&1 ||
     die "required command not found: python3"
 
-for file in "${FILES[@]}"; do
+for file in "${COMMON_FILES[@]}"; do
     [[ -f "$file" ]] || die "required file not found: $file"
 done
 
@@ -112,7 +114,24 @@ derive() {
         die "unsupported release version: $version"
     fi
 
-    export VERSION CLASSIFIER PHASE BADGE STATUS
+    case "$version" in
+        1.0.*)
+            ROADMAP="docs/arid-v1-release-roadmap.md"
+            ;;
+        1.1.*)
+            ROADMAP="docs/arid-v1.1-release-roadmap.md"
+            ;;
+        *)
+            die "no release roadmap configured for version: $version"
+            ;;
+    esac
+
+    [[ -f "$ROADMAP" ]] ||
+        die "required release roadmap not found: $ROADMAP"
+
+    FILES=("${COMMON_FILES[@]}" "$ROADMAP")
+
+    export VERSION CLASSIFIER PHASE BADGE STATUS ROADMAP
 }
 
 metadata() {
@@ -128,6 +147,7 @@ classifier = os.environ["CLASSIFIER"]
 phase = os.environ["PHASE"]
 badge = os.environ["BADGE"]
 status = os.environ["STATUS"]
+roadmap_path = os.environ["ROADMAP"]
 
 
 def fail(message):
@@ -216,10 +236,9 @@ if action == "update":
         "README release status",
     )
 
-    replace_block(
-        "docs/arid-v1-release-roadmap.md",
-        "<!-- release-phase:start -->",
-        "<!-- release-phase:end -->",
+    sub_once(
+        roadmap_path,
+        r'^\*\*Current phase:\*\* .+$',
         f"**Current phase:** {phase}",
         "roadmap release phase",
     )
@@ -242,6 +261,12 @@ checks = [
         "pyproject.toml",
         rf'^\s*"{re.escape(classifier)}",$',
         "pyproject.toml classifier",
+        re.M,
+    ),
+    (
+        roadmap_path,
+        rf'^\*\*Current phase:\*\* {re.escape(phase)}$',
+        "roadmap current phase",
         re.M,
     ),
 ]
@@ -268,17 +293,6 @@ if block(
     "README release status",
 ) != status.strip():
     fail("README release status does not match")
-
-
-roadmap = Path("docs/arid-v1-release-roadmap.md").read_text()
-
-if block(
-    roadmap,
-    "<!-- release-phase:start -->",
-    "<!-- release-phase:end -->",
-    "roadmap release phase",
-) != f"**Current phase:** {phase}":
-    fail("roadmap current phase does not match")
 PY
 }
 
