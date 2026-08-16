@@ -1,12 +1,13 @@
+use std::collections::BTreeMap;
 use std::fmt::Write as _;
-use std::path::PathBuf;
+use std::path::{Component, Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 
 use crate::corpus::Corpus;
-use crate::model::{DuplicateGroup, NormalizationOptions};
+use crate::model::{DuplicateGroup, NormalizationOptions, NormalizedLine, Occurrence, PreparedFile};
 
 pub const BASELINE_SCHEMA_VERSION: u8 = 1;
 
@@ -81,6 +82,59 @@ pub enum BaselineError {
 
     #[error("normalized line exceeds u32 byte-length capacity")]
     LineTooLong,
+
+    #[error("source path {path:?} is outside project root {root:?}")]
+    PathOutsideProjectRoot { path: PathBuf, root: PathBuf },
+
+    #[error("source path {path:?} cannot be represented as a clean project-relative path")]
+    InvalidProjectRelativePath { path: PathBuf },
+
+    #[error("source path {path:?} is not valid UTF-8")]
+    NonUtf8ProjectRelativePath { path: PathBuf },
+
+    #[error("duplicate occurrence count exceeds u32 capacity for {path:?}")]
+    OccurrenceCountOverflow { path: String },
+
+    #[error("multiple detected groups have the same baseline fingerprint {fingerprint}")]
+    DuplicateFingerprint { fingerprint: String },
+}
+
+/// Constructs a canonical baseline from already-detected duplicate groups.
+///
+/// Baseline construction is post-detection. It does not alter duplicate
+/// identity, rerun detection, or depend on physical source line numbers.
+pub fn build_baseline(
+    corpus: &Corpus,
+    groups: &[DuplicateGroup],
+    normalization: NormalizationOptions,
+    project_root: &Path,
+) -> Result<Baseline, BaselineError> {
+    let mut baseline_groups = groups
+        .iter()
+        .map(|group| {
+            Ok(BaselineGroup {
+                fingerprint: group_fingerprint(corpus, group)?,
+                lines: group.effective_lines,
+                occurrences: group_path_counts(corpus, group, project_root)?,
+            })
+        })
+        .collect::<Result<Vec<_>, BaselineError>>()?;
+
+    baseline_groups.sort();
+
+    for pair in baseline_groups.windows(2) {
+        if pair[0].fingerprint == pair[1].fingerprint {
+            return Err(BaselineError::DuplicateFingerprint {
+                fingerprint: pair[0].fingerprint.clone(),
+            });
+        }
+    }
+
+    Ok(Baseline {
+        version: BASELINE_SCHEMA_VERSION,
+        normalization: normalization.into(),
+        groups: baseline_groups,
+    })
 }
 
 /// Returns the stable identity of one exact normalized duplicate block.
@@ -99,39 +153,7 @@ pub fn group_fingerprint(
         .copied()
         .ok_or(BaselineError::EmptyGroup)?;
 
-    let file = corpus
-        .files
-        .get(occurrence.file as usize)
-        .ok_or(BaselineError::InvalidFile {
-            file: occurrence.file,
-        })?;
-
-    if occurrence.normalized_len != group.normalized_len {
-        return Err(BaselineError::InvalidOccurrenceRange {
-            path: file.path.clone(),
-            start: occurrence.normalized_start,
-            length: occurrence.normalized_len,
-        });
-    }
-
-    let start = occurrence.normalized_start as usize;
-    let end = start
-        .checked_add(occurrence.normalized_len as usize)
-        .ok_or_else(|| BaselineError::InvalidOccurrenceRange {
-            path: file.path.clone(),
-            start: occurrence.normalized_start,
-            length: occurrence.normalized_len,
-        })?;
-
-    let lines =
-        file.lines
-            .get(start..end)
-            .ok_or_else(|| BaselineError::InvalidOccurrenceRange {
-                path: file.path.clone(),
-                start: occurrence.normalized_start,
-                length: occurrence.normalized_len,
-            })?;
-
+    let (file, lines) = occurrence_lines(corpus, group, occurrence)?;
     let mut hasher = Sha256::new();
 
     hasher.update(GROUP_FINGERPRINT_DOMAIN);
@@ -163,6 +185,117 @@ pub fn group_fingerprint(
     }
 
     Ok(fingerprint)
+}
+
+fn group_path_counts(
+    corpus: &Corpus,
+    group: &DuplicateGroup,
+    project_root: &Path,
+) -> Result<Vec<BaselinePathCount>, BaselineError> {
+    if group.occurrences.is_empty() {
+        return Err(BaselineError::EmptyGroup);
+    }
+
+    let mut counts = BTreeMap::<String, u32>::new();
+
+    for &occurrence in &group.occurrences {
+        let (file, _) = occurrence_lines(corpus, group, occurrence)?;
+        let path = baseline_path(&file.path, project_root)?;
+        let count = counts.entry(path.clone()).or_default();
+
+        *count = count
+            .checked_add(1)
+            .ok_or(BaselineError::OccurrenceCountOverflow { path })?;
+    }
+
+    Ok(counts
+        .into_iter()
+        .map(|(path, count)| BaselinePathCount { path, count })
+        .collect())
+}
+
+fn occurrence_lines<'a>(
+    corpus: &'a Corpus,
+    group: &DuplicateGroup,
+    occurrence: Occurrence,
+) -> Result<(&'a PreparedFile, &'a [NormalizedLine]), BaselineError> {
+    let file = corpus
+        .files
+        .get(occurrence.file as usize)
+        .ok_or(BaselineError::InvalidFile {
+            file: occurrence.file,
+        })?;
+
+    if occurrence.normalized_len != group.normalized_len {
+        return Err(BaselineError::InvalidOccurrenceRange {
+            path: file.path.clone(),
+            start: occurrence.normalized_start,
+            length: occurrence.normalized_len,
+        });
+    }
+
+    let start = occurrence.normalized_start as usize;
+    let end = start
+        .checked_add(occurrence.normalized_len as usize)
+        .ok_or_else(|| BaselineError::InvalidOccurrenceRange {
+            path: file.path.clone(),
+            start: occurrence.normalized_start,
+            length: occurrence.normalized_len,
+        })?;
+
+    let lines = file
+        .lines
+        .get(start..end)
+        .ok_or_else(|| BaselineError::InvalidOccurrenceRange {
+            path: file.path.clone(),
+            start: occurrence.normalized_start,
+            length: occurrence.normalized_len,
+        })?;
+
+    if lines.is_empty() {
+        return Err(BaselineError::InvalidOccurrenceRange {
+            path: file.path.clone(),
+            start: occurrence.normalized_start,
+            length: occurrence.normalized_len,
+        });
+    }
+
+    Ok((file, lines))
+}
+
+fn baseline_path(path: &Path, project_root: &Path) -> Result<String, BaselineError> {
+    let relative =
+        path.strip_prefix(project_root)
+            .map_err(|_| BaselineError::PathOutsideProjectRoot {
+                path: path.to_path_buf(),
+                root: project_root.to_path_buf(),
+            })?;
+
+    let mut parts = Vec::new();
+
+    for component in relative.components() {
+        let Component::Normal(part) = component else {
+            return Err(BaselineError::InvalidProjectRelativePath {
+                path: path.to_path_buf(),
+            });
+        };
+
+        let part = part
+            .to_str()
+            .ok_or_else(|| BaselineError::NonUtf8ProjectRelativePath {
+                path: path.to_path_buf(),
+            })?;
+
+        parts.push(part);
+    }
+
+    if parts.is_empty() {
+        return Err(BaselineError::InvalidProjectRelativePath {
+            path: path.to_path_buf(),
+        });
+    }
+
+    Ok(parts.join("/"))
 }
 
 #[cfg(test)]
@@ -224,6 +357,15 @@ mod tests {
                 normalized_start: 0,
                 normalized_len,
             }],
+        }
+    }
+
+    fn normalization() -> NormalizationOptions {
+        NormalizationOptions {
+            ignore_comments: true,
+            ignore_docstrings: false,
+            ignore_imports: true,
+            ignore_signatures: false,
         }
     }
 
@@ -373,6 +515,155 @@ mod tests {
         assert!(matches!(
             group_fingerprint(&corpus, &malformed),
             Err(BaselineError::InvalidOccurrenceRange { .. })
+        ));
+    }
+
+    #[test]
+    fn build_baseline_counts_occurrences_per_project_relative_path() {
+        let corpus = build_corpus(vec![
+            prepared(
+                "project/src/a.py",
+                &["alpha = 1", "beta = 2", "alpha = 1", "beta = 2"],
+            ),
+            prepared("project/src/b.py", &["alpha = 1", "beta = 2"]),
+        ])
+        .unwrap();
+
+        let group = DuplicateGroup {
+            effective_lines: 2,
+            normalized_len: 2,
+            occurrences: vec![
+                Occurrence {
+                    file: 0,
+                    normalized_start: 0,
+                    normalized_len: 2,
+                },
+                Occurrence {
+                    file: 0,
+                    normalized_start: 2,
+                    normalized_len: 2,
+                },
+                Occurrence {
+                    file: 1,
+                    normalized_start: 0,
+                    normalized_len: 2,
+                },
+            ],
+        };
+
+        let baseline =
+            build_baseline(&corpus, &[group], normalization(), Path::new("project")).unwrap();
+
+        assert_eq!(baseline.version, BASELINE_SCHEMA_VERSION);
+        assert_eq!(baseline.normalization, normalization().into());
+        assert_eq!(baseline.groups.len(), 1);
+        assert_eq!(
+            baseline.groups[0].occurrences,
+            vec![
+                BaselinePathCount {
+                    path: "src/a.py".to_owned(),
+                    count: 2,
+                },
+                BaselinePathCount {
+                    path: "src/b.py".to_owned(),
+                    count: 1,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn build_baseline_is_independent_of_group_input_order() {
+        let corpus = build_corpus(vec![
+            prepared("project/a.py", &["alpha = 1", "beta = 2"]),
+            prepared("project/b.py", &["alpha = 1", "beta = 2"]),
+            prepared("project/c.py", &["gamma = 3", "delta = 4"]),
+            prepared("project/d.py", &["gamma = 3", "delta = 4"]),
+        ])
+        .unwrap();
+
+        let first = DuplicateGroup {
+            effective_lines: 2,
+            normalized_len: 2,
+            occurrences: vec![
+                Occurrence {
+                    file: 0,
+                    normalized_start: 0,
+                    normalized_len: 2,
+                },
+                Occurrence {
+                    file: 1,
+                    normalized_start: 0,
+                    normalized_len: 2,
+                },
+            ],
+        };
+
+        let second = DuplicateGroup {
+            effective_lines: 2,
+            normalized_len: 2,
+            occurrences: vec![
+                Occurrence {
+                    file: 2,
+                    normalized_start: 0,
+                    normalized_len: 2,
+                },
+                Occurrence {
+                    file: 3,
+                    normalized_start: 0,
+                    normalized_len: 2,
+                },
+            ],
+        };
+
+        let forward = build_baseline(
+            &corpus,
+            &[first.clone(), second.clone()],
+            normalization(),
+            Path::new("project"),
+        )
+        .unwrap();
+
+        let reversed = build_baseline(
+            &corpus,
+            &[second, first],
+            normalization(),
+            Path::new("project"),
+        )
+        .unwrap();
+
+        assert_eq!(forward, reversed);
+        assert_eq!(
+            serde_json::to_string_pretty(&forward).unwrap(),
+            serde_json::to_string_pretty(&reversed).unwrap()
+        );
+    }
+
+    #[test]
+    fn baseline_path_uses_forward_slashes_between_components() {
+        assert_eq!(
+            baseline_path(
+                Path::new("project").join("src").join("pkg").join("a.py").as_path(),
+                Path::new("project"),
+            )
+            .unwrap(),
+            "src/pkg/a.py"
+        );
+    }
+
+    #[test]
+    fn baseline_path_rejects_source_outside_project_root() {
+        assert!(matches!(
+            baseline_path(Path::new("elsewhere/a.py"), Path::new("project")),
+            Err(BaselineError::PathOutsideProjectRoot { .. })
+        ));
+    }
+
+    #[test]
+    fn baseline_path_rejects_parent_components() {
+        assert!(matches!(
+            baseline_path(Path::new("project/../outside.py"), Path::new("project")),
+            Err(BaselineError::InvalidProjectRelativePath { .. })
         ));
     }
 }
