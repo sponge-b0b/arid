@@ -2,7 +2,7 @@
 
 **Product:** Arid  
 **Stable target:** `1.1.0`  
-**Current phase:** Phase 4 — SARIF Output
+**Current phase:** Phase 5 — Official Pre-commit Integration
 
 ## Purpose
 
@@ -313,7 +313,7 @@ Provide a clean document-oriented report suitable for GitHub rendering, CI summa
 
 # Phase 4 — SARIF Output
 
-**Status:** In progress
+**Status:** Complete
 
 ## Goal
 
@@ -355,6 +355,8 @@ Provide standards-based code-scanning integration without adding GitHub-specific
 ---
 
 # Phase 5 — Official Pre-commit Integration
+
+**Status:** In progress
 
 ## Goal
 
