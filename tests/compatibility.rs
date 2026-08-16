@@ -29,6 +29,7 @@ fn test_cli(path: PathBuf) -> Cli {
         no_hidden: false,
         exclude: Vec::new(),
         workers: 1,
+        format: None,
         json: true,
         show_source: false,
     }
