@@ -10,7 +10,9 @@ struct TextStyles {
     problem: Style,
     success: Style,
     heading: Style,
-    grouping: Style,
+    classification: Style,
+    distribution: Style,
+    group: Style,
     path: Style,
     location: Style,
     source_gutter: Style,
@@ -23,7 +25,9 @@ impl TextStyles {
             problem: AnsiColor::Red.on_default().bold(),
             success: AnsiColor::Green.on_default().bold(),
             heading: Style::new().bold(),
-            grouping: AnsiColor::Magenta.on_default().bold(),
+            classification: AnsiColor::Magenta.on_default().bold(),
+            distribution: AnsiColor::Blue.on_default().bold(),
+            group: AnsiColor::BrightCyan.on_default().bold(),
             path: AnsiColor::Cyan.on_default().bold(),
             location: AnsiColor::Cyan.on_default(),
             source_gutter: Style::new().dimmed(),
@@ -73,7 +77,7 @@ pub fn render_text(report: &Report, color: bool) -> String {
         output.push(' ');
         write_styled(
             &mut output,
-            styles.grouping,
+            styles.distribution,
             format_args!("({})", distribution_name(finding.distribution)),
         );
         output.push('\n');
@@ -118,7 +122,7 @@ pub fn render_text(report: &Report, color: bool) -> String {
         output.push_str("Found ");
         write_styled(
             &mut output,
-            styles.grouping,
+            styles.group,
             format_args!("{} duplicate {group_unit}", report.duplicate_groups),
         );
         output.push_str(".\n");
@@ -159,7 +163,7 @@ fn write_context(output: &mut String, styles: TextStyles, context: FindingContex
     let value = context_name(context);
 
     if context == FindingContext::Mixed {
-        write_styled(output, styles.grouping, value);
+        write_styled(output, styles.classification, value);
     } else {
         output.push_str(value);
     }
@@ -169,7 +173,7 @@ fn write_scope(output: &mut String, styles: TextStyles, scope: FindingScope) {
     let value = scope_name(scope);
 
     if scope == FindingScope::Mixed {
-        write_styled(output, styles.grouping, value);
+        write_styled(output, styles.classification, value);
     } else {
         output.push_str(value);
     }
@@ -262,11 +266,11 @@ mod tests {
         )));
         assert!(rendered.contains(&format!(
             "{}(cross-file){:#}",
-            styles.grouping, styles.grouping,
+            styles.distribution, styles.distribution,
         )));
         assert!(rendered.contains(&format!(
             "{}1 duplicate group{:#}",
-            styles.grouping, styles.grouping,
+            styles.group, styles.group,
         )));
         assert!(rendered.contains(&format!(
             "{}(50.00%){:#}",
@@ -284,16 +288,33 @@ mod tests {
     }
 
     #[test]
-    fn mixed_context_and_scope_use_grouping_style() {
+    fn mixed_context_and_scope_use_classification_style() {
         let styles = TextStyles::colored();
         let mut report = report();
         report.findings[0].context = FindingContext::Mixed;
         report.findings[0].scope = FindingScope::Mixed;
 
         let rendered = render_text(&report, true);
-        let mixed = format!("{}mixed{:#}", styles.grouping, styles.grouping);
+        let mixed = format!(
+            "{}mixed{:#}",
+            styles.classification, styles.classification,
+        );
 
         assert_eq!(rendered.matches(&mixed).count(), 2);
+    }
+
+    #[test]
+    fn mixed_distribution_uses_distribution_style() {
+        let styles = TextStyles::colored();
+        let mut report = report();
+        report.findings[0].distribution = FindingDistribution::Mixed;
+
+        let rendered = render_text(&report, true);
+
+        assert!(rendered.contains(&format!(
+            "{}(mixed){:#}",
+            styles.distribution, styles.distribution,
+        )));
     }
 
     #[test]
