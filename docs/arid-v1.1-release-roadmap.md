@@ -2,7 +2,7 @@
 
 **Product:** Arid  
 **Stable target:** `1.1.0`  
-**Current phase:** Phase 5 — Official Pre-commit Integration
+**Current phase:** Phase 6 — V1.1 Integration and Release-Tooling Hardening
 
 ## Purpose
 
@@ -356,7 +356,7 @@ Provide standards-based code-scanning integration without adding GitHub-specific
 
 # Phase 5 — Official Pre-commit Integration
 
-**Status:** In progress
+**Status:** Complete
 
 ## Goal
 
@@ -370,7 +370,8 @@ Add and validate an official hook manifest based on:
 - id: arid
   name: arid
   entry: arid .
-  language: system
+  language: unsupported
+  minimum_pre_commit_version: "4.4.0"
   pass_filenames: false
   always_run: true
 ```
@@ -391,6 +392,8 @@ Documentation MUST explain that Arid must already be installed and available on 
 ---
 
 # Phase 6 — V1.1 Integration and Release-Tooling Hardening
+
+**Status:** In progress
 
 ## Goal
 
