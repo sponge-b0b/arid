@@ -17,6 +17,7 @@ pub mod outcome;
 pub mod report;
 pub mod suffix;
 mod baseline_filter;
+mod markdown;
 mod python;
 mod text;
 
@@ -27,6 +28,7 @@ use config::{LoadedSettings, SettingsOverrides, load_settings};
 use corpus::build_corpus;
 use detect::detect_duplicates;
 use files::discover_python_files;
+use markdown::render_markdown;
 use model::{NormalizationOptions, PreparedFile};
 use normalize::prepare_file;
 use outcome::ExitStatus;
@@ -156,7 +158,8 @@ pub fn run_with_context(cli: &Cli, context: RunContext) -> Result<RunResult, Str
         OutputFormat::Json => {
             render_json(&report).map_err(|error| format!("failed to render JSON report: {error}"))?
         }
-        OutputFormat::Markdown | OutputFormat::Sarif => {
+        OutputFormat::Markdown => render_markdown(&report),
+        OutputFormat::Sarif => {
             unreachable!("unsupported formats are rejected before scanning")
         }
     };
@@ -179,8 +182,7 @@ fn validate_output_options(cli: &Cli, output_format: OutputFormat) -> Result<(),
     }
 
     match output_format {
-        OutputFormat::Text | OutputFormat::Json => Ok(()),
-        OutputFormat::Markdown => Err("Markdown output is not implemented yet".to_owned()),
+        OutputFormat::Text | OutputFormat::Json | OutputFormat::Markdown => Ok(()),
         OutputFormat::Sarif => Err("SARIF output is not implemented yet".to_owned()),
     }
 }
@@ -527,20 +529,32 @@ baseline = "configured.json"
     }
 
     #[test]
-    fn unsupported_formats_return_clear_errors() {
+    fn end_to_end_scan_can_emit_markdown() {
+        let (_temp, mut cli) = duplicate_fixture();
+        cli.format = Some(OutputFormat::Markdown);
+        cli.show_source = true;
+
+        let result = run(&cli).unwrap();
+
+        assert_eq!(result.exit_status, ExitStatus::Findings);
+        assert!(result.output.starts_with("# Arid duplicate-code report\n\n"));
+        assert!(result.output.contains("## `DUP001` — 2 duplicated lines"));
+        assert!(result.output.contains("### `a.py:1-2`"));
+        assert!(result.output.contains("```python\nalpha = 1\nbeta = 2\n```"));
+        assert!(result.output.contains("- **Duplicate groups:** 1"));
+        assert!(!result.output.contains('\u{1b}'));
+    }
+
+    #[test]
+    fn sarif_returns_clear_error() {
         let temp = TempDir::new();
         write_test_config(&temp);
         temp.write("example.py", "alpha = 1\nbeta = 2\n");
 
-        for (format, expected) in [
-            (OutputFormat::Markdown, "Markdown output is not implemented yet"),
-            (OutputFormat::Sarif, "SARIF output is not implemented yet"),
-        ] {
-            let mut cli = test_cli(vec![temp.path().to_path_buf()]);
-            cli.format = Some(format);
+        let mut cli = test_cli(vec![temp.path().to_path_buf()]);
+        cli.format = Some(OutputFormat::Sarif);
 
-            assert_eq!(run(&cli).unwrap_err(), expected);
-        }
+        assert_eq!(run(&cli).unwrap_err(), "SARIF output is not implemented yet");
     }
 
     #[test]
