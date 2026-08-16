@@ -30,6 +30,7 @@ fn test_cli(path: PathBuf) -> Cli {
         exclude: Vec::new(),
         workers: 1,
         format: None,
+        color: None,
         json: true,
         show_source: false,
     }

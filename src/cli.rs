@@ -10,6 +10,13 @@ pub enum OutputFormat {
     Sarif,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum ColorWhen {
+    Auto,
+    Always,
+    Never,
+}
+
 /// Fast Python duplicate-code checker written in Rust.
 #[derive(Debug, Parser)]
 #[command(name = "arid", version, about)]
@@ -87,6 +94,10 @@ pub struct Cli {
     #[arg(long, value_enum, value_name = "FORMAT", conflicts_with = "json")]
     pub format: Option<OutputFormat>,
 
+    /// Control color in text output.
+    #[arg(long, value_enum, value_name = "WHEN")]
+    pub color: Option<ColorWhen>,
+
     /// Emit JSON instead of text output. Equivalent to --format json.
     #[arg(long, conflicts_with = "format")]
     pub json: bool,
@@ -147,6 +158,7 @@ mod tests {
         assert_eq!(cli.workers, 1);
         assert_eq!(cli.format, None);
         assert_eq!(cli.output_format(), OutputFormat::Text);
+        assert_eq!(cli.color, None);
         assert!(!cli.json);
         assert!(!cli.show_source);
     }
@@ -190,6 +202,19 @@ mod tests {
 
             assert_eq!(cli.format, Some(expected));
             assert_eq!(cli.output_format(), expected);
+        }
+    }
+
+    #[test]
+    fn accepts_color_choices() {
+        for (value, expected) in [
+            ("auto", ColorWhen::Auto),
+            ("always", ColorWhen::Always),
+            ("never", ColorWhen::Never),
+        ] {
+            let cli = Cli::try_parse_from(["arid", "--color", value]).unwrap();
+
+            assert_eq!(cli.color, Some(expected));
         }
     }
 

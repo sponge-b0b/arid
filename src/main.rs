@@ -1,13 +1,19 @@
+use std::io::{self, IsTerminal};
 use std::process::ExitCode;
 
 use arid::cli::Cli;
 use arid::outcome::ExitStatus;
+use arid::{ColorEnvironment, RunContext};
 use clap::Parser;
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
+    let context = RunContext {
+        text_color_capable: io::stdout().is_terminal(),
+        color_environment: ColorEnvironment::from_process(),
+    };
 
-    match arid::run(&cli) {
+    match arid::run_with_context(&cli, context) {
         Ok(result) => {
             write_output(&result.output);
 
