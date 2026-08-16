@@ -2,9 +2,7 @@ use std::fmt::{Display, Write};
 
 use clap::builder::styling::{AnsiColor, Style};
 
-use crate::report::{
-    FindingContext, FindingDistribution, FindingScope, Report, render_human,
-};
+use crate::report::{FindingContext, FindingDistribution, FindingScope, Report, render_text_plain};
 
 #[derive(Debug, Clone, Copy)]
 struct TextStyles {
@@ -32,7 +30,7 @@ impl TextStyles {
 #[must_use]
 pub fn render_text(report: &Report, color: bool) -> String {
     if !color {
-        return render_human(report);
+        return render_text_plain(report);
     }
 
     let styles = TextStyles::colored();
@@ -207,7 +205,7 @@ mod tests {
     fn plain_text_matches_v1_renderer() {
         let report = report();
 
-        assert_eq!(render_text(&report, false), render_human(&report));
+        assert_eq!(render_text(&report, false), render_text_plain(&report));
     }
 
     #[test]

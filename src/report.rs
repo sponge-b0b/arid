@@ -200,9 +200,9 @@ pub fn build_report(
     })
 }
 
-/// Renders the default developer-facing diagnostic output.
+/// Renders the stable plain-text diagnostic output.
 #[must_use]
-pub fn render_human(report: &Report) -> String {
+pub fn render_text_plain(report: &Report) -> String {
     let mut output = String::new();
 
     for finding in &report.findings {
@@ -721,7 +721,7 @@ mod tests {
     }
 
     #[test]
-    fn human_output_matches_diagnostic_contract() {
+    fn text_output_matches_diagnostic_contract() {
         let common = [("alpha()", 0, true), ("beta()", 1, true)];
 
         let corpus = build_corpus(vec![
@@ -739,7 +739,7 @@ mod tests {
         let report = build_report(&corpus, &groups, &ReportOptions::default()).unwrap();
 
         assert_eq!(
-            render_human(&report),
+            render_text_plain(&report),
             concat!(
                 "DUP001 2 duplicated lines\n",
                 "Context: executable\n",
@@ -756,7 +756,7 @@ mod tests {
     }
 
     #[test]
-    fn human_output_includes_numbered_source() {
+    fn text_output_includes_numbered_source() {
         let common = [("alpha()", 0, true), ("beta()", 2, true)];
 
         let corpus = build_corpus(vec![
@@ -781,7 +781,7 @@ mod tests {
         )
         .unwrap();
 
-        let rendered = render_human(&report);
+        let rendered = render_text_plain(&report);
 
         assert!(rendered.contains(concat!(
             "       1 | alpha()\n",
@@ -906,7 +906,7 @@ mod tests {
         assert_eq!(report.exit_status(), ExitStatus::Success);
 
         assert_eq!(
-            render_human(&report),
+            render_text_plain(&report),
             concat!("No duplicate code found.\n", "0 duplicate lines (0.00%).\n",)
         );
     }
