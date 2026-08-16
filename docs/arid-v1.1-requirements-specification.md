@@ -222,7 +222,7 @@ V1.1 does not require deprecating `--json`.
 
 `text` is Arid's normal developer-oriented textual report.
 
-The underlying information and canonical ordering of v1 human-readable findings MUST remain stable unless changed by a documented v1.1 presentation requirement.
+The underlying information and canonical ordering of v1 text findings MUST remain stable unless changed by a documented v1.1 presentation requirement.
 
 Text output MAY contain ANSI terminal styling only when color is enabled.
 
@@ -315,29 +315,39 @@ Environment color variables MUST have no effect on JSON, Markdown, or SARIF.
 
 Color implementation MUST use semantic presentation roles rather than scattering raw color choices throughout report construction.
 
-The initial text presentation SHOULD distinguish roles such as:
+The v1.1 text presentation uses these roles:
 
 ```text
 diagnostic
+problem
+success
 heading
+classification
+distribution
+group
 path
 location
-secondary
 source-gutter
 source
 ```
 
-The initial visual mapping SHOULD be approximately:
+The approved visual mapping is:
 
 ```text
-diagnostic     bold yellow
-heading        bold
-path           bold cyan
-location       cyan
-secondary      dim
-source-gutter  dim
-source          terminal default foreground
+diagnostic      bold yellow
+problem         bold red
+success         bold green
+heading         bold terminal-default foreground
+classification  bold magenta
+distribution    bold blue
+group           bold orange
+path            bold cyan
+location        cyan
+source-gutter   dim
+source           terminal-default foreground
 ```
+
+`problem` is used for duplicated-line counts when duplication is present. `success` is used for the zero-duplication state. `classification` is used for structural `mixed` values. `distribution` is used for `same-file`, `cross-file`, and distribution `mixed`. `group` is reserved for duplicate-group summary values. Percentages remain bold but neutral regardless of value.
 
 The exact ANSI implementation is a technical-design concern.
 
@@ -346,6 +356,8 @@ The exact ANSI implementation is a technical-design concern.
 ## **9.5 No severity through color**
 
 Color MUST NOT assign or imply severity that is absent from Arid's data model.
+
+Red indicates the presence or magnitude of duplicate code, not a severity ranking between findings. Green indicates a zero-duplication success state. Categorical colors distinguish information classes rather than ranking them.
 
 In particular, Arid MUST NOT use different warning/error colors to imply that:
 

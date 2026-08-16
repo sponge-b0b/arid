@@ -2,7 +2,7 @@
 
 **Product:** Arid  
 **Stable target:** `1.1.0`  
-**Current phase:** Planning
+**Current phase:** Phase 2 — Baseline Domain and Enforcement
 
 ## Purpose
 
@@ -101,6 +101,8 @@ If development evidence later justifies an alpha or beta, the release tooling ca
 
 # Phase 0 — V1.1 Contract
 
+**Status:** Complete
+
 ## Goal
 
 Freeze the intended 1.1 product direction before implementation begins.
@@ -127,6 +129,8 @@ No implementation should invent product behavior that contradicts these document
 ---
 
 # Phase 1 — Output Foundation and Colored Text
+
+**Status:** Complete
 
 ## Goal
 
@@ -196,6 +200,8 @@ feat(report): add colored text output
 ---
 
 # Phase 2 — Baseline Domain and Enforcement
+
+**Status:** In progress
 
 ## Goal
 

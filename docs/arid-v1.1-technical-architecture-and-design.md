@@ -437,35 +437,55 @@ TTY detection belongs at the binary boundary via `std::io::IsTerminal`. Arid own
 
 A separate stream-adaptation layer is not required while rendering remains a deterministic `String`; adding one solely for color would duplicate responsibility.
 
-The text renderer SHOULD define a small fixed stylesheet:
+The text renderer uses a small fixed stylesheet:
 
 ```rust
 struct TextStyles {
     diagnostic: Style,
+    problem: Style,
+    success: Style,
     heading: Style,
+    classification: Style,
+    distribution: Style,
+    group: Style,
     path: Style,
     location: Style,
-    secondary: Style,
     source_gutter: Style,
 }
 ```
 
-The enabled stylesheet maps approximately to:
+The enabled stylesheet maps to:
 
 ```text
-diagnostic     bold yellow
-heading        bold
-path           bold cyan
-location       cyan
-secondary      dim
-source-gutter  dim
+diagnostic      bold yellow
+problem         bold red
+success         bold green
+heading         bold terminal-default foreground
+classification  bold magenta
+distribution    bold blue
+group           bold orange (ANSI 256 color 208)
+path            bold cyan
+location        cyan
+source-gutter   dim
 ```
+
+Semantic use is intentionally narrow:
+
+- `problem` marks duplicated-line counts when duplication is present
+- `success` marks the zero-duplication result
+- `classification` marks structural `mixed` values
+- `distribution` marks `same-file`, `cross-file`, and distribution `mixed`
+- `group` marks duplicate-group summary values
+- `heading` is also used for the neutral percentage summary
+- `path` and `location` remain reserved for physical source locations
 
 The disabled path preserves the existing plain-text bytes.
 
 Python source text itself is never syntax-highlighted by Arid.
 
 The renderer MUST reset styling after every styled fragment so one field cannot leak style into later text.
+
+These colors distinguish semantic categories. They do not create severity levels between duplicate findings.
 
 ---
 
