@@ -2,7 +2,7 @@
 
 **Product:** Arid  
 **Stable target:** `1.1.0`  
-**Current phase:** Phase 6 — V1.1 Integration and Release-Tooling Hardening
+**Current phase:** Phase 8 — `1.1.0-rc.1`
 
 ## Purpose
 
@@ -393,7 +393,7 @@ Documentation MUST explain that Arid must already be installed and available on 
 
 # Phase 6 — V1.1 Integration and Release-Tooling Hardening
 
-**Status:** In progress
+**Status:** Complete
 
 ## Goal
 
@@ -476,6 +476,8 @@ V1.1 targeted validation must be included in the qualification path before RC1 i
 
 # Phase 7 — Feature Complete
 
+**Status:** Complete
+
 ## Meaning
 
 V1.1 becomes feature complete when all committed requirements are implemented and no planned v1.1 code change remains.
@@ -521,6 +523,8 @@ Any feature request discovered after this gate waits unless it fixes a defined v
 ---
 
 # Phase 8 — `1.1.0-rc.1`
+
+**Status:** In progress
 
 ## Prepare
 
