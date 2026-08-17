@@ -43,24 +43,37 @@ jobs:
           - name: linux-x86_64
             os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
+            arch: x86_64
+            manylinux: 2_17
             binary: arid
             archive: arid-linux-x86_64.tar.gz
+
+          - name: linux-aarch64
+            os: ubuntu-22.04
+            target: aarch64-unknown-linux-gnu
+            arch: aarch64
+            manylinux: 2_17
+            binary: arid
+            archive: arid-linux-aarch64.tar.gz
 
           - name: macos-aarch64
             os: macos-latest
             target: aarch64-apple-darwin
+            arch: aarch64
             binary: arid
             archive: arid-macos-aarch64.tar.gz
 
           - name: macos-x86_64
             os: macos-15-intel
             target: x86_64-apple-darwin
+            arch: x86_64
             binary: arid
             archive: arid-macos-x86_64.tar.gz
 
           - name: windows-x86_64
             os: windows-latest
             target: x86_64-pc-windows-msvc
+            arch: x86_64
             binary: arid.exe
             archive: arid-windows-x86_64.zip
 
@@ -76,23 +89,59 @@ jobs:
           python-version: "3.12"
 
       - name: Build wheel
-        uses: PyO3/maturin-action@v1
+        uses: PyO3/maturin-action@86b9d133d34bc1b40018696f782949dac11bd380 # v1.49.4
         with:
           command: build
           target: ${{ matrix.target }}
+          manylinux: ${{ matrix.manylinux || 'auto' }}
+          maturin-version: v1.14.1
           args: --release --locked --compatibility pypi --out dist
 
+      - name: Build standalone binary from wheel
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          wheel="$(find dist -maxdepth 1 -type f -name '*.whl' -print -quit)"
+
+          if [ -z "$wheel" ]; then
+            echo "no wheel found in dist"
+            exit 1
+          fi
+
+          mkdir wheel-unpack
+          unzip -q "$wheel" -d wheel-unpack
+
+          script="$(find wheel-unpack -type f -path '*/.data/scripts/arid' -print -quit)"
+
+          if [ -z "$script" ]; then
+            echo "no packaged arid binary found in wheel"
+            exit 1
+          fi
+
+          cp "$script" arid
+          chmod +x arid
+
       - name: Build standalone binary
+        if: runner.os != 'Linux'
         run: cargo build --release --locked --target ${{ matrix.target }}
 
       - name: Package standalone binary
         if: runner.os != 'Windows'
         shell: bash
         run: |
-          tar \
-            -C "target/${{ matrix.target }}/release" \
-            -czf "${{ matrix.archive }}" \
-            "${{ matrix.binary }}"
+          if [ "${{ runner.os }}" = "Linux" ]; then
+            mkdir standalone-package
+            cp arid "standalone-package/${{ matrix.binary }}"
+            tar \
+              -C standalone-package \
+              -czf "${{ matrix.archive }}" \
+              "${{ matrix.binary }}"
+          else
+            tar \
+              -C "target/${{ matrix.target }}/release" \
+              -czf "${{ matrix.archive }}" \
+              "${{ matrix.binary }}"
+          fi
 
       - name: Package standalone binary
         if: runner.os == 'Windows'
