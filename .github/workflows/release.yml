@@ -43,15 +43,13 @@ jobs:
           - name: linux-x86_64
             os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
-            arch: x86_64
             manylinux: 2_17
             binary: arid
             archive: arid-linux-x86_64.tar.gz
 
           - name: linux-aarch64
-            os: ubuntu-22.04
+            os: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
-            arch: aarch64
             manylinux: 2_17
             binary: arid
             archive: arid-linux-aarch64.tar.gz
@@ -59,21 +57,18 @@ jobs:
           - name: macos-aarch64
             os: macos-latest
             target: aarch64-apple-darwin
-            arch: aarch64
             binary: arid
             archive: arid-macos-aarch64.tar.gz
 
           - name: macos-x86_64
             os: macos-15-intel
             target: x86_64-apple-darwin
-            arch: x86_64
             binary: arid
             archive: arid-macos-x86_64.tar.gz
 
           - name: windows-x86_64
             os: windows-latest
             target: x86_64-pc-windows-msvc
-            arch: x86_64
             binary: arid.exe
             archive: arid-windows-x86_64.zip
 
@@ -111,14 +106,14 @@ jobs:
           mkdir wheel-unpack
           unzip -q "$wheel" -d wheel-unpack
 
-          script="$(find wheel-unpack -type f -path '*/.data/scripts/arid' -print -quit)"
+          scripts=(wheel-unpack/*/.data/scripts/arid)
 
-          if [ -z "$script" ]; then
-            echo "no packaged arid binary found in wheel"
+          if [ "${#scripts[@]}" -ne 1 ] || [ ! -f "${scripts[0]}" ]; then
+            echo "expected exactly one packaged arid binary in wheel"
             exit 1
           fi
 
-          cp "$script" arid
+          cp "${scripts[0]}" arid
           chmod +x arid
 
       - name: Build standalone binary
