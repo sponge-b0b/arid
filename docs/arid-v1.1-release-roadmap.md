@@ -524,7 +524,11 @@ Any feature request discovered after this gate waits unless it fixes a defined v
 
 # Phase 8 — `1.1.0-rc.1`
 
-**Status:** In progress
+**Status:** Complete
+
+## Outcome
+
+RC1 published successfully but failed qualification at the tagged-source formatting gate. The defect was canonical rustfmt formatting only; RC1 was not promoted.
 
 ## Prepare
 
@@ -578,6 +582,10 @@ A failed RC is never promoted directly to stable.
 
 # Phase 9 — Additional Release Candidates
 
+**Status:** Complete
+
+RC2 contained the rustfmt-only fix plus RC2 release metadata, then passed full qualification and became the qualified base for stable promotion.
+
 Additional RCs are defect-driven only.
 
 If RC1 reveals a release-blocking defect:
@@ -599,6 +607,10 @@ There is no required minimum number of RCs.
 ---
 
 # Phase 10 — Stable `1.1.0`
+
+**Status:** Complete
+
+Stable `1.1.0` was published as a metadata-only promotion from qualified RC2 and passed stable qualification.
 
 ## Stable Preconditions
 
