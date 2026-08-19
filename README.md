@@ -630,7 +630,7 @@ Arid must already be installed and available as `arid` on `PATH`, and the offici
 ```yaml
 repos:
   - repo: https://github.com/sponge-b0b/arid
-    rev: v1.1.0
+    rev: v1.2.0
     hooks:
       - id: arid
 ```
@@ -751,7 +751,7 @@ uv tool install arid
 Install Arid from PyPI:
 
 ```bash
-python -m pip install --pre arid
+python -m pip install arid
 ```
 
 Verify the installation:
@@ -800,7 +800,7 @@ Arid includes dedicated tooling and documentation for release qualification, per
 - [Release qualification](qualification/README.md) — automated acceptance of published release candidates and stable releases, including artifact validation, equivalence checks, benchmarks, and stable-promotion enforcement.
 - [Benchmarks](benchmarks/README.md) — reproducible performance comparisons against Pylint `R0801` and jscpd, including corpus provisioning and benchmark execution.
 - [Validation](validation/README.md) — real-world correctness and robustness validation across Black, Django, mypy, Rich, determinism checks, malformed-source handling, and filesystem edge cases.
-- [Release roadmap](docs/arid-v1-release-roadmap.md) — release stages, qualification gates, and release metadata preparation with `./release.sh`.
+- [Release roadmap](docs/arid-v1.2-release-roadmap.md) — release stages, qualification gates, and release metadata preparation with `./release.sh`.
 
 ---
 
