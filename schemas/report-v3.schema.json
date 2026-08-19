@@ -1,0 +1,124 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Arid JSON Report v3",
+  "description": "Schema for Arid's stable JSON report contract, version 3.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "files",
+    "source_lines",
+    "analyzed_lines",
+    "duplicate_groups",
+    "duplicate_lines",
+    "duplication_percent",
+    "findings"
+  ],
+  "properties": {
+    "version": {
+      "const": 3
+    },
+    "files": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "source_lines": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "analyzed_lines": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "duplicate_groups": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "duplicate_lines": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "duplication_percent": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/finding"
+      }
+    }
+  },
+  "$defs": {
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "lines",
+        "context",
+        "scope",
+        "occurrences",
+        "files",
+        "distribution",
+        "locations"
+      ],
+      "properties": {
+        "code": {
+          "const": "DUP001"
+        },
+        "lines": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "context": {
+          "enum": ["declarative", "executable", "mixed"]
+        },
+        "scope": {
+          "enum": ["module", "class", "function", "mixed"]
+        },
+        "occurrences": {
+          "type": "integer",
+          "minimum": 2
+        },
+        "files": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "distribution": {
+          "enum": ["same-file", "cross-file", "mixed"]
+        },
+        "locations": {
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "$ref": "#/$defs/location"
+          }
+        }
+      }
+    },
+    "location": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "start_line", "end_line"],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "start_line": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "end_line": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "source": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}
