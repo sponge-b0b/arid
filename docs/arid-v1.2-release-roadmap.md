@@ -205,19 +205,33 @@ All pre-publication validation passes and no out-of-scope behavior has entered t
 
 **Goal:** freeze the v1.2 feature set and qualify a release candidate.
 
+**Status:** Complete. `v1.2.0-rc.1` was published and passed the complete release-candidate qualification campaign.
+
 ### Rules
 
 - No new product features after RC.
 - Fixes are limited to qualification failures, regressions, packaging defects, or release-process defects.
 - Any source-code change after RC requires the affected validation gates to be rerun.
 
+### Evidence
+
+- `v1.2.0-rc.1` Release workflow run `32247042702` — all five platform builds, PyPI publication, GitHub release publication, and native published Linux ARM64 verification PASS.
+- Release-candidate qualification — standalone smoke, PyPI smoke, targeted validation against both published executables, artifact equivalence, real-world validation, and benchmarks PASS.
+- Pydantic vs Pylint: `215.82x`.
+- Polaris vs Pylint: `255.95x`.
+- Local qualification evidence: `qualification/results/v1.2.0-rc.1/qualification.txt`.
+
 ### Gate
 
 The RC passes the complete qualification suite, including artifact, schema, PyPI, real-world, and performance validation.
 
+**Gate result:** PASS.
+
 ## Phase 9 — Stable promotion
 
 **Goal:** promote the qualified RC to `1.2.0`.
+
+**Status:** Complete. `v1.2.0` was published from the metadata-only promotion of the qualified RC and passed stable qualification.
 
 ### Rules
 
@@ -226,13 +240,26 @@ The RC passes the complete qualification suite, including artifact, schema, PyPI
 - GitHub and PyPI publication must be verified.
 - Final qualification verifies the RC-to-stable delta and published artifacts without unnecessarily repeating the full RC campaign when the delta is metadata-only.
 
+### Evidence
+
+- RC-to-stable repository delta: exactly one metadata-only commit changing only `Cargo.toml`, `Cargo.lock`, `pyproject.toml`, `README.md`, and this roadmap — PASS.
+- `v1.2.0` Release workflow run `32307063312` — all five platform builds, PyPI publication, GitHub release publication, and native published Linux ARM64 verification PASS.
+- The first stable qualification exposed a remaining PyPI propagation race: the release JSON endpoint was visible before pip's Simple API listed `1.2.0`. The published tag and artifacts were unchanged.
+- `fix(qualification): wait for installable PyPI release` (`8fbde9832df7de5cc15e4e0df54e5bc3f6ddfa34`) corrected the post-release harness to wait on the same Simple API used by pip.
+- Stable qualification rerun: release workflow, GitHub release, standalone smoke, PyPI smoke, qualified RC provenance, and metadata-only RC-to-stable transition — PASS.
+- Local qualification evidence: `qualification/results/v1.2.0/qualification.txt`.
+
 ### Gate
 
 `1.2.0` is published, installable from PyPI on all supported targets, the GitHub release is complete, and stable qualification passes.
 
+**Gate result:** PASS.
+
 ## Phase 10 — Closeout
 
 **Goal:** record the actual release outcome and close v1.2.
+
+**Status:** Complete. Arid `1.2.0` is published, qualified, documented as stable, and the v1.2 release process has no unresolved state.
 
 ### Work
 
@@ -241,9 +268,19 @@ The RC passes the complete qualification suite, including artifact, schema, PyPI
 - Record any deferred performance work explicitly.
 - Ensure README/release metadata reflects stable `1.2.0`.
 
+### Evidence
+
+- Roadmap state is Stable and records the RC and stable qualification outcomes.
+- README stable status, installation example, current release roadmap link, and official pre-commit revision reflect `v1.2.0`.
+- `docs/pre-commit.md` uses `v1.2.0` in the official hook configuration.
+- Phase 6 records the explicit no-change performance decision; no product-code optimization is deferred as required work for v1.2.
+- Stable qualification result: PASS.
+
 ### Gate
 
 The roadmap accurately reflects the shipped release and its evidence, with no unresolved release-process state.
+
+**Gate result:** PASS.
 
 ## Version and compatibility policy
 
