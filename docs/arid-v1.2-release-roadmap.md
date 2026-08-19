@@ -2,7 +2,7 @@
 
 **Product:** Arid  
 **Stable target:** `1.2.0`  
-**Current phase:** Phase 0 — Contract
+**Current phase:** Phase 5 — Performance measurement
 
 ## Purpose
 
@@ -125,12 +125,18 @@ A newly published version that is accepted by PyPI but temporarily absent from t
 
 **Goal:** establish evidence before changing performance-sensitive implementation.
 
+**Status:** In progress. The bottleneck investigation is complete; the reproducible corpus and worker-mode benchmark matrix remains before the Phase 5 gate can close.
+
 ### Work
 
 - Add benchmark-harness stage timing for discovery, parsing/normalization, corpus construction, suffix-array construction, LCP, detection, and reporting.
 - Run representative small, medium, large, and duplicate-heavy corpora.
 - Compare serial, explicit multi-worker, and `auto` execution.
 - Identify the actual dominant stage before considering optimization.
+
+### Evidence
+
+- `docs/arid-v1.2-performance-report.md` — profiling findings and the v1.2 benchmark baseline as Phase 5 progresses.
 
 ### Gate
 
