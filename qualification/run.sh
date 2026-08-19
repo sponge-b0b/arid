@@ -101,6 +101,9 @@ case "$BASE_VERSION" in
     1.1.*)
         RELEASE_ROADMAP="docs/arid-v1.1-release-roadmap.md"
         ;;
+    1.2.*)
+        RELEASE_ROADMAP="docs/arid-v1.2-release-roadmap.md"
+        ;;
     *)
         die "no qualification release roadmap configured for version: $VERSION"
         ;;
@@ -159,9 +162,17 @@ cd "$ROOT_DIR"
 [[ -x "$ROOT_DIR/validation/run.sh" ]] ||
     die "required executable not found: validation/run.sh"
 
-if [[ "$RELEASE_KIND" == "rc" && "$BASE_VERSION" == 1.1.* ]]; then
-    [[ -x "$ROOT_DIR/validation/v1.1.sh" ]] ||
-        die "required executable not found: validation/v1.1.sh"
+if [[ "$RELEASE_KIND" == "rc" ]]; then
+    case "$BASE_VERSION" in
+        1.1.*)
+            [[ -x "$ROOT_DIR/validation/v1.1.sh" ]] ||
+                die "required executable not found: validation/v1.1.sh"
+            ;;
+        1.2.*)
+            [[ -x "$ROOT_DIR/validation/v1.2.sh" ]] ||
+                die "required executable not found: validation/v1.2.sh"
+            ;;
+    esac
 fi
 
 [[ -x "$ROOT_DIR/benchmarks/build.sh" ]] ||
@@ -310,6 +321,7 @@ verify_release_workflow() {
     local run_json
     local run_status
     local run_conclusion
+    local jobs_json
 
     echo "Verifying production release workflow..."
 
@@ -360,6 +372,24 @@ verify_release_workflow() {
     [[ "$run_conclusion" == "success" ]] ||
         die "release workflow did not succeed: run $RELEASE_RUN_ID ($run_conclusion)"
 
+    if [[ "$BASE_VERSION" == 1.2.* ]]; then
+        jobs_json="$(
+            gh api \
+                -X GET \
+                "repos/$REPOSITORY/actions/runs/$RELEASE_RUN_ID/jobs" \
+                -f per_page=100
+        )"
+
+        jq \
+            -e \
+            'any(.jobs[]; .name == "Verify published Linux aarch64" and .conclusion == "success")' \
+            <<<"$jobs_json" \
+            >/dev/null ||
+            die "release workflow is missing a successful published Linux aarch64 verification job"
+
+        pass "published Linux aarch64 workflow verification"
+    fi
+
     pass "production release workflow"
 }
 
@@ -396,6 +426,15 @@ verify_github_release() {
         <<<"$release_json" \
         >/dev/null ||
         die "GitHub release is missing $LINUX_ARCHIVE"
+
+    if [[ "$BASE_VERSION" == 1.2.* ]]; then
+        jq \
+            -e \
+            'any(.assets[]; .name == "arid-linux-aarch64.tar.gz")' \
+            <<<"$release_json" \
+            >/dev/null ||
+            die "GitHub release is missing arid-linux-aarch64.tar.gz"
+    fi
 
     GITHUB_RELEASE_URL="$(
         jq -r '.url' <<<"$release_json"
@@ -623,6 +662,15 @@ install_pypi() {
     local venv="$TMP_ROOT/pypi-venv"
 
     echo
+    echo "Waiting for exact PyPI release to become visible..."
+
+    python3 \
+        "$ROOT_DIR/qualification/pypi_ready.py" \
+        "$PYPI_VERSION"
+
+    pass "PyPI release readiness"
+
+    echo
     echo "Installing exact PyPI release in a clean environment..."
 
     python3 -m venv "$venv"
@@ -670,23 +718,37 @@ preserve_validation_results() {
         "$destination/"
 }
 
-run_v1_1_validation() {
-    [[ "$BASE_VERSION" == 1.1.* ]] ||
-        return 0
+run_targeted_validation() {
+    local validation_script=""
+    local validation_name=""
+
+    case "$BASE_VERSION" in
+        1.1.*)
+            validation_script="$ROOT_DIR/validation/v1.1.sh"
+            validation_name="v1.1"
+            ;;
+        1.2.*)
+            validation_script="$ROOT_DIR/validation/v1.2.sh"
+            validation_name="v1.2"
+            ;;
+        *)
+            return 0
+            ;;
+    esac
 
     echo
-    echo "Validating v1.1 integration surface with published standalone artifact..."
+    echo "Validating $validation_name integration surface with published standalone artifact..."
 
-    "$ROOT_DIR/validation/v1.1.sh" "$STANDALONE_BIN"
+    "$validation_script" "$STANDALONE_BIN"
 
-    pass "standalone v1.1 integration validation"
+    pass "standalone $validation_name integration validation"
 
     echo
-    echo "Validating v1.1 integration surface with exact PyPI-installed executable..."
+    echo "Validating $validation_name integration surface with exact PyPI-installed executable..."
 
-    "$ROOT_DIR/validation/v1.1.sh" "$PYPI_BIN"
+    "$validation_script" "$PYPI_BIN"
 
-    pass "PyPI v1.1 integration validation"
+    pass "PyPI $validation_name integration validation"
 }
 
 run_full_validation() {
@@ -932,6 +994,9 @@ write_report() {
             if [[ "$BASE_VERSION" == 1.1.* ]]; then
                 echo "standalone_v1_1_validation=PASS"
                 echo "pypi_v1_1_validation=PASS"
+            elif [[ "$BASE_VERSION" == 1.2.* ]]; then
+                echo "standalone_v1_2_validation=PASS"
+                echo "pypi_v1_2_validation=PASS"
             fi
 
             echo "standalone_validation=$STANDALONE_RESULTS"
@@ -968,7 +1033,7 @@ download_standalone
 install_pypi
 
 if [[ "$RELEASE_KIND" == "rc" ]]; then
-    run_v1_1_validation
+    run_targeted_validation
     run_full_validation
     compare_validation_json
     run_benchmarks

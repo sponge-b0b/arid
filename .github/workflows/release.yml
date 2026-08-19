@@ -43,8 +43,16 @@ jobs:
           - name: linux-x86_64
             os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
+            manylinux: 2_17
             binary: arid
             archive: arid-linux-x86_64.tar.gz
+
+          - name: linux-aarch64
+            os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            manylinux: 2_17
+            binary: arid
+            archive: arid-linux-aarch64.tar.gz
 
           - name: macos-aarch64
             os: macos-latest
@@ -76,23 +84,59 @@ jobs:
           python-version: "3.12"
 
       - name: Build wheel
-        uses: PyO3/maturin-action@v1
+        uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
         with:
           command: build
           target: ${{ matrix.target }}
+          manylinux: ${{ matrix.manylinux || 'auto' }}
+          maturin-version: v1.14.1
           args: --release --locked --compatibility pypi --out dist
 
+      - name: Build standalone binary from wheel
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          wheel="$(find dist -maxdepth 1 -type f -name '*.whl' -print -quit)"
+
+          if [ -z "$wheel" ]; then
+            echo "no wheel found in dist"
+            exit 1
+          fi
+
+          mkdir wheel-unpack
+          unzip -q "$wheel" -d wheel-unpack
+
+          scripts=(wheel-unpack/*.data/scripts/arid)
+
+          if [ "${#scripts[@]}" -ne 1 ] || [ ! -f "${scripts[0]}" ]; then
+            echo "expected exactly one packaged arid binary in wheel"
+            exit 1
+          fi
+
+          cp "${scripts[0]}" arid
+          chmod +x arid
+
       - name: Build standalone binary
+        if: runner.os != 'Linux'
         run: cargo build --release --locked --target ${{ matrix.target }}
 
       - name: Package standalone binary
         if: runner.os != 'Windows'
         shell: bash
         run: |
-          tar \
-            -C "target/${{ matrix.target }}/release" \
-            -czf "${{ matrix.archive }}" \
-            "${{ matrix.binary }}"
+          if [ "${{ runner.os }}" = "Linux" ]; then
+            mkdir standalone-package
+            cp arid "standalone-package/${{ matrix.binary }}"
+            tar \
+              -C standalone-package \
+              -czf "${{ matrix.archive }}" \
+              "${{ matrix.binary }}"
+          else
+            tar \
+              -C "target/${{ matrix.target }}/release" \
+              -czf "${{ matrix.archive }}" \
+              "${{ matrix.binary }}"
+          fi
 
       - name: Package standalone binary
         if: runner.os == 'Windows'
@@ -229,3 +273,69 @@ jobs:
             --verify-tag \
             --generate-notes \
             "${prerelease[@]}"
+
+  verify-linux-aarch64:
+    name: Verify published Linux aarch64
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs:
+      - publish-pypi
+      - publish-github
+    runs-on: ubuntu-24.04-arm
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Resolve release versions
+        shell: bash
+        run: |
+          version="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)"
+          pypi_version="${version/-rc./rc}"
+
+          echo "ARID_VERSION=${version}" >> "$GITHUB_ENV"
+          echo "PYPI_VERSION=${pypi_version}" >> "$GITHUB_ENV"
+
+      - name: Wait for exact PyPI release
+        run: python3 qualification/pypi_ready.py "$PYPI_VERSION"
+
+      - name: Verify published PyPI package
+        shell: bash
+        run: |
+          python3 -m venv pypi-smoke
+          pypi-smoke/bin/python -m pip install \
+            --disable-pip-version-check \
+            --no-cache-dir \
+            --index-url https://pypi.org/simple \
+            "arid==${PYPI_VERSION}"
+
+          test "$(pypi-smoke/bin/arid --version)" = "arid ${ARID_VERSION}"
+          pypi-smoke/bin/arid --help >/dev/null
+
+      - name: Verify published standalone archive
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          mkdir standalone-smoke
+          gh release download \
+            "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern arid-linux-aarch64.tar.gz \
+            --dir standalone-smoke
+
+          tar -xzf \
+            standalone-smoke/arid-linux-aarch64.tar.gz \
+            -C standalone-smoke
+
+          test "$(standalone-smoke/arid --version)" = "arid ${ARID_VERSION}"
+          standalone-smoke/arid --help >/dev/null

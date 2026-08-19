@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Arid Baseline v1",
+  "description": "Schema for Arid's stable baseline contract, version 1.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "normalization", "groups"],
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "normalization": {
+      "$ref": "#/$defs/normalization"
+    },
+    "groups": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/group"
+      }
+    }
+  },
+  "$defs": {
+    "normalization": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ignore_comments",
+        "ignore_docstrings",
+        "ignore_imports",
+        "ignore_signatures"
+      ],
+      "properties": {
+        "ignore_comments": {
+          "type": "boolean"
+        },
+        "ignore_docstrings": {
+          "type": "boolean"
+        },
+        "ignore_imports": {
+          "type": "boolean"
+        },
+        "ignore_signatures": {
+          "type": "boolean"
+        }
+      }
+    },
+    "group": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fingerprint", "lines", "occurrences"],
+      "properties": {
+        "fingerprint": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "lines": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "occurrences": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/pathCount"
+          }
+        }
+      }
+    },
+    "pathCount": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "count"],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Project-relative path using forward slashes; Arid additionally rejects absolute paths, drive-prefixed paths, empty components, '.' components, '..' components, backslashes, NULs, and trailing slashes."
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    }
+  }
+}

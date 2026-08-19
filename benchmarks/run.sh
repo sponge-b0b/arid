@@ -6,7 +6,8 @@ export LC_ALL=C
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 CORPUS_RELATIVE_PATH="benchmarks/arid-corpora"
-REPOSITORIES="polaris,pydantic,requests"
+DEFAULT_REPOSITORIES="polaris,pydantic,requests"
+AVAILABLE_REPOSITORIES="polaris,pydantic,requests,duplicate-heavy"
 
 HYPERFINE_VERSION="hyperfine 1.20.0"
 PYLINT_VERSION="pylint 4.0.6"
@@ -14,28 +15,28 @@ JSCPD_VERSION="cpd 5.0.12"
 
 WARMUP="${WARMUP:-1}"
 RUNS="${RUNS:-5}"
-REPOS="$REPOSITORIES"
+REPOS="$DEFAULT_REPOSITORIES"
 TOOLS="arid,pylint,jscpd"
-WORKERS="1,2,4,8"
+WORKERS="1,2,4,8,auto"
 WORKER_SCALING=true
 LABEL=""
 ARID_BIN_INPUT=""
 
 usage() {
-    cat <<EOF
+    cat <<EOF_USAGE
 Usage: $0 <global-root> [options]
 
 Benchmark Arid against corpora beneath:
   <global-root>/$CORPUS_RELATIVE_PATH
 
 Options:
-  --repos <list>        Repositories to benchmark: $REPOSITORIES
-                         Default: $REPOSITORIES
+  --repos <list>        Repositories to benchmark: $AVAILABLE_REPOSITORIES
+                         Default: $DEFAULT_REPOSITORIES
   --label <label>       Suffix applied to each result directory
   --tools <list>        Tools to benchmark: arid,pylint,jscpd
                          Default: arid,pylint,jscpd
-  --workers <list>      Arid worker counts for the scaling benchmark
-                         Default: 1,2,4,8
+  --workers <list>      Arid worker modes for the scaling benchmark
+                         Default: 1,2,4,8,auto
   --no-worker-scaling   Skip the Arid worker-scaling benchmark
   --warmup <N>          Hyperfine warmup runs
                          Default: WARMUP or 1
@@ -67,6 +68,12 @@ Examples:
   # Arid benchmark plus worker scaling
   $0 /home/bobt --repos pydantic --tools arid
 
+  # Duplicate-heavy Arid worker matrix
+  $0 /home/bobt \
+    --repos duplicate-heavy \
+    --tools arid \
+    --workers 1,2,4,8,auto
+
   # Cross-tool comparison without worker scaling
   $0 /home/bobt --repos requests,polaris \
     --tools arid,pylint,jscpd \
@@ -76,7 +83,7 @@ Examples:
   $0 /home/bobt \
     --repos requests \
     --tools arid \
-    --workers 1,4 \
+    --workers 1,4,auto \
     --warmup 0 \
     --runs 3
 
@@ -84,7 +91,7 @@ Examples:
   $0 /home/bobt \
     --arid-bin /path/to/arid \
     --label 1.0.1-rc.1
-EOF
+EOF_USAGE
 }
 
 die() {
@@ -180,16 +187,16 @@ if [[ ! "$RUNS" =~ ^[1-9][0-9]*$ ]]; then
     die "--runs must be a positive integer"
 fi
 
-if [[ ! "$REPOS" =~ ^(polaris|pydantic|requests)(,(polaris|pydantic|requests))*$ ]]; then
-    die "--repos must be a comma-separated list containing polaris, pydantic, and/or requests"
+if [[ ! "$REPOS" =~ ^(polaris|pydantic|requests|duplicate-heavy)(,(polaris|pydantic|requests|duplicate-heavy))*$ ]]; then
+    die "--repos must be a comma-separated list containing polaris, pydantic, requests, and/or duplicate-heavy"
 fi
 
 if [[ ! "$TOOLS" =~ ^(arid|pylint|jscpd)(,(arid|pylint|jscpd))*$ ]]; then
     die "--tools must be a comma-separated list containing arid, pylint, and/or jscpd"
 fi
 
-if [[ ! "$WORKERS" =~ ^[1-9][0-9]*(,[1-9][0-9]*)*$ ]]; then
-    die "--workers must be a comma-separated list of positive integers"
+if [[ ! "$WORKERS" =~ ^(auto|[1-9][0-9]*)(,(auto|[1-9][0-9]*))*$ ]]; then
+    die "--workers must be a comma-separated list of positive integers and/or auto"
 fi
 
 if [[ -n "$LABEL" && ! "$LABEL" =~ ^[A-Za-z0-9._-]+$ ]]; then
@@ -218,7 +225,7 @@ for tool in "${SELECTED_TOOLS[@]}"; do
     seen_tools["$tool"]=1
 done
 
-required_commands=(git hyperfine jq lscpu nproc realpath sha256sum)
+required_commands=(git hyperfine jq lscpu nproc realpath sed sha256sum)
 
 if [[ -z "$ARID_BIN_INPUT" ]]; then
     required_commands+=(cargo rustc)
@@ -298,6 +305,12 @@ if contains_tool jscpd; then
 fi
 
 if [[ "$ARID_SOURCE" == "repository" ]]; then
+    if [[ -n "$(git -C "$ROOT_DIR" status --porcelain --untracked-files=all)" ]]; then
+        echo "error: Arid working tree must be clean for repository benchmarks" >&2
+        git -C "$ROOT_DIR" status --short >&2
+        exit 2
+    fi
+
     echo "Building Arid release binary..."
 
     cargo build \
@@ -480,7 +493,13 @@ benchmark_repository() {
             echo "arid_commit=$HARNESS_COMMIT"
         fi
 
-        echo "corpus_definition=clean pinned Git repository"
+        if [[ -f "$corpus/.arid-benchmark-corpus" ]]; then
+            sed 's/^/corpus_/' "$corpus/.arid-benchmark-corpus"
+            echo "corpus_definition=generated duplicate-heavy Git corpus"
+        else
+            echo "corpus_definition=clean pinned Git repository"
+        fi
+
         echo "invocation=repository root with native recursive discovery"
     } >"$result_dir/metadata.txt"
 
