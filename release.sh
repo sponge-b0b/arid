@@ -121,6 +121,9 @@ derive() {
         1.1.*)
             ROADMAP="docs/arid-v1.1-release-roadmap.md"
             ;;
+        1.2.*)
+            ROADMAP="docs/arid-v1.2-release-roadmap.md"
+            ;;
         *)
             die "no release roadmap configured for version: $version"
             ;;
