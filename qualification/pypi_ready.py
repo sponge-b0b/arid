@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Wait for one exact Arid release to become visible on PyPI."""
+"""Wait for one exact Arid release to become installable from PyPI."""
 
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 import time
 import urllib.error
@@ -12,7 +13,34 @@ from collections.abc import Callable
 
 DEFAULT_TIMEOUT = 120.0
 DEFAULT_INTERVAL = 5.0
-PYPI_URL = "https://pypi.org/pypi/arid/{version}/json"
+PYPI_URL = "https://pypi.org/simple/arid/"
+SIMPLE_API_ACCEPT = "application/vnd.pypi.simple.v1+json"
+
+
+def release_is_listed(payload: object, version: str) -> bool:
+    """Return whether the Simple API lists a distribution for the exact version."""
+    if not isinstance(payload, dict):
+        raise ValueError("PyPI Simple API response is not an object")
+
+    files = payload.get("files")
+    if not isinstance(files, list):
+        raise ValueError("PyPI Simple API response is missing files")
+
+    wheel_prefix = f"arid-{version}-"
+    sdist_name = f"arid-{version}.tar.gz"
+
+    for entry in files:
+        if not isinstance(entry, dict):
+            raise ValueError("PyPI Simple API contains an invalid file entry")
+
+        filename = entry.get("filename")
+        if not isinstance(filename, str):
+            raise ValueError("PyPI Simple API file entry is missing filename")
+
+        if filename.startswith(wheel_prefix) or filename == sdist_name:
+            return True
+
+    return False
 
 
 def wait_for_release(
@@ -24,20 +52,27 @@ def wait_for_release(
     monotonic: Callable[[], float] = time.monotonic,
     sleep: Callable[[float], None] = time.sleep,
 ) -> bool:
-    """Return True when PyPI serves the exact release, False after repeated 404s."""
+    """Return True when pip's Simple API lists the exact release."""
     deadline = monotonic() + timeout
-    url = PYPI_URL.format(version=version)
+    request = urllib.request.Request(
+        PYPI_URL,
+        headers={"Accept": SIMPLE_API_ACCEPT},
+    )
 
     while True:
+        response = open_url(request, timeout=10)
         try:
-            response = open_url(url, timeout=10)
+            read = getattr(response, "read", None)
+            if read is None:
+                raise ValueError("PyPI Simple API response is not readable")
+            payload = json.loads(read())
+        finally:
             close = getattr(response, "close", None)
             if close is not None:
                 close()
+
+        if release_is_listed(payload, version):
             return True
-        except urllib.error.HTTPError as error:
-            if error.code != 404:
-                raise
 
         now = monotonic()
         if now >= deadline:
@@ -48,7 +83,7 @@ def wait_for_release(
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Wait for an exact Arid release to become visible on PyPI."
+        description="Wait for an exact Arid release to become installable from PyPI."
     )
     parser.add_argument("version", help="Exact PyPI version, for example 1.2.0rc1")
     parser.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT)
@@ -72,13 +107,19 @@ def main(argv: list[str] | None = None) -> int:
             timeout=args.timeout,
             interval=args.interval,
         )
-    except (urllib.error.HTTPError, urllib.error.URLError, OSError) as error:
+    except (
+        json.JSONDecodeError,
+        urllib.error.HTTPError,
+        urllib.error.URLError,
+        OSError,
+        ValueError,
+    ) as error:
         print(f"error: PyPI readiness check failed: {error}", file=sys.stderr)
         return 2
 
     if not ready:
         print(
-            f"error: arid=={args.version} did not become visible on PyPI "
+            f"error: arid=={args.version} did not become installable from PyPI "
             f"within {args.timeout:g} seconds",
             file=sys.stderr,
         )
