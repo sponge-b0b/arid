@@ -5,6 +5,8 @@ export LC_ALL=C
 
 CORPUS_RELATIVE_PATH="benchmarks/arid-corpora"
 REPOSITORIES=(polaris pydantic requests)
+DUPLICATE_HEAVY_REPLICAS=4
+DUPLICATE_HEAVY_MARKER=".arid-benchmark-corpus"
 
 declare -A REPOSITORY_URLS=(
     [polaris]="https://github.com/sponge-b0b/Polaris.git"
@@ -19,7 +21,7 @@ declare -A REVISIONS=(
 )
 
 usage() {
-    cat <<EOF
+    cat <<EOF_USAGE
 Usage: $0 <global-root> [options]
 
 Build or update Arid's benchmark corpora beneath:
@@ -34,6 +36,9 @@ Options:
 A revision may be a commit SHA, tag, or branch. Repositories are checked out at
 an exact detached commit. Existing repositories must have clean working trees.
 
+The duplicate-heavy stress corpus is generated deterministically from four
+copies of the selected Requests Python tree.
+
 Examples:
   # Build all corpora at each repository's current upstream HEAD
   $0 /home/bobt
@@ -43,7 +48,7 @@ Examples:
     --requests 6e83187b8feb273ed4c6cdab5efd8d54901dfab3 \
     --pydantic cf67d4b3193c3fe43ede18612ed62785eee11382 \
     --polaris 00e208e7f5dcb3329c3d8d1ee5f13aec7fbe1031
-EOF
+EOF_USAGE
 }
 
 die() {
@@ -102,6 +107,60 @@ resolve_revision() {
     fi
 
     die "unable to resolve revision '$revision' in $repository"
+}
+
+build_duplicate_heavy_corpus() {
+    local source="$CORPUS_ROOT/requests"
+    local target="$CORPUS_ROOT/duplicate-heavy"
+    local source_commit
+    local replica
+    local relative
+    local destination
+
+    source_commit="$(git -C "$source" rev-parse HEAD)"
+
+    echo "=== duplicate-heavy ==="
+
+    if [[ -e "$target" ]]; then
+        if [[ ! -d "$target" || ! -f "$target/$DUPLICATE_HEAVY_MARKER" ]]; then
+            die "refusing to replace unrecognized duplicate-heavy corpus path: $target"
+        fi
+
+        rm -rf "$target"
+    fi
+
+    mkdir -p "$target"
+
+    for ((replica = 1; replica <= DUPLICATE_HEAVY_REPLICAS; replica++)); do
+        while IFS= read -r -d '' relative; do
+            destination="$target/copy-$replica/$relative"
+            mkdir -p "$(dirname "$destination")"
+            cp "$source/$relative" "$destination"
+        done < <(git -C "$source" ls-files -z -- '*.py' '*.pyi')
+    done
+
+    cat >"$target/$DUPLICATE_HEAVY_MARKER" <<EOF_MARKER
+kind=duplicate-heavy
+source=requests
+source_commit=$source_commit
+replicas=$DUPLICATE_HEAVY_REPLICAS
+EOF_MARKER
+
+    git -C "$target" init --quiet
+    git -C "$target" add -f .
+
+    GIT_AUTHOR_NAME="Arid Benchmark" \
+    GIT_AUTHOR_EMAIL="benchmark@arid.invalid" \
+    GIT_AUTHOR_DATE="2000-01-01T00:00:00Z" \
+    GIT_COMMITTER_NAME="Arid Benchmark" \
+    GIT_COMMITTER_EMAIL="benchmark@arid.invalid" \
+    GIT_COMMITTER_DATE="2000-01-01T00:00:00Z" \
+        git -C "$target" commit --quiet --no-gpg-sign --no-verify -m "build: generate duplicate-heavy benchmark corpus"
+
+    echo "Source:   requests@$source_commit"
+    echo "Replicas: $DUPLICATE_HEAVY_REPLICAS"
+    echo "Commit:   $(git -C "$target" rev-parse HEAD)"
+    echo
 }
 
 GLOBAL_ROOT_INPUT=""
@@ -222,6 +281,8 @@ for repository in "${REPOSITORIES[@]}"; do
     echo "Commit:   $resolved_commit"
     echo
 done
+
+build_duplicate_heavy_corpus
 
 echo "Benchmark corpora ready at:"
 echo "  $CORPUS_ROOT"
