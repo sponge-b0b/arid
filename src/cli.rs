@@ -2,6 +2,8 @@ use std::path::PathBuf;
 
 use clap::{Parser, ValueEnum};
 
+const MAX_AUTO_WORKERS: usize = 4;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum OutputFormat {
     Text,
@@ -81,10 +83,10 @@ pub struct Cli {
     #[arg(long, value_name = "PATTERN")]
     pub exclude: Vec<String>,
 
-    /// Number of workers used for file preparation.
+    /// Number of workers used for file preparation, or "auto" for bounded automatic selection.
     #[arg(
         long,
-        value_name = "N",
+        value_name = "N|auto",
         default_value_t = 1,
         value_parser = parse_worker_count,
     )]
@@ -131,15 +133,25 @@ impl Cli {
 }
 
 fn parse_worker_count(value: &str) -> Result<usize, String> {
+    if value == "auto" {
+        return Ok(auto_worker_count(
+            std::thread::available_parallelism().ok().map(usize::from),
+        ));
+    }
+
     let workers = value
         .parse::<usize>()
-        .map_err(|_| "worker count must be a positive integer".to_owned())?;
+        .map_err(|_| "worker count must be a positive integer or 'auto'".to_owned())?;
 
     if workers == 0 {
         return Err("worker count must be at least 1".to_owned());
     }
 
     Ok(workers)
+}
+
+fn auto_worker_count(available: Option<usize>) -> usize {
+    available.unwrap_or(1).clamp(1, MAX_AUTO_WORKERS)
 }
 
 #[cfg(test)]
@@ -202,6 +214,22 @@ mod tests {
         assert_eq!(cli.output_format(), OutputFormat::Json);
         assert!(cli.json);
         assert!(cli.show_source);
+    }
+
+    #[test]
+    fn accepts_auto_workers() {
+        let cli = Cli::try_parse_from(["arid", "--workers", "auto"]).unwrap();
+
+        assert!((1..=MAX_AUTO_WORKERS).contains(&cli.workers));
+    }
+
+    #[test]
+    fn automatic_worker_selection_is_bounded_and_has_serial_fallback() {
+        assert_eq!(auto_worker_count(None), 1);
+        assert_eq!(auto_worker_count(Some(1)), 1);
+        assert_eq!(auto_worker_count(Some(2)), 2);
+        assert_eq!(auto_worker_count(Some(MAX_AUTO_WORKERS)), MAX_AUTO_WORKERS);
+        assert_eq!(auto_worker_count(Some(MAX_AUTO_WORKERS + 8)), MAX_AUTO_WORKERS);
     }
 
     #[test]
@@ -337,5 +365,12 @@ mod tests {
         let result = Cli::try_parse_from(["arid", "--workers", "0"]);
 
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn rejects_invalid_workers() {
+        let error = Cli::try_parse_from(["arid", "--workers", "many"]).unwrap_err();
+
+        assert!(error.to_string().contains("positive integer or 'auto'"));
     }
 }
