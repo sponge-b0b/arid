@@ -83,7 +83,7 @@ pub struct Cli {
     #[arg(long, value_name = "PATTERN")]
     pub exclude: Vec<String>,
 
-    /// Number of workers used for file preparation, or "auto" for bounded automatic selection.
+    /// Number of workers used for file preparation, or "auto" for automatic selection capped at 4.
     #[arg(
         long,
         value_name = "N|auto",
@@ -221,6 +221,16 @@ mod tests {
         let cli = Cli::try_parse_from(["arid", "--workers", "auto"]).unwrap();
 
         assert!((1..=MAX_AUTO_WORKERS).contains(&cli.workers));
+    }
+
+    #[test]
+    fn help_documents_auto_workers() {
+        use clap::CommandFactory;
+
+        let help = Cli::command().render_long_help().to_string();
+
+        assert!(help.contains("--workers <N|auto>"));
+        assert!(help.contains("automatic selection capped at 4"));
     }
 
     #[test]
