@@ -623,6 +623,15 @@ install_pypi() {
     local venv="$TMP_ROOT/pypi-venv"
 
     echo
+    echo "Waiting for exact PyPI release to become visible..."
+
+    python3 \
+        "$ROOT_DIR/qualification/pypi_ready.py" \
+        "$PYPI_VERSION"
+
+    pass "PyPI release readiness"
+
+    echo
     echo "Installing exact PyPI release in a clean environment..."
 
     python3 -m venv "$venv"
