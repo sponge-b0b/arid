@@ -229,7 +229,10 @@ mod tests {
         assert_eq!(auto_worker_count(Some(1)), 1);
         assert_eq!(auto_worker_count(Some(2)), 2);
         assert_eq!(auto_worker_count(Some(MAX_AUTO_WORKERS)), MAX_AUTO_WORKERS);
-        assert_eq!(auto_worker_count(Some(MAX_AUTO_WORKERS + 8)), MAX_AUTO_WORKERS);
+        assert_eq!(
+            auto_worker_count(Some(MAX_AUTO_WORKERS + 8)),
+            MAX_AUTO_WORKERS
+        );
     }
 
     #[test]
