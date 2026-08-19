@@ -101,6 +101,9 @@ case "$BASE_VERSION" in
     1.1.*)
         RELEASE_ROADMAP="docs/arid-v1.1-release-roadmap.md"
         ;;
+    1.2.*)
+        RELEASE_ROADMAP="docs/arid-v1.2-release-roadmap.md"
+        ;;
     *)
         die "no qualification release roadmap configured for version: $VERSION"
         ;;
@@ -310,6 +313,7 @@ verify_release_workflow() {
     local run_json
     local run_status
     local run_conclusion
+    local jobs_json
 
     echo "Verifying production release workflow..."
 
@@ -360,6 +364,24 @@ verify_release_workflow() {
     [[ "$run_conclusion" == "success" ]] ||
         die "release workflow did not succeed: run $RELEASE_RUN_ID ($run_conclusion)"
 
+    if [[ "$BASE_VERSION" == 1.2.* ]]; then
+        jobs_json="$(
+            gh api \
+                -X GET \
+                "repos/$REPOSITORY/actions/runs/$RELEASE_RUN_ID/jobs" \
+                -f per_page=100
+        )"
+
+        jq \
+            -e \
+            'any(.jobs[]; .name == "Verify published Linux aarch64" and .conclusion == "success")' \
+            <<<"$jobs_json" \
+            >/dev/null ||
+            die "release workflow is missing a successful published Linux aarch64 verification job"
+
+        pass "published Linux aarch64 workflow verification"
+    fi
+
     pass "production release workflow"
 }
 
@@ -396,6 +418,15 @@ verify_github_release() {
         <<<"$release_json" \
         >/dev/null ||
         die "GitHub release is missing $LINUX_ARCHIVE"
+
+    if [[ "$BASE_VERSION" == 1.2.* ]]; then
+        jq \
+            -e \
+            'any(.assets[]; .name == "arid-linux-aarch64.tar.gz")' \
+            <<<"$release_json" \
+            >/dev/null ||
+            die "GitHub release is missing arid-linux-aarch64.tar.gz"
+    fi
 
     GITHUB_RELEASE_URL="$(
         jq -r '.url' <<<"$release_json"
