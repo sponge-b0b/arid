@@ -26,6 +26,7 @@
   <a href="#goals">Goals</a> ·
   <a href="#usage">Usage</a> ·
   <a href="#understanding-arids-output">Output</a> ·
+  <a href="#machine-readable-schemas">Schemas</a> ·
   <a href="#configuration">Configuration</a> ·
   <a href="#pre-commit">Pre-commit</a> ·
   <a href="#architecture">Architecture</a> ·
@@ -109,6 +110,9 @@ Arid v1 is designed to:
 - support `pyproject.toml` configuration via `[tool.arid]`
 - provide deterministic text, JSON, Markdown, and SARIF output
 - support baseline-based incremental adoption
+- support opt-in parallel file preparation while remaining serial by default
+- publish JSON Schemas for the report and baseline machine contracts
+- publish release artifacts for Linux x86_64 and ARM64, macOS x86_64 and ARM64, and Windows x86_64
 - integrate with pre-commit while preserving whole-project detection
 - run substantially faster than Pylint's duplicate-code checker
 - require no Python runtime to analyze Python source
@@ -197,6 +201,38 @@ arid . \
     --exclude 'generated/**' \
     --exclude 'vendor/**'
 ```
+
+### Parallelism
+
+Arid runs serially by default. Running:
+
+```bash
+arid .
+```
+
+is equivalent to:
+
+```bash
+arid . --workers 1
+```
+
+For larger projects, file preparation can run in parallel with an explicit worker count:
+
+```bash
+arid . --workers 4
+```
+
+Arid 1.2 also supports bounded automatic worker selection:
+
+```bash
+arid . --workers auto
+```
+
+`auto` chooses a conservative worker count capped at 4 and further bounded by available parallelism and the number of discovered Python files.
+
+Parallelism applies only to file preparation: reading, parsing, and normalization. It does not change duplicate-detection semantics. Serial, numeric-worker, and `auto` execution produce the same findings, metrics, report ordering, and exit status.
+
+Worker selection is intentionally a CLI-only execution setting and cannot be configured in `[tool.arid]`.
 
 Include the original source in each finding:
 
@@ -516,6 +552,19 @@ Its job is to provide accurate duplicate detection and enough objective structur
 
 ---
 
+## Machine-readable schemas
+
+Arid publishes JSON Schema documents for its own machine-readable contracts:
+
+- [Report schema v3](schemas/report-v3.schema.json) describes JSON emitted by `--format json` and `--json`.
+- [Baseline schema v1](schemas/baseline-v1.schema.json) describes files created by `--write-baseline`.
+
+Published schema files describe versioned compatibility contracts. A future incompatible report or baseline format receives a new schema version rather than silently changing an existing schema file.
+
+SARIF output remains SARIF 2.1.0 and uses the official SARIF schema rather than an Arid-owned schema.
+
+---
+
 ## Configuration
 
 Arid uses `[tool.arid]` in `pyproject.toml`:
@@ -617,7 +666,7 @@ To enforce an existing baseline on every normal scan:
 baseline = "arid-baseline.json"
 ```
 
-An explicit `--baseline` path overrides the configured baseline for that scan. `--format`, `--color`, `--json`, `--write-baseline`, and `--show-source` are CLI-only presentation or administrative options.
+An explicit `--baseline` path overrides the configured baseline for that scan. `--workers`, `--format`, `--color`, `--json`, `--write-baseline`, and `--show-source` are CLI-only execution, presentation, or administrative options.
 
 ---
 
@@ -753,6 +802,18 @@ Install Arid from PyPI:
 ```bash
 python -m pip install arid
 ```
+
+### Published platforms
+
+Arid publishes release wheels and standalone archives for:
+
+- Linux x86_64
+- Linux ARM64 (`aarch64`)
+- macOS x86_64
+- macOS ARM64 (Apple silicon)
+- Windows x86_64
+
+Linux release artifacts target `manylinux_2_17` / glibc 2.17 compatibility.
 
 Verify the installation:
 
