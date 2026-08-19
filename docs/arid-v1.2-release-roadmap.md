@@ -2,7 +2,7 @@
 
 **Product:** Arid  
 **Stable target:** `1.2.0`  
-**Current phase:** Phase 7 — Integration and validation
+**Current phase:** Phase 8 — Release Candidate
 
 ## Purpose
 
@@ -168,25 +168,38 @@ If measurement does not identify a worthwhile optimization, this phase is explic
 
 ## Phase 7 — Integration and validation
 
-**Goal:** prove the complete v1.2 feature set together.
+**Goal:** prove the complete v1.2 feature set together before publication.
+
+**Status:** Complete. Source, targeted integration, real-world detector, performance, and pre-publication release-matrix validation all pass.
 
 ### Required validation
 
 - Rust formatting, tests, and clippy with warnings denied.
 - CLI compatibility tests.
 - JSON and baseline schema validation.
-- Serial versus `auto` equivalence tests.
-- Linux x86_64 artifact smoke tests.
-- Linux ARM64 artifact smoke tests.
+- Serial versus numeric versus `auto` equivalence tests.
+- Linux x86_64 wheel and standalone smoke tests.
+- Linux ARM64 wheel and standalone smoke tests.
 - Existing macOS and Windows artifact tests remain green.
-- PyPI package smoke tests for every published Linux architecture.
 - Real-world repository validation.
 - Performance benchmark suite.
-- Full release qualification dry run.
+- Pre-publication release workflow dry run with publication jobs skipped.
+
+Published PyPI/GitHub artifact checks and the complete release qualification campaign require a release tag and therefore belong to Phase 8 RC qualification rather than this pre-publication phase.
+
+### Evidence
+
+- Source gate: `cargo fmt --check`, `cargo test --locked`, clippy with `-D warnings`, `git diff --check`, and clean working tree — PASS.
+- `validation/run.sh`: Black, Django, mypy, Rich, and path cases — PASS.
+- `validation/v1.2.sh`: inherited v1.1 surface, serial/numeric/auto deterministic JSON equivalence, report-v3 schema, and baseline-v1 schema — PASS.
+- `docs/arid-v1.2-performance-report.md`: complete Phase 5 benchmark campaign — PASS.
+- GitHub Actions Release workflow dispatch `32246005708` on `v1.2-contract`: verify plus Linux x86_64, Linux ARM64, macOS ARM64, macOS x86_64, and Windows x86_64 build/smoke jobs — PASS; PyPI/GitHub publication and published Linux ARM64 verification correctly skipped for the branch dispatch.
 
 ### Gate
 
-All required validation passes and no out-of-scope behavior has entered the release.
+All pre-publication validation passes and no out-of-scope behavior has entered the release.
+
+**Gate result:** PASS.
 
 ## Phase 8 — Release Candidate
 
