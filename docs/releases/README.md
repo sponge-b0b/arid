@@ -23,7 +23,7 @@ The production Release workflow requires the exact file for the tag being publis
 
 Include:
 
-- release title, version, and date
+- release title and version
 - a short release theme and user-facing summary
 - major features and enhancements
 - meaningful fixes or release-hardening changes when relevant
@@ -31,6 +31,8 @@ Include:
 - compatibility or breaking-change guidance
 - install or upgrade commands
 - links to relevant documentation
+
+The GitHub Release publication timestamp is the authoritative release date. Future stable note files do not need to embed a date because the file must be frozen before RC qualification and the eventual publication date may move. Historical backfills may include their known release dates.
 
 ### Stable patch releases
 
