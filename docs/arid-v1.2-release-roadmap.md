@@ -2,7 +2,7 @@
 
 **Product:** Arid  
 **Stable target:** `1.2.0`  
-**Current phase:** Phase 5 — Performance measurement
+**Current phase:** Phase 7 — Integration and validation
 
 ## Purpose
 
@@ -125,26 +125,31 @@ A newly published version that is accepted by PyPI but temporarily absent from t
 
 **Goal:** establish evidence before changing performance-sensitive implementation.
 
-**Status:** In progress. The bottleneck investigation is complete; the reproducible corpus and worker-mode benchmark matrix remains before the Phase 5 gate can close.
+**Status:** Complete. Profiling identified Ruff Python parsing as the dominant cost, and the reproducible corpus/worker/cross-tool benchmark campaign established the v1.2 baseline with no meaningful serial regression.
 
 ### Work
 
-- Add benchmark-harness stage timing for discovery, parsing/normalization, corpus construction, suffix-array construction, LCP, detection, and reporting.
+- Measure the major execution regions before considering optimization.
 - Run representative small, medium, large, and duplicate-heavy corpora.
 - Compare serial, explicit multi-worker, and `auto` execution.
+- Continue the established Pylint and jscpd comparisons.
 - Identify the actual dominant stage before considering optimization.
 
 ### Evidence
 
-- `docs/arid-v1.2-performance-report.md` — profiling findings and the v1.2 benchmark baseline as Phase 5 progresses.
+- `docs/arid-v1.2-performance-report.md` — complete profiling findings, worker matrix, cross-tool results, regression comparison, and Phase 6 decision.
 
 ### Gate
 
 A benchmark report identifies the dominant cost centers and establishes a reproducible baseline. No algorithmic optimization is accepted without measured benefit and no semantic regression.
 
+**Gate result:** PASS.
+
 ## Phase 6 — Justified performance optimization
 
 **Goal:** optimize only the measured bottleneck.
+
+**Status:** Complete — no product-code change. The dominant measured cost is Ruff parsing, Arid's post-parse analysis is already inexpensive, and the benchmark campaign does not justify a parser redesign, normalization rewrite, detector algorithm change, or additional performance machinery for v1.2.
 
 ### Work
 
@@ -158,6 +163,8 @@ A benchmark report identifies the dominant cost centers and establishes a reprod
 The optimization demonstrates a meaningful improvement on representative workloads without unacceptable regression on other workloads, memory use, correctness, or maintainability.
 
 If measurement does not identify a worthwhile optimization, this phase is explicitly allowed to produce **no product-code change**.
+
+**Gate result:** PASS by the explicit no-change path. Phase 5 measurement did not identify a worthwhile product-code optimization for v1.2.
 
 ## Phase 7 — Integration and validation
 
