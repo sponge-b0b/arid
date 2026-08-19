@@ -162,9 +162,17 @@ cd "$ROOT_DIR"
 [[ -x "$ROOT_DIR/validation/run.sh" ]] ||
     die "required executable not found: validation/run.sh"
 
-if [[ "$RELEASE_KIND" == "rc" && "$BASE_VERSION" == 1.1.* ]]; then
-    [[ -x "$ROOT_DIR/validation/v1.1.sh" ]] ||
-        die "required executable not found: validation/v1.1.sh"
+if [[ "$RELEASE_KIND" == "rc" ]]; then
+    case "$BASE_VERSION" in
+        1.1.*)
+            [[ -x "$ROOT_DIR/validation/v1.1.sh" ]] ||
+                die "required executable not found: validation/v1.1.sh"
+            ;;
+        1.2.*)
+            [[ -x "$ROOT_DIR/validation/v1.2.sh" ]] ||
+                die "required executable not found: validation/v1.2.sh"
+            ;;
+    esac
 fi
 
 [[ -x "$ROOT_DIR/benchmarks/build.sh" ]] ||
@@ -710,23 +718,37 @@ preserve_validation_results() {
         "$destination/"
 }
 
-run_v1_1_validation() {
-    [[ "$BASE_VERSION" == 1.1.* ]] ||
-        return 0
+run_targeted_validation() {
+    local validation_script=""
+    local validation_name=""
+
+    case "$BASE_VERSION" in
+        1.1.*)
+            validation_script="$ROOT_DIR/validation/v1.1.sh"
+            validation_name="v1.1"
+            ;;
+        1.2.*)
+            validation_script="$ROOT_DIR/validation/v1.2.sh"
+            validation_name="v1.2"
+            ;;
+        *)
+            return 0
+            ;;
+    esac
 
     echo
-    echo "Validating v1.1 integration surface with published standalone artifact..."
+    echo "Validating $validation_name integration surface with published standalone artifact..."
 
-    "$ROOT_DIR/validation/v1.1.sh" "$STANDALONE_BIN"
+    "$validation_script" "$STANDALONE_BIN"
 
-    pass "standalone v1.1 integration validation"
+    pass "standalone $validation_name integration validation"
 
     echo
-    echo "Validating v1.1 integration surface with exact PyPI-installed executable..."
+    echo "Validating $validation_name integration surface with exact PyPI-installed executable..."
 
-    "$ROOT_DIR/validation/v1.1.sh" "$PYPI_BIN"
+    "$validation_script" "$PYPI_BIN"
 
-    pass "PyPI v1.1 integration validation"
+    pass "PyPI $validation_name integration validation"
 }
 
 run_full_validation() {
@@ -972,6 +994,9 @@ write_report() {
             if [[ "$BASE_VERSION" == 1.1.* ]]; then
                 echo "standalone_v1_1_validation=PASS"
                 echo "pypi_v1_1_validation=PASS"
+            elif [[ "$BASE_VERSION" == 1.2.* ]]; then
+                echo "standalone_v1_2_validation=PASS"
+                echo "pypi_v1_2_validation=PASS"
             fi
 
             echo "standalone_validation=$STANDALONE_RESULTS"
@@ -1008,7 +1033,7 @@ download_standalone
 install_pypi
 
 if [[ "$RELEASE_KIND" == "rc" ]]; then
-    run_v1_1_validation
+    run_targeted_validation
     run_full_validation
     compare_validation_json
     run_benchmarks
