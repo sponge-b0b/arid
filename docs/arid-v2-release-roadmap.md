@@ -2,7 +2,7 @@
 
 **Product:** Arid  
 **Stable target:** `2.0.0`  
-**Current phase:** Finding identity and report v4
+**Current phase:** Renderer and SARIF migration
 
 ## Purpose
 
@@ -210,7 +210,7 @@ Foundation tests pass, 1.x release metadata checks remain valid, canonical path 
 
 **Goal:** establish the core breaking machine contract before repairing every renderer and consumer.
 
-**Status:** In progress.
+**Status:** Complete.
 
 ### Work
 
@@ -244,6 +244,8 @@ Report-v4 and error-v1 schema validation pass, fingerprint golden vectors pass, 
 ## Phase 3 — Renderer and SARIF migration
 
 **Goal:** make every existing output representation consume the v2 report contract consistently.
+
+**Status:** In progress.
 
 ### Work
 
