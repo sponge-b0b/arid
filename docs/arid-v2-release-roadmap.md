@@ -2,7 +2,7 @@
 
 **Product:** Arid  
 **Stable target:** `2.0.0`  
-**Current phase:** Renderer and SARIF migration
+**Current phase:** Baseline comparison and maintenance
 
 ## Purpose
 
@@ -245,7 +245,7 @@ Report-v4 and error-v1 schema validation pass, fingerprint golden vectors pass, 
 
 **Goal:** make every existing output representation consume the v2 report contract consistently.
 
-**Status:** In progress.
+**Status:** Complete.
 
 ### Work
 
@@ -268,6 +268,8 @@ All four renderers represent the same logical findings, JSON conforms to report-
 ## Phase 4 — Baseline comparison and maintenance
 
 **Goal:** consolidate baseline reasoning and add safe lifecycle operations without changing baseline-v1.
+
+**Status:** In progress.
 
 ### Work
 
