@@ -2,7 +2,7 @@
 
 **Product:** Arid  
 **Stable target:** `2.0.0`  
-**Current phase:** Source model, virtual stdin, and keep-going
+**Current phase:** Exit policy, multi-output, and capabilities
 
 ## Purpose
 
@@ -329,7 +329,7 @@ Legacy configuration discovery remains compatible, explicit selection is unambig
 
 **Goal:** make source preparation flexible and resilient without creating another Python-analysis path.
 
-**Status:** In progress.
+**Status:** Complete.
 
 ### Work
 
@@ -353,6 +353,8 @@ Disk and virtual source share the same parser/normalizer, virtual replacement/ad
 ## Phase 7 — Focused reporting and analysis metadata
 
 **Goal:** support changed-area and agent workflows without sacrificing whole-project detection.
+
+**Status:** Complete.
 
 ### Work
 
@@ -386,6 +388,8 @@ Focus cannot miss duplication against unchanged files, focused groups retain com
 ## Phase 8 — Exit policy, multi-output, and capabilities
 
 **Goal:** make one scan more useful to humans, CI systems, and machine consumers.
+
+**Status:** In progress.
 
 ### Work
 
