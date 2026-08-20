@@ -14,6 +14,9 @@ fn fixture(name: &str) -> PathBuf {
 fn test_cli(path: PathBuf) -> Cli {
     Cli {
         paths: vec![path],
+        config: None,
+        no_config: false,
+        project_root: None,
         min_lines: None,
         ignore_comments: false,
         no_ignore_comments: false,

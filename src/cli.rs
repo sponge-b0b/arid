@@ -27,6 +27,18 @@ pub struct Cli {
     #[arg(value_name = "PATH")]
     pub paths: Vec<PathBuf>,
 
+    /// Use this exact pyproject.toml instead of ancestor configuration discovery.
+    #[arg(long, value_name = "PATH", conflicts_with = "no_config")]
+    pub config: Option<PathBuf>,
+
+    /// Disable project configuration discovery and use built-in defaults plus CLI overrides.
+    #[arg(long, conflicts_with = "config")]
+    pub no_config: bool,
+
+    /// Set the project root used for configuration lookup and project-relative identity.
+    #[arg(long, value_name = "PATH")]
+    pub project_root: Option<PathBuf>,
+
     /// Minimum number of effective lines required for a duplicate.
     #[arg(long, value_name = "N")]
     pub min_lines: Option<u32>,
@@ -179,6 +191,9 @@ mod tests {
         let cli = Cli::try_parse_from(["arid"]).unwrap();
 
         assert!(cli.paths.is_empty());
+        assert_eq!(cli.config, None);
+        assert!(!cli.no_config);
+        assert_eq!(cli.project_root, None);
         assert_eq!(cli.min_lines, None);
         assert!(!cli.ignore_comments);
         assert!(!cli.no_ignore_comments);
@@ -229,6 +244,43 @@ mod tests {
         assert_eq!(cli.output_format(), OutputFormat::Json);
         assert!(cli.json);
         assert!(cli.show_source);
+    }
+
+    #[test]
+    fn accepts_project_selection_options() {
+        let cli = Cli::try_parse_from([
+            "arid",
+            "--config",
+            "workspace/pyproject.toml",
+            "--project-root",
+            "workspace",
+        ])
+        .unwrap();
+        assert_eq!(
+            cli.config,
+            Some(PathBuf::from("workspace/pyproject.toml"))
+        );
+        assert!(!cli.no_config);
+        assert_eq!(cli.project_root, Some(PathBuf::from("workspace")));
+
+        let cli = Cli::try_parse_from(["arid", "--no-config", "--project-root", "workspace"])
+            .unwrap();
+        assert_eq!(cli.config, None);
+        assert!(cli.no_config);
+        assert_eq!(cli.project_root, Some(PathBuf::from("workspace")));
+    }
+
+    #[test]
+    fn rejects_config_with_no_config() {
+        assert!(
+            Cli::try_parse_from([
+                "arid",
+                "--config",
+                "pyproject.toml",
+                "--no-config",
+            ])
+            .is_err()
+        );
     }
 
     #[test]

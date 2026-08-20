@@ -30,7 +30,7 @@ use baseline::{build_baseline, read_baseline, serialize_baseline, write_baseline
 use baseline_filter::{compare_baseline, filter_active_groups};
 use baseline_status::{render_baseline_status_json, render_baseline_status_text};
 use cli::{Cli, ColorWhen, OutputFormat};
-use config::{LoadedSettings, SettingsOverrides, load_settings};
+use config::{LoadedSettings, ProjectOptions, SettingsOverrides, load_settings_with_options};
 use corpus::build_corpus;
 use detect::detect_duplicates;
 use error::{ErrorKind, OperationalError, render_error_json};
@@ -119,7 +119,12 @@ fn execute(cli: &Cli, context: RunContext) -> Result<RunResult, OperationalError
 
     let paths = scan_paths(cli);
 
-    let loaded = load_settings(&paths[0], settings_overrides(cli)).map_err(|error| {
+    let loaded = load_settings_with_options(
+        &paths[0],
+        settings_overrides(cli),
+        project_options(cli),
+    )
+    .map_err(|error| {
         OperationalError::new(
             ErrorKind::Configuration,
             format!("failed to load configuration: {error}"),
@@ -492,6 +497,14 @@ fn settings_overrides(cli: &Cli) -> SettingsOverrides {
     }
 }
 
+fn project_options(cli: &Cli) -> ProjectOptions {
+    ProjectOptions {
+        config: cli.config.clone(),
+        no_config: cli.no_config,
+        project_root: cli.project_root.clone(),
+    }
+}
+
 fn boolean_override(enabled: bool, disabled: bool) -> Option<bool> {
     match (enabled, disabled) {
         (true, false) => Some(true),
@@ -556,6 +569,9 @@ min-lines = 2
     fn test_cli(paths: Vec<PathBuf>) -> Cli {
         Cli {
             paths,
+            config: None,
+            no_config: false,
+            project_root: None,
             min_lines: None,
             ignore_comments: false,
             no_ignore_comments: false,
@@ -602,6 +618,19 @@ min-lines = 2
         assert!(result.stdout().contains("b.py:1-2"));
         assert!(result.stdout().contains("Found 1 duplicate group."));
         assert!(!result.stdout().contains('\u{1b}'));
+    }
+
+    #[test]
+    fn no_config_disables_project_configuration_end_to_end() {
+        let (temp, configured_cli) = duplicate_fixture();
+        assert_eq!(run(&configured_cli).exit_status(), ExitStatus::Findings);
+
+        let mut no_config_cli = test_cli(vec![temp.path().to_path_buf()]);
+        no_config_cli.no_config = true;
+        let result = run(&no_config_cli);
+
+        assert_eq!(result.exit_status(), ExitStatus::Success);
+        assert!(result.stdout().contains("No duplicate code found."));
     }
 
     #[test]
