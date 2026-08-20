@@ -5,26 +5,31 @@ use crate::baseline::{Baseline, BaselineError, BaselineGroup, build_baseline};
 use crate::corpus::Corpus;
 use crate::model::{DuplicateGroup, NormalizationOptions};
 
-/// Removes duplicate groups fully covered by an already validated baseline.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct BaselineComparison {
+    active_groups: Vec<DuplicateGroup>,
+}
+
+/// Compares current duplicate debt with an already validated baseline.
 ///
 /// A baseline accepts up to its recorded occurrence multiplicity for each
 /// fingerprint/path pair. Reduced debt is accepted. A new fingerprint, a new
 /// path, or an occurrence count above the accepted count keeps the entire
 /// current group active so reporting retains complete duplicate context.
-pub(crate) fn filter_active_groups(
+fn compare_baseline(
     corpus: &Corpus,
     groups: Vec<DuplicateGroup>,
     baseline: &Baseline,
     normalization: NormalizationOptions,
     project_root: &Path,
-) -> Result<Vec<DuplicateGroup>, BaselineError> {
+) -> Result<BaselineComparison, BaselineError> {
     let accepted = baseline
         .groups
         .iter()
         .map(|group| (group.fingerprint.as_str(), group))
         .collect::<BTreeMap<_, _>>();
 
-    let mut active = Vec::new();
+    let mut active_groups = Vec::new();
 
     for group in groups {
         let current = build_baseline(
@@ -44,11 +49,22 @@ pub(crate) fn filter_active_groups(
         };
 
         if is_active {
-            active.push(group);
+            active_groups.push(group);
         }
     }
 
-    Ok(active)
+    Ok(BaselineComparison { active_groups })
+}
+
+/// Removes duplicate groups fully covered by an already validated baseline.
+pub(crate) fn filter_active_groups(
+    corpus: &Corpus,
+    groups: Vec<DuplicateGroup>,
+    baseline: &Baseline,
+    normalization: NormalizationOptions,
+    project_root: &Path,
+) -> Result<Vec<DuplicateGroup>, BaselineError> {
+    Ok(compare_baseline(corpus, groups, baseline, normalization, project_root)?.active_groups)
 }
 
 fn exceeds_accepted_debt(current: &BaselineGroup, accepted: &BaselineGroup) -> bool {
@@ -147,6 +163,31 @@ mod tests {
             Path::new("project"),
         )
         .unwrap()
+    }
+
+    #[test]
+    fn comparison_returns_only_active_groups() {
+        let corpus = build_corpus(vec![
+            prepared("project/a.py", &["alpha = 1", "beta = 2"]),
+            prepared("project/b.py", &["alpha = 1", "beta = 2"]),
+            prepared("project/c.py", &["gamma = 3", "delta = 4"]),
+            prepared("project/d.py", &["gamma = 3", "delta = 4"]),
+        ])
+        .unwrap();
+        let accepted_group = group(vec![occurrence(0, 0), occurrence(1, 0)]);
+        let active_group = group(vec![occurrence(2, 0), occurrence(3, 0)]);
+        let baseline = baseline_for(&corpus, &accepted_group);
+
+        let comparison = compare_baseline(
+            &corpus,
+            vec![accepted_group, active_group.clone()],
+            &baseline,
+            normalization(),
+            Path::new("project"),
+        )
+        .unwrap();
+
+        assert_eq!(comparison.active_groups, vec![active_group]);
     }
 
     #[test]
