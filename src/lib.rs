@@ -203,12 +203,14 @@ fn execute(cli: &Cli, context: RunContext) -> Result<RunResult, OperationalError
         };
         let output = match output_format {
             OutputFormat::Text => render_baseline_status_text(&comparison.status),
-            OutputFormat::Json => render_baseline_status_json(&comparison.status).map_err(|error| {
-                OperationalError::new(
-                    ErrorKind::Output,
-                    format!("failed to render baseline status JSON: {error}"),
-                )
-            })?,
+            OutputFormat::Json => {
+                render_baseline_status_json(&comparison.status).map_err(|error| {
+                    OperationalError::new(
+                        ErrorKind::Output,
+                        format!("failed to render baseline status JSON: {error}"),
+                    )
+                })?
+            }
             OutputFormat::Markdown | OutputFormat::Sarif => {
                 unreachable!("baseline status output is validated before execution")
             }
@@ -672,7 +674,11 @@ baseline = "configured.json"
         cli.no_ignore_comments = true;
         let error = run(&cli);
         assert_eq!(error.exit_status(), ExitStatus::Error);
-        assert!(error.stderr().contains("normalization settings do not match"));
+        assert!(
+            error
+                .stderr()
+                .contains("normalization settings do not match")
+        );
     }
 
     #[test]
@@ -685,7 +691,10 @@ baseline = "configured.json"
         cli.min_lines = Some(3);
         let result = run(&cli);
         assert_eq!(result.exit_status(), ExitStatus::Success);
-        assert_eq!(result.stdout(), concat!("No duplicate code found.\n", "0 duplicate lines (0.00%).\n"));
+        assert_eq!(
+            result.stdout(),
+            concat!("No duplicate code found.\n", "0 duplicate lines (0.00%).\n")
+        );
     }
 
     #[test]
@@ -696,7 +705,10 @@ baseline = "configured.json"
         temp.write("b.py", "gamma = 3\ndelta = 4\n");
         let result = run(&test_cli(vec![temp.path().to_path_buf()]));
         assert_eq!(result.exit_status(), ExitStatus::Success);
-        assert_eq!(result.stdout(), concat!("No duplicate code found.\n", "0 duplicate lines (0.00%).\n"));
+        assert_eq!(
+            result.stdout(),
+            concat!("No duplicate code found.\n", "0 duplicate lines (0.00%).\n")
+        );
     }
 
     #[test]
@@ -712,7 +724,12 @@ baseline = "configured.json"
         assert_eq!(value["analysis"]["min_lines"], 2);
         assert_eq!(value["duplicate_groups"], 1);
         assert_eq!(value["findings"][0]["code"], "DUP001");
-        assert!(value["findings"][0]["fingerprint"].as_str().unwrap().starts_with("arid-finding-v1:sha256:"));
+        assert!(
+            value["findings"][0]["fingerprint"]
+                .as_str()
+                .unwrap()
+                .starts_with("arid-finding-v1:sha256:")
+        );
     }
 
     #[test]
@@ -732,10 +749,18 @@ baseline = "configured.json"
         cli.show_source = true;
         let result = run(&cli);
         assert_eq!(result.exit_status(), ExitStatus::Findings);
-        assert!(result.stdout().starts_with("# Arid duplicate-code report\n\n"));
+        assert!(
+            result
+                .stdout()
+                .starts_with("# Arid duplicate-code report\n\n")
+        );
         assert!(result.stdout().contains("## `DUP001` — 2 duplicated lines"));
         assert!(result.stdout().contains("### `a.py:1-2`"));
-        assert!(result.stdout().contains("```python\nalpha = 1\nbeta = 2\n```"));
+        assert!(
+            result
+                .stdout()
+                .contains("```python\nalpha = 1\nbeta = 2\n```")
+        );
         assert!(result.stdout().contains("- **Duplicate groups:** 1"));
         assert!(!result.stdout().contains('\u{1b}'));
     }
@@ -752,7 +777,11 @@ baseline = "configured.json"
         assert_eq!(value["version"], "2.1.0");
         assert_eq!(value["runs"][0]["tool"]["driver"]["name"], "Arid");
         assert_eq!(value["runs"][0]["results"][0]["ruleId"], "DUP001");
-        assert_eq!(value["runs"][0]["results"][0]["locations"][0]["physicalLocation"]["artifactLocation"]["uri"], "a.py");
+        assert_eq!(
+            value["runs"][0]["results"][0]["locations"][0]["physicalLocation"]["artifactLocation"]
+                ["uri"],
+            "a.py"
+        );
     }
 
     #[test]
@@ -764,25 +793,76 @@ baseline = "configured.json"
             clicolor_disabled: true,
         };
         cli.color = Some(ColorWhen::Always);
-        let result = run_with_context(&cli, RunContext { text_color_capable: false, color_environment: hostile_environment });
+        let result = run_with_context(
+            &cli,
+            RunContext {
+                text_color_capable: false,
+                color_environment: hostile_environment,
+            },
+        );
         assert!(result.stdout().contains('\u{1b}'));
         cli.color = Some(ColorWhen::Never);
-        let result = run_with_context(&cli, RunContext { text_color_capable: true, color_environment: hostile_environment });
+        let result = run_with_context(
+            &cli,
+            RunContext {
+                text_color_capable: true,
+                color_environment: hostile_environment,
+            },
+        );
         assert!(!result.stdout().contains('\u{1b}'));
         cli.color = Some(ColorWhen::Auto);
-        let result = run_with_context(&cli, RunContext { text_color_capable: false, color_environment: hostile_environment });
+        let result = run_with_context(
+            &cli,
+            RunContext {
+                text_color_capable: false,
+                color_environment: hostile_environment,
+            },
+        );
         assert!(!result.stdout().contains('\u{1b}'));
     }
 
     #[test]
     fn color_environment_precedence_is_deterministic() {
-        let terminal = |environment| RunContext { text_color_capable: true, color_environment: environment };
-        let redirected = |environment| RunContext { text_color_capable: false, color_environment: environment };
-        assert!(!resolve_text_color(None, terminal(ColorEnvironment { no_color: true, clicolor_force: true, clicolor_disabled: false })));
-        assert!(resolve_text_color(None, redirected(ColorEnvironment { no_color: false, clicolor_force: true, clicolor_disabled: true })));
-        assert!(!resolve_text_color(None, terminal(ColorEnvironment { no_color: false, clicolor_force: false, clicolor_disabled: true })));
-        assert!(resolve_text_color(None, terminal(ColorEnvironment::default())));
-        assert!(!resolve_text_color(None, redirected(ColorEnvironment::default())));
+        let terminal = |environment| RunContext {
+            text_color_capable: true,
+            color_environment: environment,
+        };
+        let redirected = |environment| RunContext {
+            text_color_capable: false,
+            color_environment: environment,
+        };
+        assert!(!resolve_text_color(
+            None,
+            terminal(ColorEnvironment {
+                no_color: true,
+                clicolor_force: true,
+                clicolor_disabled: false
+            })
+        ));
+        assert!(resolve_text_color(
+            None,
+            redirected(ColorEnvironment {
+                no_color: false,
+                clicolor_force: true,
+                clicolor_disabled: true
+            })
+        ));
+        assert!(!resolve_text_color(
+            None,
+            terminal(ColorEnvironment {
+                no_color: false,
+                clicolor_force: false,
+                clicolor_disabled: true
+            })
+        ));
+        assert!(resolve_text_color(
+            None,
+            terminal(ColorEnvironment::default())
+        ));
+        assert!(!resolve_text_color(
+            None,
+            redirected(ColorEnvironment::default())
+        ));
     }
 
     #[test]
@@ -815,7 +895,10 @@ baseline = "configured.json"
         let value: serde_json::Value = serde_json::from_str(result.stdout()).unwrap();
         assert_eq!(value["schema_version"], 1);
         assert_eq!(value["error"]["kind"], "configuration");
-        assert_eq!(value["error"]["message"], "--color is only valid with text output");
+        assert_eq!(
+            value["error"]["message"],
+            "--color is only valid with text output"
+        );
     }
 
     #[test]

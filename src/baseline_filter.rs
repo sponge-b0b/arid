@@ -2,9 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use crate::baseline::{Baseline, BaselineError, BaselineGroup, build_baseline};
-use crate::baseline_status::{
-    BaselineStatus, BaselineStatusGroup, BaselineStatusPath, DebtCounts,
-};
+use crate::baseline_status::{BaselineStatus, BaselineStatusGroup, BaselineStatusPath, DebtCounts};
 use crate::corpus::Corpus;
 use crate::model::{DuplicateGroup, NormalizationOptions};
 

@@ -242,7 +242,10 @@ mod tests {
         assert_eq!(auto_worker_count(Some(1)), 1);
         assert_eq!(auto_worker_count(Some(2)), 2);
         assert_eq!(auto_worker_count(Some(MAX_AUTO_WORKERS)), MAX_AUTO_WORKERS);
-        assert_eq!(auto_worker_count(Some(MAX_AUTO_WORKERS + 8)), MAX_AUTO_WORKERS);
+        assert_eq!(
+            auto_worker_count(Some(MAX_AUTO_WORKERS + 8)),
+            MAX_AUTO_WORKERS
+        );
     }
 
     #[test]
@@ -291,9 +294,27 @@ mod tests {
     #[test]
     fn rejects_conflicting_baseline_modes() {
         for args in [
-            ["arid", "--baseline", "old.json", "--write-baseline", "new.json"],
-            ["arid", "--baseline", "old.json", "--baseline-status", "new.json"],
-            ["arid", "--baseline-status", "old.json", "--write-baseline", "new.json"],
+            [
+                "arid",
+                "--baseline",
+                "old.json",
+                "--write-baseline",
+                "new.json",
+            ],
+            [
+                "arid",
+                "--baseline",
+                "old.json",
+                "--baseline-status",
+                "new.json",
+            ],
+            [
+                "arid",
+                "--baseline-status",
+                "old.json",
+                "--write-baseline",
+                "new.json",
+            ],
         ] {
             assert!(Cli::try_parse_from(args).is_err());
         }
@@ -302,10 +323,18 @@ mod tests {
     #[test]
     fn write_baseline_rejects_presentation_options() {
         for option in ["--json", "--show-source"] {
-            assert!(Cli::try_parse_from(["arid", "--write-baseline", "debt.json", option]).is_err());
+            assert!(
+                Cli::try_parse_from(["arid", "--write-baseline", "debt.json", option]).is_err()
+            );
         }
-        assert!(Cli::try_parse_from(["arid", "--write-baseline", "debt.json", "--format", "text"]).is_err());
-        assert!(Cli::try_parse_from(["arid", "--write-baseline", "debt.json", "--color", "never"]).is_err());
+        assert!(
+            Cli::try_parse_from(["arid", "--write-baseline", "debt.json", "--format", "text"])
+                .is_err()
+        );
+        assert!(
+            Cli::try_parse_from(["arid", "--write-baseline", "debt.json", "--color", "never"])
+                .is_err()
+        );
     }
 
     #[test]
@@ -342,7 +371,9 @@ mod tests {
 
     #[test]
     fn rejects_conflicting_boolean_overrides() {
-        assert!(Cli::try_parse_from(["arid", "--ignore-comments", "--no-ignore-comments"]).is_err());
+        assert!(
+            Cli::try_parse_from(["arid", "--ignore-comments", "--no-ignore-comments"]).is_err()
+        );
     }
 
     #[test]

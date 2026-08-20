@@ -28,10 +28,12 @@ pub(crate) struct BaselineStatus {
 
 impl BaselineStatus {
     pub(crate) fn new(groups: Vec<BaselineStatusGroup>) -> Self {
-        let summary = groups.iter().fold(DebtCounts::default(), |mut total, group| {
-            total.add(group.summary);
-            total
-        });
+        let summary = groups
+            .iter()
+            .fold(DebtCounts::default(), |mut total, group| {
+                total.add(group.summary);
+                total
+            });
 
         Self {
             schema_version: BASELINE_STATUS_SCHEMA_VERSION,
