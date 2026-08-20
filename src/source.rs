@@ -3,6 +3,8 @@ use std::path::{Path, PathBuf};
 
 use rayon::prelude::*;
 
+pub(crate) mod focus;
+
 use crate::config::Settings;
 use crate::error::{ErrorKind, OperationalError};
 use crate::files::{is_excluded_path, is_python_file};
