@@ -319,8 +319,10 @@ mod tests {
             tool_version: env!("CARGO_PKG_VERSION"),
             complete: false,
             analysis: AnalysisMetadata::default(),
-            errors: vec![OperationalError::new(ErrorKind::Parse, "failed to parse source")
-                .with_project_path(Path::new("project/broken.py"), Path::new("project"))],
+            errors: vec![
+                OperationalError::new(ErrorKind::Parse, "failed to parse source")
+                    .with_project_path(Path::new("project/broken.py"), Path::new("project")),
+            ],
             files: 1,
             source_lines: 2,
             analyzed_lines: 0,
