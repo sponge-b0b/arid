@@ -1,7 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-use crate::baseline::{Baseline, BaselineError, BaselineGroup, build_baseline};
+use crate::baseline::{
+    Baseline, BaselineError, BaselineGroup, BaselinePathCount, build_baseline,
+};
 use crate::baseline_status::{BaselineStatus, BaselineStatusGroup, BaselineStatusPath, DebtCounts};
 use crate::corpus::Corpus;
 use crate::model::{DuplicateGroup, NormalizationOptions};
@@ -10,13 +12,16 @@ use crate::model::{DuplicateGroup, NormalizationOptions};
 pub(crate) struct BaselineComparison {
     pub(crate) active_groups: Vec<DuplicateGroup>,
     pub(crate) status: BaselineStatus,
+    pub(crate) pruned: Baseline,
 }
 
 /// Compares current duplicate debt with an already validated baseline.
 ///
 /// For every fingerprint/path multiplicity, debt is classified as accepted,
 /// active, or stale. A current group remains active when any of its debt is
-/// unaccepted so reporting retains the complete duplicate group.
+/// unaccepted so reporting retains the complete duplicate group. The pruned
+/// baseline contains only the accepted intersection of current and baseline
+/// debt, so pruning can never accept new debt.
 pub(crate) fn compare_baseline(
     corpus: &Corpus,
     groups: Vec<DuplicateGroup>,
@@ -32,6 +37,7 @@ pub(crate) fn compare_baseline(
 
     let mut active_groups = Vec::new();
     let mut status_groups = Vec::new();
+    let mut pruned_groups = Vec::new();
     let mut current_fingerprints = BTreeSet::new();
 
     for group in groups {
@@ -54,6 +60,12 @@ pub(crate) fn compare_baseline(
             active_groups.push(group);
         }
 
+        if let Some(baseline_group) = baseline_group {
+            if let Some(pruned_group) = prune_group(current_group, baseline_group) {
+                pruned_groups.push(pruned_group);
+            }
+        }
+
         current_fingerprints.insert(current_group.fingerprint.clone());
         status_groups.push(status_group);
     }
@@ -65,10 +77,16 @@ pub(crate) fn compare_baseline(
     }
 
     status_groups.sort_by(|left, right| left.fingerprint.cmp(&right.fingerprint));
+    pruned_groups.sort();
 
     Ok(BaselineComparison {
         active_groups,
         status: BaselineStatus::new(status_groups),
+        pruned: Baseline {
+            version: baseline.version,
+            normalization: baseline.normalization,
+            groups: pruned_groups,
+        },
     })
 }
 
@@ -137,6 +155,37 @@ fn compare_group_status(
         paths,
         summary,
     }
+}
+
+fn prune_group(current: &BaselineGroup, baseline: &BaselineGroup) -> Option<BaselineGroup> {
+    let current_counts = current
+        .occurrences
+        .iter()
+        .map(|occurrence| (occurrence.path.as_str(), occurrence.count))
+        .collect::<BTreeMap<_, _>>();
+
+    let occurrences = baseline
+        .occurrences
+        .iter()
+        .filter_map(|accepted| {
+            let current = current_counts
+                .get(accepted.path.as_str())
+                .copied()
+                .unwrap_or(0);
+            let count = current.min(accepted.count);
+
+            (count > 0).then(|| BaselinePathCount {
+                path: accepted.path.clone(),
+                count,
+            })
+        })
+        .collect::<Vec<_>>();
+
+    (!occurrences.is_empty()).then(|| BaselineGroup {
+        fingerprint: baseline.fingerprint.clone(),
+        lines: baseline.lines,
+        occurrences,
+    })
 }
 
 #[cfg(test)]
@@ -258,6 +307,26 @@ mod tests {
     }
 
     #[test]
+    fn pruning_keeps_only_accepted_intersection() {
+        let current = baseline_group(&[("a.py", 2), ("b.py", 1), ("c.py", 4)]);
+        let baseline = baseline_group(&[("a.py", 1), ("b.py", 3), ("d.py", 2)]);
+
+        assert_eq!(
+            prune_group(&current, &baseline).unwrap().occurrences,
+            vec![
+                BaselinePathCount {
+                    path: "a.py".to_owned(),
+                    count: 1,
+                },
+                BaselinePathCount {
+                    path: "b.py".to_owned(),
+                    count: 1,
+                },
+            ]
+        );
+    }
+
+    #[test]
     fn missing_baseline_fingerprint_is_wholly_active() {
         let current = baseline_group(&[("a.py", 2), ("b.py", 1)]);
         let status = compare_group_status(Some(&current), None);
@@ -288,7 +357,7 @@ mod tests {
     }
 
     #[test]
-    fn comparison_returns_only_active_groups_and_complete_status() {
+    fn comparison_returns_active_status_and_pruned_baseline() {
         let corpus = build_corpus(vec![
             prepared("project/a.py", &["alpha = 1", "beta = 2"]),
             prepared("project/b.py", &["alpha = 1", "beta = 2"]),
@@ -314,6 +383,35 @@ mod tests {
         assert_eq!(comparison.status.summary.active, 2);
         assert_eq!(comparison.status.summary.stale, 0);
         assert_eq!(comparison.status.groups.len(), 2);
+        assert_eq!(comparison.pruned, baseline);
+    }
+
+    #[test]
+    fn comparison_prunes_wholly_stale_group() {
+        let corpus = build_corpus(vec![
+            prepared("project/a.py", &["alpha = 1", "beta = 2"]),
+            prepared("project/b.py", &["alpha = 1", "beta = 2"]),
+        ])
+        .unwrap();
+        let baseline_group = group(vec![occurrence(0, 0), occurrence(1, 0)]);
+        let baseline = baseline_for(&corpus, &baseline_group);
+
+        let comparison = compare_baseline(
+            &corpus,
+            Vec::new(),
+            &baseline,
+            normalization(),
+            Path::new("project"),
+        )
+        .unwrap();
+
+        assert!(comparison.active_groups.is_empty());
+        assert_eq!(comparison.status.summary.accepted, 0);
+        assert_eq!(comparison.status.summary.active, 0);
+        assert_eq!(comparison.status.summary.stale, 2);
+        assert!(comparison.pruned.groups.is_empty());
+        assert_eq!(comparison.pruned.version, baseline.version);
+        assert_eq!(comparison.pruned.normalization, baseline.normalization);
     }
 
     #[test]
