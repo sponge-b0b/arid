@@ -2,7 +2,7 @@
 
 **Product:** Arid  
 **Stable target:** `2.0.0`  
-**Current phase:** Baseline comparison and maintenance
+**Current phase:** Source model, virtual stdin, and keep-going
 
 ## Purpose
 
@@ -269,7 +269,7 @@ All four renderers represent the same logical findings, JSON conforms to report-
 
 **Goal:** consolidate baseline reasoning and add safe lifecycle operations without changing baseline-v1.
 
-**Status:** In progress.
+**Status:** Complete.
 
 ### Work
 
@@ -305,6 +305,8 @@ Existing baseline-v1 fixtures still load and enforce identically, status classif
 
 **Goal:** make Arid's project context explicit and inspectable for monorepos, tools, and agents.
 
+**Status:** Complete.
+
 ### Work
 
 - Introduce resolved `ProjectContext` ownership of root, config source, and effective settings.
@@ -326,6 +328,8 @@ Legacy configuration discovery remains compatible, explicit selection is unambig
 ## Phase 6 — Source model, virtual stdin, and keep-going
 
 **Goal:** make source preparation flexible and resilient without creating another Python-analysis path.
+
+**Status:** In progress.
 
 ### Work
 
