@@ -37,7 +37,7 @@ impl VirtualSource {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub(crate) struct PreparationResult {
     pub(crate) files: Vec<PreparedFile>,
     pub(crate) errors: Vec<OperationalError>,
