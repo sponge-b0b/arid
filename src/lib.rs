@@ -693,7 +693,10 @@ min-lines = 2
             serde_json::from_str(&fs::read_to_string(&baseline_path).unwrap()).unwrap();
         assert_eq!(value["version"], 1);
         assert_eq!(value["groups"].as_array().unwrap().len(), 1);
-        assert_eq!(value["groups"][0]["occurrences"].as_array().unwrap().len(), 1);
+        assert_eq!(
+            value["groups"][0]["occurrences"].as_array().unwrap().len(),
+            1
+        );
         assert_eq!(value["groups"][0]["occurrences"][0]["path"], "a.py");
         assert_eq!(value["groups"][0]["occurrences"][0]["count"], 1);
 
