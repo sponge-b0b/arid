@@ -441,13 +441,13 @@ fn validate_output_options(cli: &Cli, output_format: OutputFormat) -> Result<(),
     let non_scan_mode =
         administrative_mode.or_else(|| cli.write_baseline.as_ref().map(|_| "--write-baseline"));
 
-    if cli.stdin_path.is_some() {
-        if let Some(mode) = non_scan_mode {
-            return Err(OperationalError::new(
-                ErrorKind::Configuration,
-                format!("--stdin-path is not valid with {mode}"),
-            ));
-        }
+    if cli.stdin_path.is_some()
+        && let Some(mode) = non_scan_mode
+    {
+        return Err(OperationalError::new(
+            ErrorKind::Configuration,
+            format!("--stdin-path is not valid with {mode}"),
+        ));
     }
 
     if let Some(mode) = administrative_mode {
