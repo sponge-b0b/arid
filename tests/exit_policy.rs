@@ -15,10 +15,8 @@ struct TempDir {
 impl TempDir {
     fn new() -> Self {
         let id = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
-        let path = std::env::temp_dir().join(format!(
-            "arid-exit-policy-test-{}-{id}",
-            std::process::id()
-        ));
+        let path =
+            std::env::temp_dir().join(format!("arid-exit-policy-test-{}-{id}", std::process::id()));
         fs::create_dir_all(&path).unwrap();
         Self { path }
     }

@@ -33,11 +33,7 @@ mod tests {
 
     #[test]
     fn default_policy_preserves_all_statuses() {
-        for status in [
-            ExitStatus::Success,
-            ExitStatus::Findings,
-            ExitStatus::Error,
-        ] {
+        for status in [ExitStatus::Success, ExitStatus::Findings, ExitStatus::Error] {
             assert_eq!(apply_no_fail_on_findings(status, false), status);
         }
     }
