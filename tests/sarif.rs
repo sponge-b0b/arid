@@ -66,7 +66,7 @@ fn cli(temp: &TempDir, options: impl IntoIterator<Item = OsString>) -> Cli {
 #[test]
 fn real_sarif_scan_is_deterministic_and_uri_safe() {
     let temp = duplicate_project();
-    let cli = cli(
+    let sarif_cli = cli(
         &temp,
         [
             OsString::from("--format"),
@@ -75,8 +75,8 @@ fn real_sarif_scan_is_deterministic_and_uri_safe() {
         ],
     );
 
-    let first = arid::run(&cli);
-    let second = arid::run(&cli);
+    let first = arid::run(&sarif_cli);
+    let second = arid::run(&sarif_cli);
 
     assert_eq!(first.exit_status(), ExitStatus::Findings);
     assert_eq!(first, second);
@@ -90,6 +90,21 @@ fn real_sarif_scan_is_deterministic_and_uri_safe() {
     assert!(result.get("level").is_none());
     assert_eq!(result["locations"].as_array().unwrap().len(), 1);
     assert_eq!(result["relatedLocations"].as_array().unwrap().len(), 1);
+
+    let json_cli = cli(&temp, [OsString::from("--format"), OsString::from("json")]);
+    let json = arid::run(&json_cli);
+    assert_eq!(json.exit_status(), ExitStatus::Findings);
+    let json_value: serde_json::Value = serde_json::from_str(json.stdout()).unwrap();
+
+    assert_eq!(
+        result["partialFingerprints"]["aridFindingFingerprint/v1"],
+        json_value["findings"][0]["fingerprint"]
+    );
+    assert!(
+        result["partialFingerprints"]
+            .get("primaryLocationLineHash")
+            .is_none()
+    );
 
     let primary = result["locations"][0]["physicalLocation"]["artifactLocation"]["uri"]
         .as_str()

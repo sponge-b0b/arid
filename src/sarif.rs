@@ -1,10 +1,13 @@
 use serde::Serialize;
+use thiserror::Error;
 
 use crate::report::{Finding, FindingContext, FindingDistribution, FindingScope, Location, Report};
 
 const SARIF_VERSION: &str = "2.1.0";
 const SARIF_SCHEMA: &str =
     "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json";
+#[cfg(test)]
+const ARID_FINDING_FINGERPRINT_KEY: &str = "aridFindingFingerprint/v1";
 
 #[derive(Serialize)]
 struct SarifDocument {
@@ -44,10 +47,18 @@ struct SarifResult {
     #[serde(rename = "ruleId")]
     rule_id: String,
     message: SarifMessage,
+    #[serde(rename = "partialFingerprints")]
+    partial_fingerprints: SarifPartialFingerprints,
     locations: Vec<SarifLocation>,
     #[serde(rename = "relatedLocations", skip_serializing_if = "Vec::is_empty")]
     related_locations: Vec<SarifLocation>,
     properties: SarifProperties,
+}
+
+#[derive(Serialize)]
+struct SarifPartialFingerprints {
+    #[serde(rename = "aridFindingFingerprint/v1")]
+    arid_finding_fingerprint_v1: String,
 }
 
 #[derive(Serialize)]
@@ -93,7 +104,20 @@ struct SarifProperties {
     distribution: &'static str,
 }
 
-pub fn render_sarif(report: &Report) -> Result<String, serde_json::Error> {
+#[derive(Debug, Error)]
+pub(crate) enum SarifError {
+    #[error("cannot render SARIF for an incomplete report")]
+    IncompleteReport,
+
+    #[error("failed to serialize SARIF report: {0}")]
+    Json(#[from] serde_json::Error),
+}
+
+pub fn render_sarif(report: &Report) -> Result<String, SarifError> {
+    if !report.complete {
+        return Err(SarifError::IncompleteReport);
+    }
+
     let document = SarifDocument {
         version: SARIF_VERSION,
         schema: SARIF_SCHEMA,
@@ -101,7 +125,7 @@ pub fn render_sarif(report: &Report) -> Result<String, serde_json::Error> {
             tool: SarifTool {
                 driver: SarifDriver {
                     name: "Arid",
-                    version: env!("CARGO_PKG_VERSION"),
+                    version: report.tool_version,
                     rules: vec![SarifRule {
                         id: "DUP001",
                         short_description: SarifMessage {
@@ -114,7 +138,7 @@ pub fn render_sarif(report: &Report) -> Result<String, serde_json::Error> {
         }],
     };
 
-    serde_json::to_string_pretty(&document)
+    Ok(serde_json::to_string_pretty(&document)?)
 }
 
 fn build_result(finding: &Finding) -> SarifResult {
@@ -134,6 +158,9 @@ fn build_result(finding: &Finding) -> SarifResult {
                 finding.files,
                 if finding.files == 1 { "file" } else { "files" },
             ),
+        },
+        partial_fingerprints: SarifPartialFingerprints {
+            arid_finding_fingerprint_v1: finding.fingerprint.clone(),
         },
         locations: vec![build_location(primary)],
         related_locations: related.iter().map(build_location).collect(),
@@ -270,12 +297,35 @@ mod tests {
         assert_eq!(value["runs"].as_array().unwrap().len(), 1);
         assert_eq!(value["runs"][0]["tool"]["driver"]["name"], "Arid");
         assert_eq!(
+            value["runs"][0]["tool"]["driver"]["version"],
+            report(false).tool_version
+        );
+        assert_eq!(
             value["runs"][0]["tool"]["driver"]["rules"][0]["id"],
             "DUP001"
         );
         assert_eq!(value["runs"][0]["results"].as_array().unwrap().len(), 1);
         assert_eq!(value["runs"][0]["results"][0]["ruleId"], "DUP001");
         assert!(value["runs"][0]["results"][0].get("level").is_none());
+    }
+
+    #[test]
+    fn exposes_arid_finding_identity_as_partial_fingerprint() {
+        let report = report(false);
+        let expected = report.findings[0].fingerprint.clone();
+        let value: serde_json::Value =
+            serde_json::from_str(&render_sarif(&report).unwrap()).unwrap();
+        let result = &value["runs"][0]["results"][0];
+
+        assert_eq!(
+            result["partialFingerprints"][ARID_FINDING_FINGERPRINT_KEY],
+            expected
+        );
+        assert!(
+            result["partialFingerprints"]
+                .get("primaryLocationLineHash")
+                .is_none()
+        );
     }
 
     #[test]
@@ -308,6 +358,20 @@ mod tests {
         assert_eq!(properties["occurrences"], 2);
         assert_eq!(properties["files"], 2);
         assert_eq!(properties["distribution"], "cross-file");
+    }
+
+    #[test]
+    fn hybrid_distribution_is_preserved() {
+        let mut report = report(false);
+        report.findings[0].distribution = FindingDistribution::Hybrid;
+
+        let value: serde_json::Value =
+            serde_json::from_str(&render_sarif(&report).unwrap()).unwrap();
+
+        assert_eq!(
+            value["runs"][0]["results"][0]["properties"]["distribution"],
+            "hybrid"
+        );
     }
 
     #[test]
@@ -367,5 +431,16 @@ mod tests {
             serde_json::from_str(&render_sarif(&report).unwrap()).unwrap();
 
         assert!(value["runs"][0]["results"].as_array().unwrap().is_empty());
+    }
+
+    #[test]
+    fn incomplete_report_cannot_be_rendered_as_sarif() {
+        let mut report = report(false);
+        report.complete = false;
+
+        assert!(matches!(
+            render_sarif(&report),
+            Err(SarifError::IncompleteReport)
+        ));
     }
 }
