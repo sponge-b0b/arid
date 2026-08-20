@@ -917,12 +917,15 @@ mod tests {
             occurrences: vec![occurrence(0, 0, 1), occurrence(1, 0, 1)],
         }];
         let report = build_report(&corpus, &groups, &ReportOptions::default()).unwrap();
-        let value: serde_json::Value = serde_json::from_str(&render_json(&report).unwrap()).unwrap();
+        let value: serde_json::Value =
+            serde_json::from_str(&render_json(&report).unwrap()).unwrap();
 
-        assert!(value["findings"][0]["fingerprint"]
-            .as_str()
-            .unwrap()
-            .starts_with("arid-finding-v1:sha256:"));
+        assert!(
+            value["findings"][0]["fingerprint"]
+                .as_str()
+                .unwrap()
+                .starts_with("arid-finding-v1:sha256:")
+        );
         assert_eq!(value["findings"][0]["distribution"], "cross-file");
     }
 

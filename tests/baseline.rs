@@ -198,7 +198,11 @@ fn normalization_mismatch_is_an_error() {
 
     assert_eq!(error.exit_status(), ExitStatus::Error);
     assert!(error.stdout().is_empty());
-    assert!(error.stderr().contains("normalization settings do not match"));
+    assert!(
+        error
+            .stderr()
+            .contains("normalization settings do not match")
+    );
 }
 
 #[test]

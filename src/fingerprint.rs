@@ -77,7 +77,8 @@ pub(crate) fn finding_fingerprint(
     }
 
     let digest = hasher.finalize();
-    let mut fingerprint = String::with_capacity(FINDING_FINGERPRINT_PREFIX.len() + digest.len() * 2);
+    let mut fingerprint =
+        String::with_capacity(FINDING_FINGERPRINT_PREFIX.len() + digest.len() * 2);
 
     fingerprint.push_str(FINDING_FINGERPRINT_PREFIX);
 
@@ -143,9 +144,7 @@ mod tests {
     use std::path::PathBuf;
 
     use crate::corpus::build_corpus;
-    use crate::model::{
-        NormalizedSegment, StructuralContext, StructuralScope,
-    };
+    use crate::model::{NormalizedSegment, StructuralContext, StructuralScope};
 
     use super::*;
 
@@ -194,7 +193,11 @@ mod tests {
         }
     }
 
-    fn group(effective_lines: u32, normalized_len: u32, occurrences: Vec<Occurrence>) -> DuplicateGroup {
+    fn group(
+        effective_lines: u32,
+        normalized_len: u32,
+        occurrences: Vec<Occurrence>,
+    ) -> DuplicateGroup {
         DuplicateGroup {
             effective_lines,
             normalized_len,

@@ -636,10 +636,12 @@ baseline = "configured.json"
         assert_eq!(value["analysis"]["min_lines"], 2);
         assert_eq!(value["duplicate_groups"], 1);
         assert_eq!(value["findings"][0]["code"], "DUP001");
-        assert!(value["findings"][0]["fingerprint"]
-            .as_str()
-            .unwrap()
-            .starts_with("arid-finding-v1:sha256:"));
+        assert!(
+            value["findings"][0]["fingerprint"]
+                .as_str()
+                .unwrap()
+                .starts_with("arid-finding-v1:sha256:")
+        );
     }
 
     #[test]
@@ -825,7 +827,10 @@ baseline = "configured.json"
         let value: serde_json::Value = serde_json::from_str(result.stdout()).unwrap();
         assert_eq!(value["schema_version"], 1);
         assert_eq!(value["error"]["kind"], "configuration");
-        assert_eq!(value["error"]["message"], "--color is only valid with text output");
+        assert_eq!(
+            value["error"]["message"],
+            "--color is only valid with text output"
+        );
     }
 
     #[test]
