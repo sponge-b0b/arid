@@ -649,11 +649,7 @@ baseline = "config/arid-baseline.json"
         let root = temp.path().join("project");
         let start = root.join("src/nested");
         fs::create_dir_all(&start).unwrap();
-        fs::write(
-            root.join("pyproject.toml"),
-            "[tool.arid]\nmin-lines = 6\n",
-        )
-        .unwrap();
+        fs::write(root.join("pyproject.toml"), "[tool.arid]\nmin-lines = 6\n").unwrap();
 
         let loaded = load_settings_with_options(
             &start,
