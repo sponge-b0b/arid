@@ -119,17 +119,14 @@ fn execute(cli: &Cli, context: RunContext) -> Result<RunResult, OperationalError
 
     let paths = scan_paths(cli);
 
-    let loaded = load_settings_with_options(
-        &paths[0],
-        settings_overrides(cli),
-        project_options(cli),
-    )
-    .map_err(|error| {
-        OperationalError::new(
-            ErrorKind::Configuration,
-            format!("failed to load configuration: {error}"),
-        )
-    })?;
+    let loaded =
+        load_settings_with_options(&paths[0], settings_overrides(cli), project_options(cli))
+            .map_err(|error| {
+                OperationalError::new(
+                    ErrorKind::Configuration,
+                    format!("failed to load configuration: {error}"),
+                )
+            })?;
     let normalization = loaded.settings.normalization_options();
     let baseline_path = selected_baseline_path(cli, &loaded);
     let analysis = analysis_metadata(&loaded, baseline_path.is_some());

@@ -256,15 +256,12 @@ mod tests {
             "workspace",
         ])
         .unwrap();
-        assert_eq!(
-            cli.config,
-            Some(PathBuf::from("workspace/pyproject.toml"))
-        );
+        assert_eq!(cli.config, Some(PathBuf::from("workspace/pyproject.toml")));
         assert!(!cli.no_config);
         assert_eq!(cli.project_root, Some(PathBuf::from("workspace")));
 
-        let cli = Cli::try_parse_from(["arid", "--no-config", "--project-root", "workspace"])
-            .unwrap();
+        let cli =
+            Cli::try_parse_from(["arid", "--no-config", "--project-root", "workspace"]).unwrap();
         assert_eq!(cli.config, None);
         assert!(cli.no_config);
         assert_eq!(cli.project_root, Some(PathBuf::from("workspace")));
@@ -273,13 +270,7 @@ mod tests {
     #[test]
     fn rejects_config_with_no_config() {
         assert!(
-            Cli::try_parse_from([
-                "arid",
-                "--config",
-                "pyproject.toml",
-                "--no-config",
-            ])
-            .is_err()
+            Cli::try_parse_from(["arid", "--config", "pyproject.toml", "--no-config",]).is_err()
         );
     }
 
