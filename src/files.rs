@@ -409,11 +409,16 @@ mod tests {
         };
 
         assert!(
-            is_excluded_path(&temp.path().join("generated/proposed.py"), &settings, temp.path())
-                .unwrap()
+            is_excluded_path(
+                &temp.path().join("generated/proposed.py"),
+                &settings,
+                temp.path()
+            )
+            .unwrap()
         );
         assert!(
-            !is_excluded_path(&temp.path().join("src/proposed.py"), &settings, temp.path()).unwrap()
+            !is_excluded_path(&temp.path().join("src/proposed.py"), &settings, temp.path())
+                .unwrap()
         );
     }
 
