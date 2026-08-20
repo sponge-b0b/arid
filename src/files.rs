@@ -115,6 +115,18 @@ pub fn discover_python_files(
     Ok(discovered.into_iter().collect())
 }
 
+pub(crate) fn is_excluded_path(
+    path: &Path,
+    settings: &Settings,
+    project_root: &Path,
+) -> Result<bool, DiscoveryError> {
+    let project_root = absolute_path(project_root)?;
+    let path = absolute_path(path)?;
+    let excludes = build_exclude_matcher(&project_root, &settings.exclude)?;
+
+    Ok(is_excluded(&excludes, &project_root, &path, false))
+}
+
 fn discover_directory(
     root: &Path,
     project_root: &Path,
@@ -206,7 +218,7 @@ fn absolute_path(path: &Path) -> Result<PathBuf, DiscoveryError> {
     Ok(current.join(path))
 }
 
-fn is_python_file(path: &Path) -> bool {
+pub(crate) fn is_python_file(path: &Path) -> bool {
     matches!(
         path.extension().and_then(|extension| extension.to_str()),
         Some("py" | "pyi")
@@ -386,6 +398,23 @@ mod tests {
             discover_python_files(std::slice::from_ref(&excluded), &settings, temp.path()).unwrap();
 
         assert!(files.is_empty());
+    }
+
+    #[test]
+    fn exclude_check_does_not_require_path_to_exist() {
+        let temp = TempDir::new();
+        let settings = Settings {
+            exclude: vec!["generated/**".to_owned()],
+            ..Settings::default()
+        };
+
+        assert!(
+            is_excluded_path(&temp.path().join("generated/proposed.py"), &settings, temp.path())
+                .unwrap()
+        );
+        assert!(
+            !is_excluded_path(&temp.path().join("src/proposed.py"), &settings, temp.path()).unwrap()
+        );
     }
 
     #[test]

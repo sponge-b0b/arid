@@ -1,4 +1,4 @@
-use std::io::{self, IsTerminal};
+use std::io::{self, IsTerminal, Read};
 use std::process::ExitCode;
 
 use arid::cli::Cli;
@@ -7,10 +7,19 @@ use clap::Parser;
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
-    let context = RunContext {
-        text_color_capable: io::stdout().is_terminal(),
-        color_environment: ColorEnvironment::from_process(),
-    };
+    let mut context = RunContext::new(
+        io::stdout().is_terminal(),
+        ColorEnvironment::from_process(),
+    );
+
+    if cli.stdin_path.is_some() {
+        let mut source = String::new();
+        if let Err(error) = io::stdin().read_to_string(&mut source) {
+            eprintln!("error: failed to read standard input: {error}");
+            return ExitCode::from(2);
+        }
+        context = context.with_stdin_source(source);
+    }
 
     let result = arid::run_with_context(&cli, context);
 

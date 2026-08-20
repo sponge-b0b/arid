@@ -3,9 +3,12 @@ use std::path::{Path, PathBuf};
 
 use rayon::prelude::*;
 
+use crate::config::Settings;
 use crate::error::{ErrorKind, OperationalError};
+use crate::files::{is_excluded_path, is_python_file};
 use crate::model::{NormalizationOptions, PreparedFile};
 use crate::normalize::prepare_file;
+use crate::project_path::project_relative_path;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum SourceInput {
@@ -21,11 +24,88 @@ impl SourceInput {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct VirtualSource {
+    path: PathBuf,
+    project_path: String,
+    source: String,
+}
+
+impl VirtualSource {
+    pub(crate) fn project_path(&self) -> &str {
+        &self.project_path
+    }
+}
+
+pub(crate) fn resolve_virtual_source(
+    stdin_path: Option<&Path>,
+    stdin_source: Option<&str>,
+    settings: &Settings,
+    project_root: &Path,
+) -> Result<Option<VirtualSource>, OperationalError> {
+    let Some(stdin_path) = stdin_path else {
+        if stdin_source.is_some() {
+            return Err(OperationalError::new(
+                ErrorKind::Configuration,
+                "virtual stdin source requires --stdin-path",
+            ));
+        }
+        return Ok(None);
+    };
+
+    let source = stdin_source.ok_or_else(|| {
+        OperationalError::new(
+            ErrorKind::Configuration,
+            "--stdin-path requires virtual source text in RunContext",
+        )
+    })?;
+
+    let path = if stdin_path.is_absolute() {
+        stdin_path.to_path_buf()
+    } else {
+        project_root.join(stdin_path)
+    };
+
+    let project_path = project_relative_path(&path, project_root).map_err(|error| {
+        OperationalError::new(
+            ErrorKind::Configuration,
+            format!("invalid --stdin-path {}: {error}", stdin_path.display()),
+        )
+    })?;
+
+    if !is_python_file(&path) {
+        return Err(OperationalError::new(
+            ErrorKind::Configuration,
+            "--stdin-path must identify a .py or .pyi file",
+        ));
+    }
+
+    let excluded = is_excluded_path(&path, settings, project_root).map_err(|error| {
+        OperationalError::new(
+            ErrorKind::Discovery,
+            format!("failed to evaluate --stdin-path excludes: {error}"),
+        )
+    })?;
+
+    if excluded {
+        return Err(OperationalError::new(
+            ErrorKind::Configuration,
+            format!("--stdin-path is excluded by Arid configuration: {project_path}"),
+        ));
+    }
+
+    Ok(Some(VirtualSource {
+        path,
+        project_path,
+        source: source.to_owned(),
+    }))
+}
+
 pub(crate) fn build_source_inputs(
     disk_paths: Vec<PathBuf>,
-    virtual_source: Option<(PathBuf, String)>,
+    virtual_source: Option<VirtualSource>,
 ) -> Vec<SourceInput> {
-    let virtual_path = virtual_source.as_ref().map(|(path, _)| path);
+    let virtual_path = virtual_source.as_ref().map(|source| &source.path);
 
     let mut inputs = disk_paths
         .into_iter()
@@ -33,8 +113,11 @@ pub(crate) fn build_source_inputs(
         .map(SourceInput::Disk)
         .collect::<Vec<_>>();
 
-    if let Some((path, source)) = virtual_source {
-        inputs.push(SourceInput::Virtual { path, source });
+    if let Some(virtual_source) = virtual_source {
+        inputs.push(SourceInput::Virtual {
+            path: virtual_source.path,
+            source: virtual_source.source,
+        });
     }
 
     inputs.sort_by(|left, right| left.path().cmp(right.path()));
@@ -152,6 +235,78 @@ mod tests {
         }
     }
 
+    fn virtual_source(path: PathBuf, source: &str) -> VirtualSource {
+        let project_path = path.file_name().unwrap().to_string_lossy().into_owned();
+        VirtualSource {
+            path,
+            project_path,
+            source: source.to_owned(),
+        }
+    }
+
+    #[test]
+    fn resolves_relative_virtual_path_inside_project() {
+        let temp = TempDir::new();
+        let resolved = resolve_virtual_source(
+            Some(Path::new("src/proposed.py")),
+            Some("alpha = 1\n"),
+            &Settings::default(),
+            temp.path(),
+        )
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(resolved.path, temp.path().join("src/proposed.py"));
+        assert_eq!(resolved.project_path(), "src/proposed.py");
+    }
+
+    #[test]
+    fn rejects_virtual_path_outside_project() {
+        let temp = TempDir::new();
+        let error = resolve_virtual_source(
+            Some(Path::new("../outside.py")),
+            Some("alpha = 1\n"),
+            &Settings::default(),
+            temp.path(),
+        )
+        .unwrap_err();
+
+        assert_eq!(error.kind, ErrorKind::Configuration);
+        assert!(error.to_string().contains("invalid --stdin-path"));
+    }
+
+    #[test]
+    fn rejects_non_python_virtual_path() {
+        let temp = TempDir::new();
+        let error = resolve_virtual_source(
+            Some(Path::new("proposed.txt")),
+            Some("alpha = 1\n"),
+            &Settings::default(),
+            temp.path(),
+        )
+        .unwrap_err();
+
+        assert!(error.to_string().contains(".py or .pyi"));
+    }
+
+    #[test]
+    fn rejects_configured_exclude_for_virtual_path() {
+        let temp = TempDir::new();
+        let settings = Settings {
+            exclude: vec!["generated/**".to_owned()],
+            ..Settings::default()
+        };
+        let error = resolve_virtual_source(
+            Some(Path::new("generated/proposed.py")),
+            Some("alpha = 1\n"),
+            &settings,
+            temp.path(),
+        )
+        .unwrap_err();
+
+        assert!(error.to_string().contains("excluded by Arid configuration"));
+    }
+
     #[test]
     fn source_inputs_are_sorted_by_path() {
         let temp = TempDir::new();
@@ -172,7 +327,7 @@ mod tests {
 
         let inputs = build_source_inputs(
             vec![a.clone(), b.clone()],
-            Some((a.clone(), "alpha = 1\n".to_owned())),
+            Some(virtual_source(a.clone(), "alpha = 1\n")),
         );
 
         assert_eq!(inputs.len(), 2);
@@ -191,7 +346,7 @@ mod tests {
 
         let inputs = build_source_inputs(
             Vec::new(),
-            Some((virtual_path.clone(), "alpha = 1\n".to_owned())),
+            Some(virtual_source(virtual_path.clone(), "alpha = 1\n")),
         );
 
         assert_eq!(inputs.len(), 1);
@@ -205,7 +360,10 @@ mod tests {
         let virtual_path = temp.path().join("proposed.py");
         let inputs = build_source_inputs(
             Vec::new(),
-            Some((virtual_path.clone(), "alpha = 1\nbeta = 2\n".to_owned())),
+            Some(virtual_source(
+                virtual_path.clone(),
+                "alpha = 1\nbeta = 2\n",
+            )),
         );
 
         let prepared =

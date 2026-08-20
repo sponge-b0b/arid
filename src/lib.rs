@@ -43,7 +43,7 @@ use outcome::ExitStatus;
 pub use outcome::RunResult;
 use report::{AnalysisMetadata, ReportOptions, build_report, render_json};
 use sarif::render_sarif;
-use source::{build_source_inputs, prepare_sources};
+use source::{build_source_inputs, prepare_sources, resolve_virtual_source};
 use text::render_text;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -67,23 +67,39 @@ impl ColorEnvironment {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct RunContext {
     pub text_color_capable: bool,
     pub color_environment: ColorEnvironment,
+    stdin_source: Option<String>,
 }
 
 impl RunContext {
     #[must_use]
     pub const fn non_terminal() -> Self {
-        Self {
-            text_color_capable: false,
-            color_environment: ColorEnvironment {
+        Self::new(
+            false,
+            ColorEnvironment {
                 no_color: false,
                 clicolor_force: false,
                 clicolor_disabled: false,
             },
+        )
+    }
+
+    #[must_use]
+    pub const fn new(text_color_capable: bool, color_environment: ColorEnvironment) -> Self {
+        Self {
+            text_color_capable,
+            color_environment,
+            stdin_source: None,
         }
+    }
+
+    #[must_use]
+    pub fn with_stdin_source(mut self, source: String) -> Self {
+        self.stdin_source = Some(source);
+        self
     }
 }
 
@@ -118,6 +134,7 @@ fn execute(cli: &Cli, context: RunContext) -> Result<RunResult, OperationalError
     let output_format = cli.output_format();
 
     validate_output_options(cli, output_format)?;
+    let text_color = resolve_text_color(cli.color, &context);
 
     let paths = scan_paths(cli);
 
@@ -155,7 +172,16 @@ fn execute(cli: &Cli, context: RunContext) -> Result<RunResult, OperationalError
     }
 
     let normalization = loaded.settings.normalization_options();
-    let analysis = analysis_metadata(&loaded, baseline_path.is_some());
+    let virtual_source = resolve_virtual_source(
+        cli.stdin_path.as_deref(),
+        context.stdin_source.as_deref(),
+        &loaded.settings,
+        &loaded.project_root,
+    )?;
+    let virtual_project_path = virtual_source
+        .as_ref()
+        .map(|source| source.project_path().to_owned());
+    let analysis = analysis_metadata(&loaded, baseline_path.is_some(), virtual_project_path);
 
     let discovered = discover_python_files(&paths, &loaded.settings, &loaded.project_root)
         .map_err(|error| {
@@ -183,7 +209,7 @@ fn execute(cli: &Cli, context: RunContext) -> Result<RunResult, OperationalError
         return Ok(RunResult::new(output, "", ExitStatus::Success));
     }
 
-    let source_inputs = build_source_inputs(discovered, None);
+    let source_inputs = build_source_inputs(discovered, virtual_source);
     let prepared = prepare_sources(
         source_inputs,
         normalization,
@@ -351,7 +377,7 @@ fn execute(cli: &Cli, context: RunContext) -> Result<RunResult, OperationalError
     })?;
 
     let output = match output_format {
-        OutputFormat::Text => render_text(&report, resolve_text_color(cli.color, context)),
+        OutputFormat::Text => render_text(&report, text_color),
         OutputFormat::Json => render_json(&report).map_err(|error| {
             OperationalError::new(
                 ErrorKind::Output,
@@ -376,7 +402,11 @@ fn selected_baseline_path(cli: &Cli, loaded: &LoadedSettings) -> Option<PathBuf>
         .or_else(|| loaded.settings.baseline.clone())
 }
 
-fn analysis_metadata(loaded: &LoadedSettings, baseline_enabled: bool) -> AnalysisMetadata {
+fn analysis_metadata(
+    loaded: &LoadedSettings,
+    baseline_enabled: bool,
+    virtual_source: Option<String>,
+) -> AnalysisMetadata {
     let settings = &loaded.settings;
 
     AnalysisMetadata {
@@ -390,7 +420,7 @@ fn analysis_metadata(loaded: &LoadedSettings, baseline_enabled: bool) -> Analysi
         exclude: settings.exclude.clone(),
         baseline_enabled,
         focus: Vec::new(),
-        virtual_source: None,
+        virtual_source,
         keep_going: false,
     }
 }
@@ -407,6 +437,21 @@ fn validate_output_options(cli: &Cli, output_format: OutputFormat) -> Result<(),
     } else {
         None
     };
+
+    let non_scan_mode = administrative_mode.or_else(|| {
+        cli.write_baseline
+            .as_ref()
+            .map(|_| "--write-baseline")
+    });
+
+    if cli.stdin_path.is_some() {
+        if let Some(mode) = non_scan_mode {
+            return Err(OperationalError::new(
+                ErrorKind::Configuration,
+                format!("--stdin-path is not valid with {mode}"),
+            ));
+        }
+    }
 
     if let Some(mode) = administrative_mode {
         if cli.show_source {
@@ -441,7 +486,7 @@ fn validate_output_options(cli: &Cli, output_format: OutputFormat) -> Result<(),
     Ok(())
 }
 
-fn resolve_text_color(explicit: Option<ColorWhen>, context: RunContext) -> bool {
+fn resolve_text_color(explicit: Option<ColorWhen>, context: &RunContext) -> bool {
     if let Some(choice) = explicit {
         return match choice {
             ColorWhen::Auto => context.text_color_capable,
@@ -562,6 +607,7 @@ min-lines = 2
             project_root: None,
             show_config: false,
             list_files: false,
+            stdin_path: None,
             min_lines: None,
             ignore_comments: false,
             no_ignore_comments: false,
@@ -608,6 +654,50 @@ min-lines = 2
         assert!(result.stdout().contains("b.py:1-2"));
         assert!(result.stdout().contains("Found 1 duplicate group."));
         assert!(!result.stdout().contains('\u{1b}'));
+    }
+
+    #[test]
+    fn virtual_source_replaces_disk_file_end_to_end() {
+        let (temp, mut cli) = duplicate_fixture();
+        cli.stdin_path = Some(PathBuf::from("b.py"));
+
+        let result = run_with_context(
+            &cli,
+            RunContext::non_terminal().with_stdin_source("gamma = 3\ndelta = 4\n".to_owned()),
+        );
+
+        assert_eq!(result.exit_status(), ExitStatus::Success);
+        assert!(result.stdout().contains("No duplicate code found."));
+        assert_eq!(
+            fs::read_to_string(temp.path().join("b.py")).unwrap(),
+            "alpha = 1\nbeta = 2\n"
+        );
+    }
+
+    #[test]
+    fn virtual_source_is_added_and_ignores_gitignore() {
+        let temp = TempDir::new();
+        write_test_config(&temp);
+        temp.write("a.py", "alpha = 1\nbeta = 2\n");
+        temp.write(".gitignore", "proposed.py\n");
+
+        let mut cli = test_cli(vec![temp.path().to_path_buf()]);
+        cli.stdin_path = Some(PathBuf::from("proposed.py"));
+        cli.json = true;
+
+        let result = run_with_context(
+            &cli,
+            RunContext::non_terminal().with_stdin_source("alpha = 1\nbeta = 2\n".to_owned()),
+        );
+
+        assert_eq!(result.exit_status(), ExitStatus::Findings);
+        assert!(!temp.path().join("proposed.py").exists());
+        let value: serde_json::Value = serde_json::from_str(result.stdout()).unwrap();
+        assert_eq!(value["analysis"]["virtual_source"], "proposed.py");
+        assert_eq!(
+            value["findings"][0]["locations"][1]["path"],
+            "proposed.py"
+        );
     }
 
     #[test]
@@ -990,47 +1080,23 @@ baseline = "configured.json"
             clicolor_disabled: true,
         };
         cli.color = Some(ColorWhen::Always);
-        let result = run_with_context(
-            &cli,
-            RunContext {
-                text_color_capable: false,
-                color_environment: hostile_environment,
-            },
-        );
+        let result = run_with_context(&cli, RunContext::new(false, hostile_environment));
         assert!(result.stdout().contains('\u{1b}'));
         cli.color = Some(ColorWhen::Never);
-        let result = run_with_context(
-            &cli,
-            RunContext {
-                text_color_capable: true,
-                color_environment: hostile_environment,
-            },
-        );
+        let result = run_with_context(&cli, RunContext::new(true, hostile_environment));
         assert!(!result.stdout().contains('\u{1b}'));
         cli.color = Some(ColorWhen::Auto);
-        let result = run_with_context(
-            &cli,
-            RunContext {
-                text_color_capable: false,
-                color_environment: hostile_environment,
-            },
-        );
+        let result = run_with_context(&cli, RunContext::new(false, hostile_environment));
         assert!(!result.stdout().contains('\u{1b}'));
     }
 
     #[test]
     fn color_environment_precedence_is_deterministic() {
-        let terminal = |environment| RunContext {
-            text_color_capable: true,
-            color_environment: environment,
-        };
-        let redirected = |environment| RunContext {
-            text_color_capable: false,
-            color_environment: environment,
-        };
+        let terminal = |environment| RunContext::new(true, environment);
+        let redirected = |environment| RunContext::new(false, environment);
         assert!(!resolve_text_color(
             None,
-            terminal(ColorEnvironment {
+            &terminal(ColorEnvironment {
                 no_color: true,
                 clicolor_force: true,
                 clicolor_disabled: false
@@ -1038,7 +1104,7 @@ baseline = "configured.json"
         ));
         assert!(resolve_text_color(
             None,
-            redirected(ColorEnvironment {
+            &redirected(ColorEnvironment {
                 no_color: false,
                 clicolor_force: true,
                 clicolor_disabled: true
@@ -1046,7 +1112,7 @@ baseline = "configured.json"
         ));
         assert!(!resolve_text_color(
             None,
-            terminal(ColorEnvironment {
+            &terminal(ColorEnvironment {
                 no_color: false,
                 clicolor_force: false,
                 clicolor_disabled: true
@@ -1054,11 +1120,11 @@ baseline = "configured.json"
         ));
         assert!(resolve_text_color(
             None,
-            terminal(ColorEnvironment::default())
+            &terminal(ColorEnvironment::default())
         ));
         assert!(!resolve_text_color(
             None,
-            redirected(ColorEnvironment::default())
+            &redirected(ColorEnvironment::default())
         ));
     }
 
@@ -1068,14 +1134,14 @@ baseline = "configured.json"
         cli.json = true;
         let result = run_with_context(
             &cli,
-            RunContext {
-                text_color_capable: true,
-                color_environment: ColorEnvironment {
+            RunContext::new(
+                true,
+                ColorEnvironment {
                     no_color: false,
                     clicolor_force: true,
                     clicolor_disabled: false,
                 },
-            },
+            ),
         );
         assert!(!result.stdout().contains('\u{1b}'));
         serde_json::from_str::<serde_json::Value>(result.stdout()).unwrap();
