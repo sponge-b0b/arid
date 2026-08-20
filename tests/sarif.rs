@@ -75,14 +75,14 @@ fn real_sarif_scan_is_deterministic_and_uri_safe() {
         ],
     );
 
-    let first = arid::run(&cli).unwrap();
-    let second = arid::run(&cli).unwrap();
+    let first = arid::run(&cli);
+    let second = arid::run(&cli);
 
-    assert_eq!(first.exit_status, ExitStatus::Findings);
+    assert_eq!(first.exit_status(), ExitStatus::Findings);
     assert_eq!(first, second);
-    assert!(!first.output.contains('\u{1b}'));
+    assert!(!first.stdout().contains('\u{1b}'));
 
-    let value: serde_json::Value = serde_json::from_str(&first.output).unwrap();
+    let value: serde_json::Value = serde_json::from_str(first.stdout()).unwrap();
     let result = &value["runs"][0]["results"][0];
 
     assert_eq!(value["version"], "2.1.0");
@@ -118,8 +118,8 @@ fn baseline_filtering_applies_to_sarif_output() {
             baseline_path.as_os_str().to_owned(),
         ],
     );
-    let written = arid::run(&write_cli).unwrap();
-    assert_eq!(written.exit_status, ExitStatus::Success);
+    let written = arid::run(&write_cli);
+    assert_eq!(written.exit_status(), ExitStatus::Success);
 
     let sarif_cli = cli(
         &temp,
@@ -131,9 +131,9 @@ fn baseline_filtering_applies_to_sarif_output() {
         ],
     );
 
-    let accepted = arid::run(&sarif_cli).unwrap();
-    assert_eq!(accepted.exit_status, ExitStatus::Success);
-    let accepted_value: serde_json::Value = serde_json::from_str(&accepted.output).unwrap();
+    let accepted = arid::run(&sarif_cli);
+    assert_eq!(accepted.exit_status(), ExitStatus::Success);
+    let accepted_value: serde_json::Value = serde_json::from_str(accepted.stdout()).unwrap();
     assert!(
         accepted_value["runs"][0]["results"]
             .as_array()
@@ -143,9 +143,9 @@ fn baseline_filtering_applies_to_sarif_output() {
 
     temp.write("new.py", "alpha = 1\nbeta = 2\n");
 
-    let active = arid::run(&sarif_cli).unwrap();
-    assert_eq!(active.exit_status, ExitStatus::Findings);
-    let active_value: serde_json::Value = serde_json::from_str(&active.output).unwrap();
+    let active = arid::run(&sarif_cli);
+    assert_eq!(active.exit_status(), ExitStatus::Findings);
+    let active_value: serde_json::Value = serde_json::from_str(active.stdout()).unwrap();
     let result = &active_value["runs"][0]["results"][0];
 
     assert_eq!(

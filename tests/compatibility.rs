@@ -39,11 +39,12 @@ fn test_cli(path: PathBuf) -> Cli {
 }
 
 fn run_fixture(name: &str) -> serde_json::Value {
-    let result = arid::run(&test_cli(fixture(name))).unwrap();
+    let result = arid::run(&test_cli(fixture(name)));
 
-    assert_eq!(result.exit_status, ExitStatus::Findings);
+    assert_eq!(result.exit_status(), ExitStatus::Findings);
+    assert!(result.stderr().is_empty());
 
-    serde_json::from_str(&result.output).unwrap()
+    serde_json::from_str(result.stdout()).unwrap()
 }
 
 fn assert_single_cross_file_finding(report: &serde_json::Value) {

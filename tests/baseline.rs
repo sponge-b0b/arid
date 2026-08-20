@@ -72,11 +72,11 @@ fn write_baseline(temp: &TempDir) -> PathBuf {
             OsString::from("--write-baseline"),
             path.as_os_str().to_owned(),
         ],
-    ))
-    .unwrap();
+    ));
 
-    assert_eq!(result.exit_status, ExitStatus::Success);
-    assert!(result.output.is_empty());
+    assert_eq!(result.exit_status(), ExitStatus::Success);
+    assert!(result.stdout().is_empty());
+    assert!(result.stderr().is_empty());
     assert!(path.is_file());
 
     path
@@ -90,7 +90,6 @@ fn enforce(temp: &TempDir, baseline: &Path) -> arid::RunResult {
             baseline.as_os_str().to_owned(),
         ],
     ))
-    .unwrap()
 }
 
 #[test]
@@ -100,8 +99,8 @@ fn unchanged_baseline_has_no_active_finding() {
 
     let result = enforce(&temp, &baseline);
 
-    assert_eq!(result.exit_status, ExitStatus::Success);
-    assert!(result.output.contains("No duplicate code found."));
+    assert_eq!(result.exit_status(), ExitStatus::Success);
+    assert!(result.stdout().contains("No duplicate code found."));
 }
 
 #[test]
@@ -113,8 +112,8 @@ fn unrelated_lines_inserted_above_remain_accepted() {
 
     let result = enforce(&temp, &baseline);
 
-    assert_eq!(result.exit_status, ExitStatus::Success);
-    assert!(result.output.contains("No duplicate code found."));
+    assert_eq!(result.exit_status(), ExitStatus::Success);
+    assert!(result.stdout().contains("No duplicate code found."));
 }
 
 #[test]
@@ -126,8 +125,8 @@ fn new_occurrence_in_existing_file_is_active() {
 
     let result = enforce(&temp, &baseline);
 
-    assert_eq!(result.exit_status, ExitStatus::Findings);
-    assert!(result.output.contains("DUP001"));
+    assert_eq!(result.exit_status(), ExitStatus::Findings);
+    assert!(result.stdout().contains("DUP001"));
 }
 
 #[test]
@@ -139,8 +138,8 @@ fn occurrence_in_new_file_is_active() {
 
     let result = enforce(&temp, &baseline);
 
-    assert_eq!(result.exit_status, ExitStatus::Findings);
-    assert!(result.output.contains("c.py:1-2"));
+    assert_eq!(result.exit_status(), ExitStatus::Findings);
+    assert!(result.stdout().contains("c.py:1-2"));
 }
 
 #[test]
@@ -152,8 +151,8 @@ fn renamed_file_is_conservatively_active() {
 
     let result = enforce(&temp, &baseline);
 
-    assert_eq!(result.exit_status, ExitStatus::Findings);
-    assert!(result.output.contains("renamed.py:1-2"));
+    assert_eq!(result.exit_status(), ExitStatus::Findings);
+    assert!(result.stdout().contains("renamed.py:1-2"));
 }
 
 #[test]
@@ -166,8 +165,8 @@ fn changed_normalized_duplicate_is_active() {
 
     let result = enforce(&temp, &baseline);
 
-    assert_eq!(result.exit_status, ExitStatus::Findings);
-    assert!(result.output.contains("DUP001"));
+    assert_eq!(result.exit_status(), ExitStatus::Findings);
+    assert!(result.stdout().contains("DUP001"));
 }
 
 #[test]
@@ -179,8 +178,8 @@ fn removed_accepted_duplicate_does_not_leave_stale_finding() {
 
     let result = enforce(&temp, &baseline);
 
-    assert_eq!(result.exit_status, ExitStatus::Success);
-    assert!(result.output.contains("No duplicate code found."));
+    assert_eq!(result.exit_status(), ExitStatus::Success);
+    assert!(result.stdout().contains("No duplicate code found."));
 }
 
 #[test]
@@ -195,10 +194,11 @@ fn normalization_mismatch_is_an_error() {
             baseline.as_os_str().to_owned(),
             OsString::from("--no-ignore-comments"),
         ],
-    ))
-    .unwrap_err();
+    ));
 
-    assert!(error.contains("normalization settings do not match"));
+    assert_eq!(error.exit_status(), ExitStatus::Error);
+    assert!(error.stdout().is_empty());
+    assert!(error.stderr().contains("normalization settings do not match"));
 }
 
 #[test]

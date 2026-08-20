@@ -75,12 +75,12 @@ fn repeated_markdown_scans_are_byte_identical() {
         ],
     );
 
-    let first = arid::run(&cli).unwrap();
-    let second = arid::run(&cli).unwrap();
+    let first = arid::run(&cli);
+    let second = arid::run(&cli);
 
-    assert_eq!(first.exit_status, ExitStatus::Findings);
+    assert_eq!(first.exit_status(), ExitStatus::Findings);
     assert_eq!(first, second);
-    assert!(!first.output.contains('\u{1b}'));
+    assert!(!first.stdout().contains('\u{1b}'));
 }
 
 #[test]
@@ -95,8 +95,8 @@ fn baseline_filtering_applies_to_markdown_output() {
             baseline_path.as_os_str().to_owned(),
         ],
     );
-    let written = arid::run(&write_cli).unwrap();
-    assert_eq!(written.exit_status, ExitStatus::Success);
+    let written = arid::run(&write_cli);
+    assert_eq!(written.exit_status(), ExitStatus::Success);
 
     let markdown_cli = cli(
         &temp,
@@ -108,23 +108,23 @@ fn baseline_filtering_applies_to_markdown_output() {
         ],
     );
 
-    let accepted = arid::run(&markdown_cli).unwrap();
-    assert_eq!(accepted.exit_status, ExitStatus::Success);
-    assert!(accepted.output.contains("No duplicate code found."));
-    assert!(accepted.output.contains("- **Duplicate groups:** 0"));
-    assert!(!accepted.output.contains("## `DUP001`"));
+    let accepted = arid::run(&markdown_cli);
+    assert_eq!(accepted.exit_status(), ExitStatus::Success);
+    assert!(accepted.stdout().contains("No duplicate code found."));
+    assert!(accepted.stdout().contains("- **Duplicate groups:** 0"));
+    assert!(!accepted.stdout().contains("## `DUP001`"));
 
     temp.write("c.py", "alpha = 1\nbeta = 2\n");
 
-    let active = arid::run(&markdown_cli).unwrap();
-    assert_eq!(active.exit_status, ExitStatus::Findings);
+    let active = arid::run(&markdown_cli);
+    assert_eq!(active.exit_status(), ExitStatus::Findings);
     assert!(
         active
-            .output
+            .stdout()
             .contains("**Occurrences:** 3 across 3 files _(cross-file)_")
     );
-    assert!(active.output.contains("### `a.py:1-2`"));
-    assert!(active.output.contains("### `b.py:1-2`"));
-    assert!(active.output.contains("### `c.py:1-2`"));
-    assert!(active.output.contains("- **Duplicate groups:** 1"));
+    assert!(active.stdout().contains("### `a.py:1-2`"));
+    assert!(active.stdout().contains("### `b.py:1-2`"));
+    assert!(active.stdout().contains("### `c.py:1-2`"));
+    assert!(active.stdout().contains("- **Duplicate groups:** 1"));
 }
