@@ -2,7 +2,6 @@ use std::io::{self, IsTerminal};
 use std::process::ExitCode;
 
 use arid::cli::Cli;
-use arid::outcome::ExitStatus;
 use arid::{ColorEnvironment, RunContext};
 use clap::Parser;
 
@@ -13,21 +12,15 @@ fn main() -> ExitCode {
         color_environment: ColorEnvironment::from_process(),
     };
 
-    match arid::run_with_context(&cli, context) {
-        Ok(result) => {
-            write_output(&result.output);
+    let result = arid::run_with_context(&cli, context);
 
-            ExitCode::from(result.exit_status.code())
-        }
-        Err(error) => {
-            eprintln!("error: {error}");
+    write_stdout(result.stdout());
+    write_stderr(result.stderr());
 
-            ExitCode::from(ExitStatus::Error.code())
-        }
-    }
+    ExitCode::from(result.exit_status().code())
 }
 
-fn write_output(output: &str) {
+fn write_stdout(output: &str) {
     if output.is_empty() {
         return;
     }
@@ -36,5 +29,17 @@ fn write_output(output: &str) {
         print!("{output}");
     } else {
         println!("{output}");
+    }
+}
+
+fn write_stderr(output: &str) {
+    if output.is_empty() {
+        return;
+    }
+
+    if output.ends_with('\n') {
+        eprint!("{output}");
+    } else {
+        eprintln!("{output}");
     }
 }

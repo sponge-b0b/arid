@@ -1,6 +1,6 @@
 use std::ffi::OsStr;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use rayon::prelude::*;
 
@@ -10,12 +10,14 @@ pub mod cli;
 pub mod config;
 pub mod corpus;
 pub mod detect;
+mod error;
 pub mod files;
 mod markdown;
 pub mod metrics;
 pub mod model;
 pub mod normalize;
 pub mod outcome;
+mod project_path;
 mod python;
 pub mod report;
 mod sarif;
@@ -28,11 +30,13 @@ use cli::{Cli, ColorWhen, OutputFormat};
 use config::{LoadedSettings, SettingsOverrides, load_settings};
 use corpus::build_corpus;
 use detect::detect_duplicates;
+use error::{ErrorKind, OperationalError};
 use files::discover_python_files;
 use markdown::render_markdown;
 use model::{NormalizationOptions, PreparedFile};
 use normalize::prepare_file;
 use outcome::ExitStatus;
+pub use outcome::RunResult;
 use report::{ReportOptions, build_report, render_json};
 use sarif::render_sarif;
 use text::render_text;
@@ -78,14 +82,9 @@ impl RunContext {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct RunResult {
-    pub output: String,
-    pub exit_status: ExitStatus,
-}
-
 /// Runs one complete Arid scan with deterministic non-terminal defaults.
-pub fn run(cli: &Cli) -> Result<RunResult, String> {
+#[must_use]
+pub fn run(cli: &Cli) -> RunResult {
     run_with_context(cli, RunContext::non_terminal())
 }
 
@@ -94,44 +93,87 @@ pub fn run(cli: &Cli) -> Result<RunResult, String> {
 /// Application pipeline:
 ///
 /// discover → read → normalize → corpus → detect → baseline → report
-pub fn run_with_context(cli: &Cli, context: RunContext) -> Result<RunResult, String> {
+#[must_use]
+pub fn run_with_context(cli: &Cli, context: RunContext) -> RunResult {
+    match execute(cli, context) {
+        Ok(result) => result,
+        Err(error) => RunResult::failure(error.to_string()),
+    }
+}
+
+fn execute(cli: &Cli, context: RunContext) -> Result<RunResult, OperationalError> {
     let output_format = cli.output_format();
 
     validate_output_options(cli, output_format)?;
 
     let paths = scan_paths(cli);
 
-    let loaded = load_settings(&paths[0], settings_overrides(cli))
-        .map_err(|error| format!("failed to load configuration: {error}"))?;
+    let loaded = load_settings(&paths[0], settings_overrides(cli)).map_err(|error| {
+        OperationalError::new(
+            ErrorKind::Configuration,
+            format!("failed to load configuration: {error}"),
+        )
+    })?;
     let normalization = loaded.settings.normalization_options();
 
-    let discovered = discover_python_files(&paths, &loaded.settings, &loaded.project_root)
-        .map_err(|error| format!("failed to discover Python files: {error}"))?;
+    let discovered = discover_python_files(&paths, &loaded.settings, &loaded.project_root).map_err(
+        |error| {
+            OperationalError::new(
+                ErrorKind::Discovery,
+                format!("failed to discover Python files: {error}"),
+            )
+        },
+    )?;
 
-    let prepared = prepare_files(discovered, normalization, cli.workers)?;
+    let prepared = prepare_files(
+        discovered,
+        normalization,
+        cli.workers,
+        &loaded.project_root,
+    )?;
 
-    let corpus = build_corpus(prepared)
-        .map_err(|error| format!("failed to build source corpus: {error}"))?;
+    let corpus = build_corpus(prepared).map_err(|error| {
+        OperationalError::new(
+            ErrorKind::Internal,
+            format!("failed to build source corpus: {error}"),
+        )
+    })?;
 
-    let groups = detect_duplicates(&corpus, loaded.settings.detection_options())
-        .map_err(|error| format!("failed to detect duplicates: {error}"))?;
+    let groups = detect_duplicates(&corpus, loaded.settings.detection_options()).map_err(|error| {
+        OperationalError::new(
+            ErrorKind::Internal,
+            format!("failed to detect duplicates: {error}"),
+        )
+    })?;
 
     if let Some(path) = &cli.write_baseline {
         let baseline = build_baseline(&corpus, &groups, normalization, &loaded.project_root)
-            .map_err(|error| format!("failed to build baseline: {error}"))?;
+            .map_err(|error| {
+                OperationalError::new(
+                    ErrorKind::Baseline,
+                    format!("failed to build baseline: {error}"),
+                )
+            })?;
 
-        write_baseline(path, &baseline)
-            .map_err(|error| format!("failed to write baseline: {error}"))?;
+        write_baseline(path, &baseline).map_err(|error| {
+            OperationalError::new(
+                ErrorKind::Baseline,
+                format!("failed to write baseline: {error}"),
+            )
+            .with_project_path(path, &loaded.project_root)
+        })?;
 
-        return Ok(RunResult {
-            output: String::new(),
-            exit_status: ExitStatus::Success,
-        });
+        return Ok(RunResult::new("", "", ExitStatus::Success));
     }
 
     let groups = if let Some(path) = selected_baseline_path(cli, &loaded) {
-        let baseline = read_baseline(&path, normalization)
-            .map_err(|error| format!("failed to load baseline: {error}"))?;
+        let baseline = read_baseline(&path, normalization).map_err(|error| {
+            OperationalError::new(
+                ErrorKind::Baseline,
+                format!("failed to load baseline: {error}"),
+            )
+            .with_project_path(&path, &loaded.project_root)
+        })?;
 
         filter_active_groups(
             &corpus,
@@ -140,7 +182,13 @@ pub fn run_with_context(cli: &Cli, context: RunContext) -> Result<RunResult, Str
             normalization,
             &loaded.project_root,
         )
-        .map_err(|error| format!("failed to apply baseline: {error}"))?
+        .map_err(|error| {
+            OperationalError::new(
+                ErrorKind::Baseline,
+                format!("failed to apply baseline: {error}"),
+            )
+            .with_project_path(&path, &loaded.project_root)
+        })?
     } else {
         groups
     };
@@ -153,21 +201,31 @@ pub fn run_with_context(cli: &Cli, context: RunContext) -> Result<RunResult, Str
             path_root: Some(loaded.project_root),
         },
     )
-    .map_err(|error| format!("failed to build report: {error}"))?;
+    .map_err(|error| {
+        OperationalError::new(
+            ErrorKind::Internal,
+            format!("failed to build report: {error}"),
+        )
+    })?;
 
     let output = match output_format {
         OutputFormat::Text => render_text(&report, resolve_text_color(cli.color, context)),
-        OutputFormat::Json => render_json(&report)
-            .map_err(|error| format!("failed to render JSON report: {error}"))?,
+        OutputFormat::Json => render_json(&report).map_err(|error| {
+            OperationalError::new(
+                ErrorKind::Output,
+                format!("failed to render JSON report: {error}"),
+            )
+        })?,
         OutputFormat::Markdown => render_markdown(&report),
-        OutputFormat::Sarif => render_sarif(&report)
-            .map_err(|error| format!("failed to render SARIF report: {error}"))?,
+        OutputFormat::Sarif => render_sarif(&report).map_err(|error| {
+            OperationalError::new(
+                ErrorKind::Output,
+                format!("failed to render SARIF report: {error}"),
+            )
+        })?,
     };
 
-    Ok(RunResult {
-        exit_status: report.exit_status(),
-        output,
-    })
+    Ok(RunResult::new(output, "", report.exit_status()))
 }
 
 fn selected_baseline_path(cli: &Cli, loaded: &LoadedSettings) -> Option<PathBuf> {
@@ -176,9 +234,15 @@ fn selected_baseline_path(cli: &Cli, loaded: &LoadedSettings) -> Option<PathBuf>
         .or_else(|| loaded.settings.baseline.clone())
 }
 
-fn validate_output_options(cli: &Cli, output_format: OutputFormat) -> Result<(), String> {
+fn validate_output_options(
+    cli: &Cli,
+    output_format: OutputFormat,
+) -> Result<(), OperationalError> {
     if cli.color.is_some() && output_format != OutputFormat::Text {
-        return Err("--color is only valid with text output".to_owned());
+        return Err(OperationalError::new(
+            ErrorKind::Configuration,
+            "--color is only valid with text output",
+        ));
     }
 
     match output_format {
@@ -214,15 +278,19 @@ fn prepare_files(
     paths: Vec<PathBuf>,
     options: NormalizationOptions,
     workers: usize,
-) -> Result<Vec<PreparedFile>, String> {
+    project_root: &Path,
+) -> Result<Vec<PreparedFile>, OperationalError> {
     if workers == 0 {
-        return Err("worker count must be at least 1".to_owned());
+        return Err(OperationalError::new(
+            ErrorKind::Configuration,
+            "worker count must be at least 1",
+        ));
     }
 
     if workers == 1 || paths.len() < 2 {
         return paths
             .into_iter()
-            .map(|path| prepare_path(path, options))
+            .map(|path| prepare_path(path, options, project_root))
             .collect();
     }
 
@@ -231,24 +299,43 @@ fn prepare_files(
     let pool = rayon::ThreadPoolBuilder::new()
         .num_threads(worker_count)
         .build()
-        .map_err(|error| format!("failed to create worker pool: {error}"))?;
+        .map_err(|error| {
+            OperationalError::new(
+                ErrorKind::Internal,
+                format!("failed to create worker pool: {error}"),
+            )
+        })?;
 
     let results = pool.install(|| {
         paths
             .into_par_iter()
-            .map(|path| prepare_path(path, options))
+            .map(|path| prepare_path(path, options, project_root))
             .collect::<Vec<_>>()
     });
 
     results.into_iter().collect()
 }
 
-fn prepare_path(path: PathBuf, options: NormalizationOptions) -> Result<PreparedFile, String> {
-    let source = fs::read_to_string(&path)
-        .map_err(|error| format!("failed to read {}: {error}", path.display()))?;
+fn prepare_path(
+    path: PathBuf,
+    options: NormalizationOptions,
+    project_root: &Path,
+) -> Result<PreparedFile, OperationalError> {
+    let source = fs::read_to_string(&path).map_err(|error| {
+        OperationalError::new(
+            ErrorKind::Read,
+            format!("failed to read {}: {error}", path.display()),
+        )
+        .with_project_path(&path, project_root)
+    })?;
 
-    prepare_file(path, source, options)
-        .map_err(|error| format!("failed to prepare Python source: {error}"))
+    prepare_file(path.clone(), source, options).map_err(|error| {
+        OperationalError::new(
+            ErrorKind::Parse,
+            format!("failed to prepare Python source: {error}"),
+        )
+        .with_project_path(&path, project_root)
+    })
 }
 
 fn scan_paths(cli: &Cli) -> Vec<PathBuf> {
@@ -384,15 +471,15 @@ min-lines = 2
     fn end_to_end_scan_reports_real_duplicate() {
         let (_temp, cli) = duplicate_fixture();
 
-        let result = run(&cli).unwrap();
+        let result = run(&cli);
 
-        assert_eq!(result.exit_status, ExitStatus::Findings);
-
-        assert!(result.output.contains("DUP001"));
-        assert!(result.output.contains("a.py:1-2"));
-        assert!(result.output.contains("b.py:1-2"));
-        assert!(result.output.contains("Found 1 duplicate group."));
-        assert!(!result.output.contains('\u{1b}'));
+        assert_eq!(result.exit_status(), ExitStatus::Findings);
+        assert!(result.stderr().is_empty());
+        assert!(result.stdout().contains("DUP001"));
+        assert!(result.stdout().contains("a.py:1-2"));
+        assert!(result.stdout().contains("b.py:1-2"));
+        assert!(result.stdout().contains("Found 1 duplicate group."));
+        assert!(!result.stdout().contains('\u{1b}'));
     }
 
     #[test]
@@ -401,25 +488,26 @@ min-lines = 2
         let baseline_path = temp.path().join("arid-baseline.json");
         write_cli.write_baseline = Some(baseline_path.clone());
 
-        let written = run(&write_cli).unwrap();
-        assert_eq!(written.exit_status, ExitStatus::Success);
-        assert!(written.output.is_empty());
+        let written = run(&write_cli);
+        assert_eq!(written.exit_status(), ExitStatus::Success);
+        assert!(written.stdout().is_empty());
+        assert!(written.stderr().is_empty());
         assert!(baseline_path.is_file());
 
         let mut enforce_cli = test_cli(vec![temp.path().to_path_buf()]);
         enforce_cli.baseline = Some(baseline_path.clone());
 
-        let accepted = run(&enforce_cli).unwrap();
-        assert_eq!(accepted.exit_status, ExitStatus::Success);
-        assert!(accepted.output.contains("No duplicate code found."));
+        let accepted = run(&enforce_cli);
+        assert_eq!(accepted.exit_status(), ExitStatus::Success);
+        assert!(accepted.stdout().contains("No duplicate code found."));
 
         temp.write("c.py", "alpha = 1\nbeta = 2\n");
 
-        let active = run(&enforce_cli).unwrap();
-        assert_eq!(active.exit_status, ExitStatus::Findings);
-        assert!(active.output.contains("a.py:1-2"));
-        assert!(active.output.contains("b.py:1-2"));
-        assert!(active.output.contains("c.py:1-2"));
+        let active = run(&enforce_cli);
+        assert_eq!(active.exit_status(), ExitStatus::Findings);
+        assert!(active.stdout().contains("a.py:1-2"));
+        assert!(active.stdout().contains("b.py:1-2"));
+        assert!(active.stdout().contains("c.py:1-2"));
     }
 
     #[test]
@@ -427,7 +515,7 @@ min-lines = 2
         let (temp, mut write_cli) = duplicate_fixture();
         let configured_path = temp.path().join("configured.json");
         write_cli.write_baseline = Some(configured_path.clone());
-        run(&write_cli).unwrap();
+        assert_eq!(run(&write_cli).exit_status(), ExitStatus::Success);
 
         temp.write(
             "pyproject.toml",
@@ -438,14 +526,16 @@ baseline = "configured.json"
 "#,
         );
 
-        let configured = run(&test_cli(vec![temp.path().to_path_buf()])).unwrap();
-        assert_eq!(configured.exit_status, ExitStatus::Success);
+        let configured = run(&test_cli(vec![temp.path().to_path_buf()]));
+        assert_eq!(configured.exit_status(), ExitStatus::Success);
 
         let mut cli = test_cli(vec![temp.path().to_path_buf()]);
         cli.baseline = Some(temp.path().join("missing.json"));
 
-        let error = run(&cli).unwrap_err();
-        assert!(error.contains("missing.json"));
+        let error = run(&cli);
+        assert_eq!(error.exit_status(), ExitStatus::Error);
+        assert!(error.stdout().is_empty());
+        assert!(error.stderr().contains("missing.json"));
     }
 
     #[test]
@@ -453,14 +543,15 @@ baseline = "configured.json"
         let (temp, mut write_cli) = duplicate_fixture();
         let baseline_path = temp.path().join("arid-baseline.json");
         write_cli.write_baseline = Some(baseline_path.clone());
-        run(&write_cli).unwrap();
+        assert_eq!(run(&write_cli).exit_status(), ExitStatus::Success);
 
         let mut cli = test_cli(vec![temp.path().to_path_buf()]);
         cli.baseline = Some(baseline_path);
         cli.no_ignore_comments = true;
 
-        let error = run(&cli).unwrap_err();
-        assert!(error.contains("normalization settings do not match"));
+        let error = run(&cli);
+        assert_eq!(error.exit_status(), ExitStatus::Error);
+        assert!(error.stderr().contains("normalization settings do not match"));
     }
 
     #[test]
@@ -474,11 +565,11 @@ baseline = "configured.json"
         let mut cli = test_cli(vec![temp.path().to_path_buf()]);
         cli.min_lines = Some(3);
 
-        let result = run(&cli).unwrap();
+        let result = run(&cli);
 
-        assert_eq!(result.exit_status, ExitStatus::Success);
+        assert_eq!(result.exit_status(), ExitStatus::Success);
         assert_eq!(
-            result.output,
+            result.stdout(),
             concat!("No duplicate code found.\n", "0 duplicate lines (0.00%).\n",)
         );
     }
@@ -491,11 +582,11 @@ baseline = "configured.json"
         temp.write("a.py", "alpha = 1\nbeta = 2\n");
         temp.write("b.py", "gamma = 3\ndelta = 4\n");
 
-        let result = run(&test_cli(vec![temp.path().to_path_buf()])).unwrap();
+        let result = run(&test_cli(vec![temp.path().to_path_buf()]));
 
-        assert_eq!(result.exit_status, ExitStatus::Success);
+        assert_eq!(result.exit_status(), ExitStatus::Success);
         assert_eq!(
-            result.output,
+            result.stdout(),
             concat!("No duplicate code found.\n", "0 duplicate lines (0.00%).\n",)
         );
     }
@@ -505,11 +596,11 @@ baseline = "configured.json"
         let (_temp, mut cli) = duplicate_fixture();
         cli.json = true;
 
-        let result = run(&cli).unwrap();
+        let result = run(&cli);
 
-        assert_eq!(result.exit_status, ExitStatus::Findings);
+        assert_eq!(result.exit_status(), ExitStatus::Findings);
 
-        let value: serde_json::Value = serde_json::from_str(&result.output).unwrap();
+        let value: serde_json::Value = serde_json::from_str(result.stdout()).unwrap();
 
         assert_eq!(value["version"], 3);
         assert_eq!(value["duplicate_groups"], 1);
@@ -526,7 +617,7 @@ baseline = "configured.json"
         let mut via_format = test_cli(cli.paths);
         via_format.format = Some(OutputFormat::Json);
 
-        assert_eq!(run(&via_format).unwrap(), run(&via_flag).unwrap());
+        assert_eq!(run(&via_format), run(&via_flag));
     }
 
     #[test]
@@ -535,23 +626,19 @@ baseline = "configured.json"
         cli.format = Some(OutputFormat::Markdown);
         cli.show_source = true;
 
-        let result = run(&cli).unwrap();
+        let result = run(&cli);
 
-        assert_eq!(result.exit_status, ExitStatus::Findings);
+        assert_eq!(result.exit_status(), ExitStatus::Findings);
+        assert!(result.stdout().starts_with("# Arid duplicate-code report\n\n"));
+        assert!(result.stdout().contains("## `DUP001` — 2 duplicated lines"));
+        assert!(result.stdout().contains("### `a.py:1-2`"));
         assert!(
             result
-                .output
-                .starts_with("# Arid duplicate-code report\n\n")
-        );
-        assert!(result.output.contains("## `DUP001` — 2 duplicated lines"));
-        assert!(result.output.contains("### `a.py:1-2`"));
-        assert!(
-            result
-                .output
+                .stdout()
                 .contains("```python\nalpha = 1\nbeta = 2\n```")
         );
-        assert!(result.output.contains("- **Duplicate groups:** 1"));
-        assert!(!result.output.contains('\u{1b}'));
+        assert!(result.stdout().contains("- **Duplicate groups:** 1"));
+        assert!(!result.stdout().contains('\u{1b}'));
     }
 
     #[test]
@@ -560,12 +647,12 @@ baseline = "configured.json"
         cli.format = Some(OutputFormat::Sarif);
         cli.show_source = true;
 
-        let result = run(&cli).unwrap();
+        let result = run(&cli);
 
-        assert_eq!(result.exit_status, ExitStatus::Findings);
-        assert!(!result.output.contains('\u{1b}'));
+        assert_eq!(result.exit_status(), ExitStatus::Findings);
+        assert!(!result.stdout().contains('\u{1b}'));
 
-        let value: serde_json::Value = serde_json::from_str(&result.output).unwrap();
+        let value: serde_json::Value = serde_json::from_str(result.stdout()).unwrap();
         assert_eq!(value["version"], "2.1.0");
         assert_eq!(value["runs"][0]["tool"]["driver"]["name"], "Arid");
         assert_eq!(value["runs"][0]["results"][0]["ruleId"], "DUP001");
@@ -592,9 +679,8 @@ baseline = "configured.json"
                 text_color_capable: false,
                 color_environment: hostile_environment,
             },
-        )
-        .unwrap();
-        assert!(result.output.contains('\u{1b}'));
+        );
+        assert!(result.stdout().contains('\u{1b}'));
 
         cli.color = Some(ColorWhen::Never);
         let result = run_with_context(
@@ -603,9 +689,8 @@ baseline = "configured.json"
                 text_color_capable: true,
                 color_environment: hostile_environment,
             },
-        )
-        .unwrap();
-        assert!(!result.output.contains('\u{1b}'));
+        );
+        assert!(!result.stdout().contains('\u{1b}'));
 
         cli.color = Some(ColorWhen::Auto);
         let result = run_with_context(
@@ -614,9 +699,8 @@ baseline = "configured.json"
                 text_color_capable: false,
                 color_environment: hostile_environment,
             },
-        )
-        .unwrap();
-        assert!(!result.output.contains('\u{1b}'));
+        );
+        assert!(!result.stdout().contains('\u{1b}'));
     }
 
     #[test]
@@ -682,11 +766,10 @@ baseline = "configured.json"
                     clicolor_disabled: false,
                 },
             },
-        )
-        .unwrap();
+        );
 
-        assert!(!result.output.contains('\u{1b}'));
-        serde_json::from_str::<serde_json::Value>(&result.output).unwrap();
+        assert!(!result.stdout().contains('\u{1b}'));
+        serde_json::from_str::<serde_json::Value>(result.stdout()).unwrap();
     }
 
     #[test]
@@ -695,9 +778,12 @@ baseline = "configured.json"
         cli.json = true;
         cli.color = Some(ColorWhen::Always);
 
+        let result = run(&cli);
+
+        assert_eq!(result.exit_status(), ExitStatus::Error);
         assert_eq!(
-            run(&cli).unwrap_err(),
-            "--color is only valid with text output"
+            result.stderr(),
+            "error: --color is only valid with text output\n"
         );
     }
 
@@ -714,10 +800,11 @@ baseline = "configured.json"
             let mut cli = test_cli(vec![temp.path().to_path_buf()]);
             cli.workers = workers;
 
-            let error = run(&cli).unwrap_err();
+            let error = run(&cli);
 
-            assert!(error.contains("broken.py"));
-            assert!(error.contains("invalid Python syntax"));
+            assert_eq!(error.exit_status(), ExitStatus::Error);
+            assert!(error.stderr().contains("broken.py"));
+            assert!(error.stderr().contains("invalid Python syntax"));
         }
     }
 
@@ -734,17 +821,18 @@ baseline = "configured.json"
         let mut serial = test_cli(vec![temp.path().to_path_buf()]);
         serial.json = true;
 
-        let expected = run(&serial).unwrap();
+        let expected = run(&serial);
 
         for workers in [2, 4, 8] {
             let mut parallel = test_cli(vec![temp.path().to_path_buf()]);
             parallel.json = true;
             parallel.workers = workers;
 
-            let actual = run(&parallel).unwrap();
+            let actual = run(&parallel);
 
-            assert_eq!(actual.exit_status, expected.exit_status);
-            assert_eq!(actual.output, expected.output);
+            assert_eq!(actual.exit_status(), expected.exit_status());
+            assert_eq!(actual.stdout(), expected.stdout());
+            assert_eq!(actual.stderr(), expected.stderr());
         }
     }
 
@@ -757,9 +845,10 @@ baseline = "configured.json"
         let mut cli = test_cli(vec![temp.path().to_path_buf()]);
         cli.workers = 0;
 
-        let error = run(&cli).unwrap_err();
+        let error = run(&cli);
 
-        assert_eq!(error, "worker count must be at least 1");
+        assert_eq!(error.exit_status(), ExitStatus::Error);
+        assert_eq!(error.stderr(), "error: worker count must be at least 1\n");
     }
 
     #[test]
