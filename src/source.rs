@@ -208,8 +208,8 @@ mod tests {
             Some((virtual_path.clone(), "alpha = 1\nbeta = 2\n".to_owned())),
         );
 
-        let prepared = prepare_sources(inputs, NormalizationOptions::default(), 1, temp.path())
-            .unwrap();
+        let prepared =
+            prepare_sources(inputs, NormalizationOptions::default(), 1, temp.path()).unwrap();
 
         assert_eq!(prepared.len(), 1);
         assert_eq!(prepared[0].path, virtual_path);
@@ -225,11 +225,14 @@ mod tests {
         let c = temp.write("c.py", "gamma = 3\n");
 
         let inputs = build_source_inputs(vec![c.clone(), a.clone(), b.clone()], None);
-        let prepared = prepare_sources(inputs, NormalizationOptions::default(), 3, temp.path())
-            .unwrap();
+        let prepared =
+            prepare_sources(inputs, NormalizationOptions::default(), 3, temp.path()).unwrap();
 
         assert_eq!(
-            prepared.into_iter().map(|file| file.path).collect::<Vec<_>>(),
+            prepared
+                .into_iter()
+                .map(|file| file.path)
+                .collect::<Vec<_>>(),
             vec![a, b, c]
         );
     }
