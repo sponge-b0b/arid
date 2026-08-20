@@ -44,8 +44,6 @@ The detector itself is not redesigned.
 
 # **2. Architectural Principles**
 
-V2 follows these principles.
-
 ## **2.1 One authoritative detector path**
 
 There is one source-preparation path, one corpus, and one duplicate-detection pass.
@@ -78,13 +76,13 @@ concrete renderers / integrations
 
 ## **2.2 Breaking changes stop at public contracts**
 
-V2 uses the major-version boundary to clean up public contracts that were intentionally deferred from 1.x.
+V2 uses the major-version boundary to clean up public contracts intentionally deferred from 1.x.
 
 It does not use the boundary as permission to churn unrelated CLI behavior, normalization, baseline files, detector semantics, or platform support.
 
 ## **2.3 Determinism is structural**
 
-Determinism must come from explicit ordering and canonical encodings, not from incidental container iteration order or execution timing.
+Determinism comes from explicit ordering and canonical encodings, not incidental container iteration order or execution timing.
 
 Parallel preparation may complete in any order internally, but externally observable collections are produced in deterministic source-path order.
 
@@ -158,6 +156,8 @@ Virtual stdin source is never written to disk.
 | GitHub Action | root composite `action.yml` in this repository |
 | Action installation | exact PyPI Arid version selected by action metadata/input |
 | Action metrics | parsed from one supplemental report-v4 JSON file |
+| SARIF Arid identity | versioned custom `partialFingerprints` entry |
+| GitHub SARIF correlation | allow GitHub upload tooling to create its platform `primaryLocationLineHash` |
 | Release metadata | v2 release preparation also manages action package version |
 | Competitive benchmark | reproducible pinned benchmark plus one pre-RC current-Pylint capture |
 
@@ -287,35 +287,7 @@ text.rs / markdown.rs / sarif.rs
 
 Arid remains primarily a CLI application. V2 intentionally stops exposing implementation modules as a supported semver surface.
 
-The following modules SHOULD become private:
-
-```text
-baseline
-baseline_compare
-capabilities
-cli
-config
-corpus
-detect
-error
-files
-fingerprint
-focus
-markdown
-metrics
-model
-normalize
-outcome
-output
-python
-report
-sarif
-source
-suffix
-text
-```
-
-Selected types/functions are re-exported at the crate root.
+The implementation modules SHOULD become private. Selected types/functions are re-exported at the crate root.
 
 The intended supported API is conceptually:
 
@@ -362,26 +334,13 @@ The exact field representation remains private.
 
 Expected operational failures are represented as process outcomes rather than bubbling `Result<_, String>` through the public API.
 
-This means:
-
-```rust
-let result = arid::run(&cli);
-result.stdout();
-result.stderr();
-result.exit_status();
-```
-
-is sufficient for an embedding caller without exposing corpus, detector, baseline, or renderer internals.
-
 Panics remain reserved for violated internal invariants; normal user/input failures become `ExitStatus::Error` outcomes.
 
 ---
 
 # **6. Process Outcome Model**
 
-V1 currently returns rendered stdout on success and a string error through `Result`.
-
-V2 SHOULD centralize process behavior:
+V2 centralizes process behavior:
 
 ```rust
 pub struct RunResult {
@@ -729,7 +688,7 @@ Obvious local conflicts such as `--config` with `--no-config` remain Clap-level 
 
 # **11. Source Input Model**
 
-Current `prepare_file` already accepts a path plus source text. V2 should preserve that useful boundary and add one small source-input layer before preparation.
+Current `prepare_file` already accepts a path plus source text. V2 preserves that useful boundary and adds one small source-input layer before preparation.
 
 Conceptually:
 
@@ -897,15 +856,7 @@ The suffix-array/LCP implementation remains the preferred current design because
 
 V2 removes the algorithm choice from the product requirements but does not create implementation work merely to exercise that freedom.
 
-No focus, baseline, output, error, action, or fingerprint feature may alter:
-
-- normalized equality
-- corpus sentinel semantics
-- suffix-array ordering
-- LCP meaning
-- maximal-repeat qualification
-- same-file overlap handling
-- canonical duplicate grouping
+No focus, baseline, output, error, action, or fingerprint feature may alter normalized equality, corpus sentinel semantics, maximal-repeat qualification, same-file overlap handling, or canonical duplicate grouping.
 
 ---
 
@@ -913,7 +864,7 @@ No focus, baseline, output, error, action, or fingerprint feature may alter:
 
 V1.1 enforcement currently computes current baseline identity group-by-group inside `baseline_filter.rs`.
 
-V2 should consolidate baseline reasoning into one private comparison module so enforcement, status, and pruning cannot drift apart.
+V2 consolidates baseline reasoning into one private comparison module so enforcement, status, and pruning cannot drift apart.
 
 Rename/evolve:
 
@@ -939,8 +890,6 @@ A baseline fingerprint missing from current detection is wholly stale.
 
 A current fingerprint missing from baseline is wholly active.
 
-This path-count arithmetic generalizes the existing enforcement rules without changing them.
-
 ## **15.2 Comparison result**
 
 Conceptually:
@@ -959,9 +908,7 @@ It never truncates a group to only newly introduced occurrences.
 
 ## **15.3 Normal enforcement**
 
-Normal `--baseline` behavior consumes only `active_groups`.
-
-This is behaviorally equivalent to v1.1/v1.2 enforcement.
+Normal `--baseline` behavior consumes only `active_groups` and remains behaviorally equivalent to v1.1/v1.2 enforcement.
 
 ## **15.4 Baseline status**
 
@@ -977,7 +924,7 @@ stale
 
 Text rendering summarizes these states for humans.
 
-JSON rendering uses a small versioned administrative document with explicit counts. The architecture MAY use an inline `schema_version: 1` field without introducing another published schema file unless implementation demonstrates external schema value sufficient to justify one.
+JSON rendering uses an administrative `schema_version: 1` field so incompatible future shape changes are detectable. V2 does not require a separate published schema file unless implementation demonstrates sufficient external value to justify one.
 
 Exit:
 
@@ -1049,17 +996,6 @@ A selector matches a source when either:
 
 Therefore one rule handles both file and directory focus without depending on filesystem type metadata.
 
-Examples:
-
-```text
-focus: src/payments.py
-matches: src/payments.py
-
-focus: src/payments
-matches: src/payments/api.py
-         src/payments/model.py
-```
-
 It does not use raw string-prefix matching.
 
 ## **16.2 Validation timing**
@@ -1129,7 +1065,7 @@ for each normalized line in the canonical first occurrence:
 
 The canonical first occurrence is sufficient because every occurrence in a valid group has identical normalized content.
 
-The occurrence's path or source line is never hashed.
+The occurrence path or source line is never hashed.
 
 ## **17.2 Serialized representation**
 
@@ -1139,13 +1075,7 @@ The public string is:
 arid-finding-v1:sha256:<64 lowercase hex characters>
 ```
 
-Example shape:
-
-```text
-arid-finding-v1:sha256:0123...abcd
-```
-
-The prefix makes both identity version and hash algorithm externally visible.
+The prefix makes identity version and hash algorithm externally visible.
 
 ## **17.3 Baseline separation**
 
@@ -1270,7 +1200,7 @@ Add:
 schemas/report-v4.schema.json
 ```
 
-Draft 2020-12, `additionalProperties: false` for stable objects, exact required fields, and reusable error definition consistent with `error-v1` semantics.
+Use JSON Schema Draft 2020-12, `additionalProperties: false` for stable objects, exact required fields, and an error definition consistent with `error-v1` semantics.
 
 `report-v3.schema.json` remains byte-for-byte unchanged.
 
@@ -1288,7 +1218,7 @@ Analysis incomplete: 2 source files could not be processed.
 
 and include deterministic error summaries.
 
-Markdown SHOULD include a prominent heading/callout-equivalent section before findings.
+Markdown SHOULD include a prominent incomplete-analysis section before findings.
 
 Neither format should relabel partial metrics as complete project metrics.
 
@@ -1304,24 +1234,33 @@ Supplemental text files are always plain/non-ANSI even when stdout color is enab
 
 Arid continues to emit SARIF 2.1.0 through concrete Serde-owned structures in `sarif.rs`.
 
-The existing mapping remains, with distribution `hybrid` and stable fingerprint additions.
+The existing mapping remains, with distribution `hybrid` and stable Arid fingerprint additions.
 
-## **20.1 Partial fingerprints**
+## **20.1 Arid partial fingerprint**
 
-Each SARIF result SHOULD emit:
+Each SARIF result emits the same Arid finding identity through standard SARIF `partialFingerprints`:
 
 ```json
 "partialFingerprints": {
-  "primaryLocationLineHash": "arid-finding-v1:sha256:...",
   "aridFindingFingerprint/v1": "arid-finding-v1:sha256:..."
 }
 ```
 
-The Arid-specific key preserves explicit identity meaning for general SARIF consumers.
+The key is versioned and Arid-owned. General SARIF consumers can correlate Arid findings without depending on physical line numbers or whichever occurrence is primary.
 
-`primaryLocationLineHash` carries the same Arid logical identity so GitHub code scanning can correlate results using the partial-fingerprint key it recognizes.
+Arid MUST NOT place its path-independent content identity into `primaryLocationLineHash`. That GitHub-recognized fingerprint is defined in terms of the primary location's context and is platform/tooling-specific rather than Arid's logical duplicate-block identity.
 
-The value remains independent of whichever occurrence happens to be selected as the primary SARIF location.
+When SARIF is uploaded through GitHub's SARIF upload tooling, Arid leaves `primaryLocationLineHash` absent and allows the GitHub tooling to add its supported platform fingerprint.
+
+This produces two complementary identities without conflating their semantics:
+
+```text
+aridFindingFingerprint/v1
+    stable exact normalized duplicate-block identity
+
+primaryLocationLineHash
+    GitHub/platform location-context correlation identity
+```
 
 ## **20.2 Primary/related locations**
 
@@ -1332,13 +1271,13 @@ canonical first occurrence → locations[0]
 remaining occurrences      → relatedLocations
 ```
 
-Finding fingerprint identity does not depend on that presentation choice.
+Arid finding identity does not depend on that presentation choice.
 
 ## **20.3 Incomplete scans**
 
 Arid MUST NOT emit SARIF for an incomplete keep-going report.
 
-Reason: uploading a partial result set to a code-scanning service can incorrectly imply that absent findings were resolved.
+Uploading a partial result set to a code-scanning service can incorrectly imply that absent findings were resolved.
 
 If SARIF is the primary format and the scan becomes incomplete:
 
@@ -1350,7 +1289,7 @@ exit = 2
 
 If SARIF is a supplemental report target, that target is not written; JSON/text/Markdown supplemental outputs MAY still be written from the partial report.
 
-The official GitHub Action also skips SARIF upload whenever report `complete` is false.
+The official GitHub Action skips SARIF upload whenever report `complete` is false.
 
 ---
 
@@ -1460,17 +1399,9 @@ complete + no findings
 
 `Report::has_findings()` remains a pure fact.
 
-A small application policy function maps facts + invocation flags to `ExitStatus`.
+A small application policy function maps facts plus invocation flags to `ExitStatus`.
 
-`--no-fail-on-findings` never changes:
-
-- report content
-- metrics
-- baseline decisions
-- focus behavior
-- structured errors
-
-and never maps error `2` to success.
+`--no-fail-on-findings` never changes report content, metrics, baseline decisions, focus behavior, or structured errors, and never maps error `2` to success.
 
 Baseline administrative modes retain their separately specified `0/1/2` meanings.
 
@@ -1519,13 +1450,7 @@ canonical deterministic ordering
 render list
 ```
 
-It does not:
-
-- read file contents
-- parse Python
-- normalize
-- build corpus
-- detect duplicates
+It does not read file contents, parse Python, normalize, build a corpus, or detect duplicates.
 
 Text emits one path per line.
 
@@ -1635,7 +1560,7 @@ Errors must name the conflicting options clearly.
 
 CLI types remain parse-oriented.
 
-Do not stuff resolved project roots, effective config, normalized focus selectors, or discovered files back into `Cli`.
+Do not store resolved project roots, effective config, normalized focus selectors, or discovered files back into `Cli`.
 
 Those belong to application/context types after parsing.
 
@@ -1720,6 +1645,8 @@ job-summary       boolean; default true
 
 Focus receives a dedicated input because it is especially useful for PR workflows and avoids forcing callers to quote repeated flags manually.
 
+The official Action supports normal scan mode. Administrative modes such as baseline mutation, capability display, and config/file introspection are rejected through `arguments` because their output contract does not provide the scan metrics the Action promises.
+
 ## **27.4 One action scan**
 
 The helper creates temporary paths and invokes Arid once, adding an internal supplemental JSON target:
@@ -1772,7 +1699,9 @@ When enabled:
 3. require the caller workflow to grant the permissions GitHub requires
 4. skip upload when report `complete` is false
 
-The action does not manufacture severity or fingerprints; it uploads Arid's SARIF.
+The upload path may add GitHub-specific partial fingerprints such as `primaryLocationLineHash`; Arid's own `aridFindingFingerprint/v1` remains present as the product-owned logical identity.
+
+The action does not manufacture severity or Arid fingerprints; it uploads Arid's SARIF.
 
 ## **27.8 Final action status**
 
@@ -1813,6 +1742,7 @@ Before publication, tests validate:
 - argument construction
 - newline path/focus handling
 - shell-style additional arguments
+- administrative-option rejection
 - report-v4 metric extraction
 - exit-policy mapping
 - incomplete-report SARIF suppression
@@ -1890,7 +1820,7 @@ without making qualification nondeterministic.
 
 # **30. Schema Lifecycle**
 
-V2 ships three Arid-owned current machine schemas plus one preserved historical report schema:
+V2 ships three Arid-owned current machine schemas plus one preserved historical report schema and the existing baseline schema:
 
 ```text
 schemas/report-v4.schema.json
@@ -2057,6 +1987,7 @@ source snippet invariant
 worker-mode invariant
 normalized-content change changes fingerprint
 baseline-v1 fingerprint golden vectors unchanged
+SARIF aridFindingFingerprint/v1 equals report fingerprint
 ```
 
 ## **34.4 Focus**
