@@ -1,35 +1,17 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use crate::baseline::{Baseline, BaselineError, BaselineGroup, build_baseline};
+use crate::baseline_status::{
+    BaselineStatus, BaselineStatusGroup, BaselineStatusPath, DebtCounts,
+};
 use crate::corpus::Corpus;
 use crate::model::{DuplicateGroup, NormalizationOptions};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct BaselineComparison {
-    active_groups: Vec<DuplicateGroup>,
-}
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-struct DebtCounts {
-    accepted: u64,
-    active: u64,
-    stale: u64,
-}
-
-impl DebtCounts {
-    fn add_path(&mut self, current: u32, baseline: u32) {
-        let accepted = u64::from(current.min(baseline));
-        let active = u64::from(current.saturating_sub(baseline));
-        let stale = u64::from(baseline.saturating_sub(current));
-
-        debug_assert_eq!(accepted + active, u64::from(current));
-        debug_assert_eq!(accepted + stale, u64::from(baseline));
-
-        self.accepted += accepted;
-        self.active += active;
-        self.stale += stale;
-    }
+pub(crate) struct BaselineComparison {
+    pub(crate) active_groups: Vec<DuplicateGroup>,
+    pub(crate) status: BaselineStatus,
 }
 
 /// Compares current duplicate debt with an already validated baseline.
@@ -37,20 +19,22 @@ impl DebtCounts {
 /// For every fingerprint/path multiplicity, debt is classified as accepted,
 /// active, or stale. A current group remains active when any of its debt is
 /// unaccepted so reporting retains the complete duplicate group.
-fn compare_baseline(
+pub(crate) fn compare_baseline(
     corpus: &Corpus,
     groups: Vec<DuplicateGroup>,
     baseline: &Baseline,
     normalization: NormalizationOptions,
     project_root: &Path,
 ) -> Result<BaselineComparison, BaselineError> {
-    let accepted = baseline
+    let baseline_groups = baseline
         .groups
         .iter()
         .map(|group| (group.fingerprint.as_str(), group))
         .collect::<BTreeMap<_, _>>();
 
     let mut active_groups = Vec::new();
+    let mut status_groups = Vec::new();
+    let mut current_fingerprints = BTreeSet::new();
 
     for group in groups {
         let current = build_baseline(
@@ -63,17 +47,31 @@ fn compare_baseline(
             .groups
             .first()
             .expect("one detected group must build one baseline group");
-        let debt = compare_group_debt(
-            current_group,
-            accepted.get(current_group.fingerprint.as_str()).copied(),
-        );
+        let baseline_group = baseline_groups
+            .get(current_group.fingerprint.as_str())
+            .copied();
+        let status_group = compare_group_status(Some(current_group), baseline_group);
 
-        if debt.active > 0 {
+        if status_group.summary.active > 0 {
             active_groups.push(group);
+        }
+
+        current_fingerprints.insert(current_group.fingerprint.clone());
+        status_groups.push(status_group);
+    }
+
+    for baseline_group in &baseline.groups {
+        if !current_fingerprints.contains(&baseline_group.fingerprint) {
+            status_groups.push(compare_group_status(None, Some(baseline_group)));
         }
     }
 
-    Ok(BaselineComparison { active_groups })
+    status_groups.sort_by(|left, right| left.fingerprint.cmp(&right.fingerprint));
+
+    Ok(BaselineComparison {
+        active_groups,
+        status: BaselineStatus::new(status_groups),
+    })
 }
 
 /// Removes duplicate groups fully covered by an already validated baseline.
@@ -87,25 +85,60 @@ pub(crate) fn filter_active_groups(
     Ok(compare_baseline(corpus, groups, baseline, normalization, project_root)?.active_groups)
 }
 
-fn compare_group_debt(current: &BaselineGroup, baseline: Option<&BaselineGroup>) -> DebtCounts {
-    let mut paths = BTreeMap::<&str, (u32, u32)>::new();
+fn compare_group_status(
+    current: Option<&BaselineGroup>,
+    baseline: Option<&BaselineGroup>,
+) -> BaselineStatusGroup {
+    let identity = current
+        .or(baseline)
+        .expect("baseline comparison group must exist in current or baseline state");
+    let mut paths = BTreeMap::<String, (u32, u32)>::new();
 
-    for occurrence in &current.occurrences {
-        paths.entry(&occurrence.path).or_default().0 = occurrence.count;
+    if let Some(current) = current {
+        for occurrence in &current.occurrences {
+            paths.entry(occurrence.path.clone()).or_default().0 = occurrence.count;
+        }
     }
 
     if let Some(baseline) = baseline {
         for occurrence in &baseline.occurrences {
-            paths.entry(&occurrence.path).or_default().1 = occurrence.count;
+            paths.entry(occurrence.path.clone()).or_default().1 = occurrence.count;
         }
     }
 
-    paths
-        .into_values()
-        .fold(DebtCounts::default(), |mut debt, (current, baseline)| {
-            debt.add_path(current, baseline);
-            debt
+    let mut summary = DebtCounts::default();
+    let paths = paths
+        .into_iter()
+        .map(|(path, (current, baseline))| {
+            let accepted = u64::from(current.min(baseline));
+            let active = u64::from(current.saturating_sub(baseline));
+            let stale = u64::from(baseline.saturating_sub(current));
+
+            debug_assert_eq!(accepted + active, u64::from(current));
+            debug_assert_eq!(accepted + stale, u64::from(baseline));
+
+            let debt = DebtCounts {
+                accepted,
+                active,
+                stale,
+            };
+            summary.add(debt);
+
+            BaselineStatusPath {
+                path,
+                accepted,
+                active,
+                stale,
+            }
         })
+        .collect();
+
+    BaselineStatusGroup {
+        fingerprint: identity.fingerprint.clone(),
+        lines: identity.lines,
+        paths,
+        summary,
+    }
 }
 
 #[cfg(test)]
@@ -212,23 +245,27 @@ mod tests {
     fn debt_math_classifies_accepted_active_and_stale_counts() {
         let current = baseline_group(&[("a.py", 2), ("b.py", 1), ("c.py", 1)]);
         let baseline = baseline_group(&[("a.py", 1), ("b.py", 2), ("d.py", 3)]);
+        let status = compare_group_status(Some(&current), Some(&baseline));
 
         assert_eq!(
-            compare_group_debt(&current, Some(&baseline)),
+            status.summary,
             DebtCounts {
                 accepted: 2,
                 active: 2,
                 stale: 4,
             }
         );
+        assert_eq!(status.paths[0].path, "a.py");
+        assert_eq!(status.paths[3].path, "d.py");
     }
 
     #[test]
     fn missing_baseline_fingerprint_is_wholly_active() {
         let current = baseline_group(&[("a.py", 2), ("b.py", 1)]);
+        let status = compare_group_status(Some(&current), None);
 
         assert_eq!(
-            compare_group_debt(&current, None),
+            status.summary,
             DebtCounts {
                 accepted: 0,
                 active: 3,
@@ -238,7 +275,22 @@ mod tests {
     }
 
     #[test]
-    fn comparison_returns_only_active_groups() {
+    fn missing_current_fingerprint_is_wholly_stale() {
+        let baseline = baseline_group(&[("a.py", 2), ("b.py", 1)]);
+        let status = compare_group_status(None, Some(&baseline));
+
+        assert_eq!(
+            status.summary,
+            DebtCounts {
+                accepted: 0,
+                active: 0,
+                stale: 3,
+            }
+        );
+    }
+
+    #[test]
+    fn comparison_returns_only_active_groups_and_complete_status() {
         let corpus = build_corpus(vec![
             prepared("project/a.py", &["alpha = 1", "beta = 2"]),
             prepared("project/b.py", &["alpha = 1", "beta = 2"]),
@@ -260,6 +312,10 @@ mod tests {
         .unwrap();
 
         assert_eq!(comparison.active_groups, vec![active_group]);
+        assert_eq!(comparison.status.summary.accepted, 2);
+        assert_eq!(comparison.status.summary.active, 2);
+        assert_eq!(comparison.status.summary.stale, 0);
+        assert_eq!(comparison.status.groups.len(), 2);
     }
 
     #[test]

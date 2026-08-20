@@ -112,11 +112,19 @@ pub struct Cli {
     #[arg(long, value_name = "PATH", conflicts_with = "write_baseline")]
     pub baseline: Option<PathBuf>,
 
+    /// Report accepted, active, and stale debt against a baseline.
+    #[arg(
+        long,
+        value_name = "PATH",
+        conflicts_with_all = ["baseline", "write_baseline"]
+    )]
+    pub baseline_status: Option<PathBuf>,
+
     /// Write the current duplicate debt as a baseline and exit successfully.
     #[arg(
         long,
         value_name = "PATH",
-        conflicts_with_all = ["baseline", "format", "json", "color", "show_source"]
+        conflicts_with_all = ["baseline", "baseline_status", "format", "json", "color", "show_source"]
     )]
     pub write_baseline: Option<PathBuf>,
 }
@@ -164,7 +172,6 @@ mod tests {
 
         assert!(cli.paths.is_empty());
         assert_eq!(cli.min_lines, None);
-
         assert!(!cli.ignore_comments);
         assert!(!cli.no_ignore_comments);
         assert!(!cli.ignore_docstrings);
@@ -177,7 +184,6 @@ mod tests {
         assert!(!cli.no_same_file);
         assert!(!cli.hidden);
         assert!(!cli.no_hidden);
-
         assert!(cli.exclude.is_empty());
         assert_eq!(cli.workers, 1);
         assert_eq!(cli.format, None);
@@ -186,6 +192,7 @@ mod tests {
         assert!(!cli.json);
         assert!(!cli.show_source);
         assert_eq!(cli.baseline, None);
+        assert_eq!(cli.baseline_status, None);
         assert_eq!(cli.write_baseline, None);
     }
 
@@ -208,7 +215,6 @@ mod tests {
             cli.paths,
             vec![PathBuf::from("src"), PathBuf::from("tests/example.py")]
         );
-
         assert_eq!(cli.min_lines, Some(6));
         assert_eq!(cli.workers, 4);
         assert_eq!(cli.output_format(), OutputFormat::Json);
@@ -219,16 +225,13 @@ mod tests {
     #[test]
     fn accepts_auto_workers() {
         let cli = Cli::try_parse_from(["arid", "--workers", "auto"]).unwrap();
-
         assert!((1..=MAX_AUTO_WORKERS).contains(&cli.workers));
     }
 
     #[test]
     fn help_documents_auto_workers() {
         use clap::CommandFactory;
-
         let help = Cli::command().render_long_help().to_string();
-
         assert!(help.contains("--workers <N|auto>"));
         assert!(help.contains("automatic selection capped at 4"));
     }
@@ -239,10 +242,7 @@ mod tests {
         assert_eq!(auto_worker_count(Some(1)), 1);
         assert_eq!(auto_worker_count(Some(2)), 2);
         assert_eq!(auto_worker_count(Some(MAX_AUTO_WORKERS)), MAX_AUTO_WORKERS);
-        assert_eq!(
-            auto_worker_count(Some(MAX_AUTO_WORKERS + 8)),
-            MAX_AUTO_WORKERS
-        );
+        assert_eq!(auto_worker_count(Some(MAX_AUTO_WORKERS + 8)), MAX_AUTO_WORKERS);
     }
 
     #[test]
@@ -254,7 +254,6 @@ mod tests {
             ("sarif", OutputFormat::Sarif),
         ] {
             let cli = Cli::try_parse_from(["arid", "--format", value]).unwrap();
-
             assert_eq!(cli.format, Some(expected));
             assert_eq!(cli.output_format(), expected);
         }
@@ -268,7 +267,6 @@ mod tests {
             ("never", ColorWhen::Never),
         ] {
             let cli = Cli::try_parse_from(["arid", "--color", value]).unwrap();
-
             assert_eq!(cli.color, Some(expected));
         }
     }
@@ -278,45 +276,36 @@ mod tests {
         let cli = Cli::try_parse_from(["arid", "--baseline", "debt.json"]).unwrap();
         assert_eq!(cli.baseline, Some(PathBuf::from("debt.json")));
 
+        let cli = Cli::try_parse_from(["arid", "--baseline-status", "debt.json"]).unwrap();
+        assert_eq!(cli.baseline_status, Some(PathBuf::from("debt.json")));
+
         let cli = Cli::try_parse_from(["arid", "--write-baseline", "debt.json"]).unwrap();
         assert_eq!(cli.write_baseline, Some(PathBuf::from("debt.json")));
     }
 
     #[test]
     fn rejects_json_with_explicit_format() {
-        let result = Cli::try_parse_from(["arid", "--json", "--format", "json"]);
-
-        assert!(result.is_err());
+        assert!(Cli::try_parse_from(["arid", "--json", "--format", "json"]).is_err());
     }
 
     #[test]
     fn rejects_conflicting_baseline_modes() {
-        let result = Cli::try_parse_from([
-            "arid",
-            "--baseline",
-            "old.json",
-            "--write-baseline",
-            "new.json",
-        ]);
-
-        assert!(result.is_err());
+        for args in [
+            ["arid", "--baseline", "old.json", "--write-baseline", "new.json"],
+            ["arid", "--baseline", "old.json", "--baseline-status", "new.json"],
+            ["arid", "--baseline-status", "old.json", "--write-baseline", "new.json"],
+        ] {
+            assert!(Cli::try_parse_from(args).is_err());
+        }
     }
 
     #[test]
     fn write_baseline_rejects_presentation_options() {
         for option in ["--json", "--show-source"] {
-            let result = Cli::try_parse_from(["arid", "--write-baseline", "debt.json", option]);
-            assert!(result.is_err());
+            assert!(Cli::try_parse_from(["arid", "--write-baseline", "debt.json", option]).is_err());
         }
-
-        assert!(
-            Cli::try_parse_from(["arid", "--write-baseline", "debt.json", "--format", "text",])
-                .is_err()
-        );
-        assert!(
-            Cli::try_parse_from(["arid", "--write-baseline", "debt.json", "--color", "never",])
-                .is_err()
-        );
+        assert!(Cli::try_parse_from(["arid", "--write-baseline", "debt.json", "--format", "text"]).is_err());
+        assert!(Cli::try_parse_from(["arid", "--write-baseline", "debt.json", "--color", "never"]).is_err());
     }
 
     #[test]
@@ -348,42 +337,32 @@ mod tests {
         assert!(cli.no_same_file);
         assert!(cli.hidden);
         assert!(!cli.no_hidden);
-
         assert_eq!(cli.exclude, vec!["generated/**", "vendor/**"]);
     }
 
     #[test]
     fn rejects_conflicting_boolean_overrides() {
-        let result = Cli::try_parse_from(["arid", "--ignore-comments", "--no-ignore-comments"]);
-
-        assert!(result.is_err());
+        assert!(Cli::try_parse_from(["arid", "--ignore-comments", "--no-ignore-comments"]).is_err());
     }
 
     #[test]
     fn rejects_conflicting_same_file_overrides() {
-        let result = Cli::try_parse_from(["arid", "--same-file", "--no-same-file"]);
-
-        assert!(result.is_err());
+        assert!(Cli::try_parse_from(["arid", "--same-file", "--no-same-file"]).is_err());
     }
 
     #[test]
     fn rejects_conflicting_hidden_overrides() {
-        let result = Cli::try_parse_from(["arid", "--hidden", "--no-hidden"]);
-
-        assert!(result.is_err());
+        assert!(Cli::try_parse_from(["arid", "--hidden", "--no-hidden"]).is_err());
     }
 
     #[test]
     fn rejects_zero_workers() {
-        let result = Cli::try_parse_from(["arid", "--workers", "0"]);
-
-        assert!(result.is_err());
+        assert!(Cli::try_parse_from(["arid", "--workers", "0"]).is_err());
     }
 
     #[test]
     fn rejects_invalid_workers() {
         let error = Cli::try_parse_from(["arid", "--workers", "many"]).unwrap_err();
-
         assert!(error.to_string().contains("positive integer or 'auto'"));
     }
 }
