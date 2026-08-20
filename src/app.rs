@@ -6,7 +6,9 @@ use crate::baseline_filter::{compare_baseline, filter_active_groups};
 use crate::baseline_status::{render_baseline_status_json, render_baseline_status_text};
 use crate::capabilities::render_capabilities_json;
 use crate::cli::{Cli, ColorWhen, OutputFormat};
-use crate::config::{LoadedSettings, ProjectOptions, SettingsOverrides, load_settings_with_options};
+use crate::config::{
+    LoadedSettings, ProjectOptions, SettingsOverrides, load_settings_with_options,
+};
 use crate::corpus::build_corpus;
 use crate::detect::detect_duplicates;
 use crate::error::{ErrorKind, OperationalError, render_error_json};
