@@ -10,12 +10,33 @@ struct BaselineComparison {
     active_groups: Vec<DuplicateGroup>,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct DebtCounts {
+    accepted: u64,
+    active: u64,
+    stale: u64,
+}
+
+impl DebtCounts {
+    fn add_path(&mut self, current: u32, baseline: u32) {
+        let accepted = u64::from(current.min(baseline));
+        let active = u64::from(current.saturating_sub(baseline));
+        let stale = u64::from(baseline.saturating_sub(current));
+
+        debug_assert_eq!(accepted + active, u64::from(current));
+        debug_assert_eq!(accepted + stale, u64::from(baseline));
+
+        self.accepted += accepted;
+        self.active += active;
+        self.stale += stale;
+    }
+}
+
 /// Compares current duplicate debt with an already validated baseline.
 ///
-/// A baseline accepts up to its recorded occurrence multiplicity for each
-/// fingerprint/path pair. Reduced debt is accepted. A new fingerprint, a new
-/// path, or an occurrence count above the accepted count keeps the entire
-/// current group active so reporting retains complete duplicate context.
+/// For every fingerprint/path multiplicity, debt is classified as accepted,
+/// active, or stale. A current group remains active when any of its debt is
+/// unaccepted so reporting retains the complete duplicate group.
 fn compare_baseline(
     corpus: &Corpus,
     groups: Vec<DuplicateGroup>,
@@ -42,13 +63,12 @@ fn compare_baseline(
             .groups
             .first()
             .expect("one detected group must build one baseline group");
+        let debt = compare_group_debt(
+            current_group,
+            accepted.get(current_group.fingerprint.as_str()).copied(),
+        );
 
-        let is_active = match accepted.get(current_group.fingerprint.as_str()) {
-            Some(accepted_group) => exceeds_accepted_debt(current_group, accepted_group),
-            None => true,
-        };
-
-        if is_active {
+        if debt.active > 0 {
             active_groups.push(group);
         }
     }
@@ -67,16 +87,25 @@ pub(crate) fn filter_active_groups(
     Ok(compare_baseline(corpus, groups, baseline, normalization, project_root)?.active_groups)
 }
 
-fn exceeds_accepted_debt(current: &BaselineGroup, accepted: &BaselineGroup) -> bool {
-    current.occurrences.iter().any(|occurrence| {
-        let accepted_count = accepted
-            .occurrences
-            .binary_search_by(|candidate| candidate.path.cmp(&occurrence.path))
-            .ok()
-            .map(|index| accepted.occurrences[index].count);
+fn compare_group_debt(current: &BaselineGroup, baseline: Option<&BaselineGroup>) -> DebtCounts {
+    let mut paths = BTreeMap::<&str, (u32, u32)>::new();
 
-        accepted_count.is_none_or(|count| occurrence.count > count)
-    })
+    for occurrence in &current.occurrences {
+        paths.entry(&occurrence.path).or_default().0 = occurrence.count;
+    }
+
+    if let Some(baseline) = baseline {
+        for occurrence in &baseline.occurrences {
+            paths.entry(&occurrence.path).or_default().1 = occurrence.count;
+        }
+    }
+
+    paths
+        .into_values()
+        .fold(DebtCounts::default(), |mut debt, (current, baseline)| {
+            debt.add_path(current, baseline);
+            debt
+        })
 }
 
 #[cfg(test)]
@@ -84,7 +113,7 @@ mod tests {
     use std::ops::Range;
     use std::path::{Path, PathBuf};
 
-    use crate::baseline::build_baseline;
+    use crate::baseline::{BaselinePathCount, build_baseline};
     use crate::corpus::build_corpus;
     use crate::model::{
         NormalizedLine, NormalizedSegment, Occurrence, PreparedFile, StructuralContext,
@@ -163,6 +192,49 @@ mod tests {
             Path::new("project"),
         )
         .unwrap()
+    }
+
+    fn baseline_group(occurrences: &[(&str, u32)]) -> BaselineGroup {
+        BaselineGroup {
+            fingerprint: format!("sha256:{}", "0".repeat(64)),
+            lines: 2,
+            occurrences: occurrences
+                .iter()
+                .map(|(path, count)| BaselinePathCount {
+                    path: (*path).to_owned(),
+                    count: *count,
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn debt_math_classifies_accepted_active_and_stale_counts() {
+        let current = baseline_group(&[("a.py", 2), ("b.py", 1), ("c.py", 1)]);
+        let baseline = baseline_group(&[("a.py", 1), ("b.py", 2), ("d.py", 3)]);
+
+        assert_eq!(
+            compare_group_debt(&current, Some(&baseline)),
+            DebtCounts {
+                accepted: 2,
+                active: 2,
+                stale: 4,
+            }
+        );
+    }
+
+    #[test]
+    fn missing_baseline_fingerprint_is_wholly_active() {
+        let current = baseline_group(&[("a.py", 2), ("b.py", 1)]);
+
+        assert_eq!(
+            compare_group_debt(&current, None),
+            DebtCounts {
+                accepted: 0,
+                active: 3,
+                stale: 0,
+            }
+        );
     }
 
     #[test]
