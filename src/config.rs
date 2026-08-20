@@ -595,7 +595,7 @@ baseline = "config/arid-baseline.json"
 
         assert_eq!(loaded.settings.min_lines, 6);
         assert_eq!(loaded.settings.baseline, Some(root.join("debt.json")));
-        assert_eq!(loaded.config_path, Some(nested_config));
+        assert_eq!(loaded.config_path, Some(nested_config.clone()));
         assert_eq!(loaded.project_root, root);
     }
 
