@@ -1,3 +1,4 @@
+use std::ffi::OsStr;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -74,17 +75,23 @@ pub struct SettingsOverrides {
     pub exclude: Option<Vec<String>>,
 }
 
+/// Explicit project/configuration selection layered over the compatibility path.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ProjectOptions {
+    pub config: Option<PathBuf>,
+    pub no_config: bool,
+    pub project_root: Option<PathBuf>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LoadedSettings {
     pub settings: Settings,
 
-    /// `pyproject.toml` providing `[tool.arid]`, if one was found.
+    /// Selected `pyproject.toml`, if Arid configuration was discovered or an
+    /// exact configuration file was explicitly selected.
     pub config_path: Option<PathBuf>,
 
     /// Root used for project-relative settings such as `exclude`.
-    ///
-    /// This is the directory containing the selected `pyproject.toml`, or
-    /// the configuration search directory when no Arid configuration exists.
     pub project_root: PathBuf,
 }
 
@@ -95,6 +102,30 @@ pub enum ConfigError {
 
     #[error("configuration search path does not exist: {0:?}")]
     MissingSearchPath(PathBuf),
+
+    #[error("explicit configuration and no-config mode cannot be combined")]
+    ConflictingConfigSelection,
+
+    #[error("configuration file does not exist: {0:?}")]
+    MissingConfig(PathBuf),
+
+    #[error("configuration path is not a regular file: {0:?}")]
+    ConfigNotFile(PathBuf),
+
+    #[error("configuration file must be named pyproject.toml: {0:?}")]
+    InvalidConfigName(PathBuf),
+
+    #[error("project root does not exist: {0:?}")]
+    MissingProjectRoot(PathBuf),
+
+    #[error("project root is not a directory: {0:?}")]
+    ProjectRootNotDirectory(PathBuf),
+
+    #[error("configuration {config:?} is outside explicit project root {project_root:?}")]
+    ContradictoryConfigRoot {
+        config: PathBuf,
+        project_root: PathBuf,
+    },
 
     #[error("failed to read configuration {path:?}: {source}")]
     Read {
@@ -114,7 +145,7 @@ pub enum ConfigError {
     InvalidMinLines,
 }
 
-/// Resolves Arid settings using:
+/// Resolves Arid settings using the 1.x compatibility path:
 ///
 /// CLI-style overrides
 ///     ↓
@@ -128,12 +159,74 @@ pub fn load_settings(
     start: &Path,
     overrides: SettingsOverrides,
 ) -> Result<LoadedSettings, ConfigError> {
+    load_settings_with_options(start, overrides, ProjectOptions::default())
+}
+
+/// Resolves Arid settings with explicit project/configuration selection.
+pub fn load_settings_with_options(
+    start: &Path,
+    overrides: SettingsOverrides,
+    options: ProjectOptions,
+) -> Result<LoadedSettings, ConfigError> {
+    if options.config.is_some() && options.no_config {
+        return Err(ConfigError::ConflictingConfigSelection);
+    }
+
     let start = absolute_path(start)?;
     let search_dir = configuration_search_dir(&start)?;
+    let project_root = options
+        .project_root
+        .as_deref()
+        .map(resolve_project_root)
+        .transpose()?;
+    let config_path = options
+        .config
+        .as_deref()
+        .map(resolve_exact_config)
+        .transpose()?;
 
-    let config = find_arid_config(&search_dir)?;
+    if let (Some(config), Some(root)) = (&config_path, &project_root)
+        && config.parent() != Some(root.as_path())
+    {
+        return Err(ConfigError::ContradictoryConfigRoot {
+            config: config.clone(),
+            project_root: root.clone(),
+        });
+    }
 
-    let (mut settings, config_path, project_root) = if let Some((path, config)) = config {
+    let (mut settings, config_path, project_root) = if let Some(path) = config_path {
+        let mut settings = Settings::default();
+        let project = read_project(&path)?;
+        if let Some(config) = project.tool.arid {
+            apply_project_config(&mut settings, config);
+        }
+
+        let root = project_root.unwrap_or_else(|| {
+            path.parent()
+                .expect("pyproject.toml must have a parent directory")
+                .to_path_buf()
+        });
+
+        (settings, Some(path), root)
+    } else if options.no_config {
+        (
+            Settings::default(),
+            None,
+            project_root.unwrap_or(search_dir),
+        )
+    } else if let Some(root) = project_root {
+        let path = root.join("pyproject.toml");
+        let config = read_optional_arid_config(&path)?;
+        let mut settings = Settings::default();
+        let config_path = if let Some(config) = config {
+            apply_project_config(&mut settings, config);
+            Some(path)
+        } else {
+            None
+        };
+
+        (settings, config_path, root)
+    } else if let Some((path, config)) = find_arid_config(&search_dir)? {
         let mut settings = Settings::default();
         apply_project_config(&mut settings, config);
 
@@ -144,7 +237,7 @@ pub fn load_settings(
 
         (settings, Some(path), root)
     } else {
-        (Settings::default(), None, search_dir.clone())
+        (Settings::default(), None, search_dir)
     };
 
     apply_overrides(&mut settings, overrides);
@@ -190,32 +283,86 @@ fn configuration_search_dir(start: &Path) -> Result<PathBuf, ConfigError> {
         .to_path_buf())
 }
 
+fn resolve_exact_config(path: &Path) -> Result<PathBuf, ConfigError> {
+    let path = absolute_path(path)?;
+    let metadata = fs::metadata(&path).map_err(|error| match error.kind() {
+        io::ErrorKind::NotFound => ConfigError::MissingConfig(path.clone()),
+        _ => ConfigError::Read {
+            path: path.clone(),
+            source: error,
+        },
+    })?;
+
+    if !metadata.is_file() {
+        return Err(ConfigError::ConfigNotFile(path));
+    }
+
+    if path.file_name() != Some(OsStr::new("pyproject.toml")) {
+        return Err(ConfigError::InvalidConfigName(path));
+    }
+
+    fs::canonicalize(&path).map_err(|source| ConfigError::Read { path, source })
+}
+
+fn resolve_project_root(path: &Path) -> Result<PathBuf, ConfigError> {
+    let path = absolute_path(path)?;
+    let metadata = fs::metadata(&path).map_err(|error| match error.kind() {
+        io::ErrorKind::NotFound => ConfigError::MissingProjectRoot(path.clone()),
+        _ => ConfigError::Read {
+            path: path.clone(),
+            source: error,
+        },
+    })?;
+
+    if !metadata.is_dir() {
+        return Err(ConfigError::ProjectRootNotDirectory(path));
+    }
+
+    fs::canonicalize(&path).map_err(|source| ConfigError::Read { path, source })
+}
+
 fn find_arid_config(start: &Path) -> Result<Option<(PathBuf, AridConfig)>, ConfigError> {
     for directory in start.ancestors() {
         let path = directory.join("pyproject.toml");
 
-        let contents = match fs::read_to_string(&path) {
-            Ok(contents) => contents,
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {
-                continue;
-            }
-            Err(source) => {
-                return Err(ConfigError::Read { path, source });
-            }
-        };
-
-        let project: PyProject =
-            toml::from_str(&contents).map_err(|source| ConfigError::Parse {
-                path: path.clone(),
-                source,
-            })?;
-
-        if let Some(config) = project.tool.arid {
+        if let Some(config) = read_optional_arid_config(&path)? {
             return Ok(Some((path, config)));
         }
     }
 
     Ok(None)
+}
+
+fn read_optional_arid_config(path: &Path) -> Result<Option<AridConfig>, ConfigError> {
+    let contents = match fs::read_to_string(path) {
+        Ok(contents) => contents,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(source) => {
+            return Err(ConfigError::Read {
+                path: path.to_path_buf(),
+                source,
+            });
+        }
+    };
+
+    let project = parse_project(path, &contents)?;
+    Ok(project.tool.arid)
+}
+
+fn read_project(path: &Path) -> Result<PyProject, ConfigError> {
+    let contents = fs::read_to_string(path).map_err(|source| ConfigError::Read {
+        path: path.to_path_buf(),
+        source,
+    })?;
+
+    parse_project(path, &contents)
+}
+
+fn parse_project(path: &Path, contents: &str) -> Result<PyProject, ConfigError> {
+    toml::from_str(contents).map_err(|source| ConfigError::Parse {
+        path: path.to_path_buf(),
+        source,
+    })
 }
 
 fn apply_project_config(settings: &mut Settings, config: AridConfig) {
@@ -361,6 +508,15 @@ mod tests {
         fn path(&self) -> &Path {
             &self.path
         }
+
+        fn write(&self, relative: &str, contents: &str) -> PathBuf {
+            let path = self.path.join(relative);
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent).unwrap();
+            }
+            fs::write(&path, contents).unwrap();
+            path
+        }
     }
 
     impl Drop for TempDir {
@@ -387,8 +543,8 @@ mod tests {
 
         fs::create_dir_all(&child).unwrap();
 
-        fs::write(
-            temp.path().join("pyproject.toml"),
+        temp.write(
+            "pyproject.toml",
             r#"
 [tool.arid]
 min-lines = 7
@@ -398,8 +554,7 @@ hidden = true
 exclude = ["generated/**"]
 baseline = "config/arid-baseline.json"
 "#,
-        )
-        .unwrap();
+        );
 
         let loaded = load_settings(&child, SettingsOverrides::default()).unwrap();
 
@@ -412,10 +567,205 @@ baseline = "config/arid-baseline.json"
             loaded.settings.baseline,
             Some(temp.path().join("config/arid-baseline.json"))
         );
-
         assert_eq!(loaded.config_path, Some(temp.path().join("pyproject.toml")));
-
         assert_eq!(loaded.project_root, temp.path());
+    }
+
+    #[test]
+    fn exact_config_disables_ancestor_search_and_sets_root() {
+        let temp = TempDir::new();
+        temp.write("pyproject.toml", "[tool.arid]\nmin-lines = 9\n");
+        let nested_config = temp.write(
+            "nested/pyproject.toml",
+            "[tool.arid]\nmin-lines = 6\nbaseline = \"debt.json\"\n",
+        );
+        let start = temp.path().join("nested/src");
+        fs::create_dir_all(&start).unwrap();
+
+        let loaded = load_settings_with_options(
+            &start,
+            SettingsOverrides::default(),
+            ProjectOptions {
+                config: Some(nested_config.clone()),
+                ..ProjectOptions::default()
+            },
+        )
+        .unwrap();
+        let root = nested_config.parent().unwrap();
+
+        assert_eq!(loaded.settings.min_lines, 6);
+        assert_eq!(loaded.settings.baseline, Some(root.join("debt.json")));
+        assert_eq!(loaded.config_path, Some(nested_config));
+        assert_eq!(loaded.project_root, root);
+    }
+
+    #[test]
+    fn exact_config_without_arid_uses_defaults_and_remains_selected() {
+        let temp = TempDir::new();
+        let config = temp.write("pyproject.toml", "[tool.ruff]\nline-length = 100\n");
+
+        let loaded = load_settings_with_options(
+            temp.path(),
+            SettingsOverrides::default(),
+            ProjectOptions {
+                config: Some(config.clone()),
+                ..ProjectOptions::default()
+            },
+        )
+        .unwrap();
+
+        assert_eq!(loaded.settings, Settings::default());
+        assert_eq!(loaded.config_path, Some(config));
+        assert_eq!(loaded.project_root, temp.path());
+    }
+
+    #[test]
+    fn no_config_ignores_discovered_project_configuration() {
+        let temp = TempDir::new();
+        temp.write("pyproject.toml", "[tool.arid]\nmin-lines = 9\n");
+
+        let loaded = load_settings_with_options(
+            temp.path(),
+            SettingsOverrides {
+                min_lines: Some(5),
+                ..SettingsOverrides::default()
+            },
+            ProjectOptions {
+                no_config: true,
+                ..ProjectOptions::default()
+            },
+        )
+        .unwrap();
+
+        assert_eq!(loaded.settings.min_lines, 5);
+        assert_eq!(loaded.config_path, None);
+        assert_eq!(loaded.project_root, temp.path());
+    }
+
+    #[test]
+    fn explicit_project_root_reads_only_root_configuration() {
+        let temp = TempDir::new();
+        temp.write("pyproject.toml", "[tool.arid]\nmin-lines = 9\n");
+        let root = temp.path().join("project");
+        let start = root.join("src/nested");
+        fs::create_dir_all(&start).unwrap();
+        fs::write(
+            root.join("pyproject.toml"),
+            "[tool.arid]\nmin-lines = 6\n",
+        )
+        .unwrap();
+
+        let loaded = load_settings_with_options(
+            &start,
+            SettingsOverrides::default(),
+            ProjectOptions {
+                project_root: Some(root.clone()),
+                ..ProjectOptions::default()
+            },
+        )
+        .unwrap();
+
+        assert_eq!(loaded.settings.min_lines, 6);
+        assert_eq!(loaded.config_path, Some(root.join("pyproject.toml")));
+        assert_eq!(loaded.project_root, root);
+    }
+
+    #[test]
+    fn explicit_project_root_never_walks_above_root() {
+        let temp = TempDir::new();
+        temp.write("pyproject.toml", "[tool.arid]\nmin-lines = 9\n");
+        let root = temp.path().join("project");
+        let start = root.join("src/nested");
+        fs::create_dir_all(&start).unwrap();
+
+        let loaded = load_settings_with_options(
+            &start,
+            SettingsOverrides::default(),
+            ProjectOptions {
+                project_root: Some(root.clone()),
+                ..ProjectOptions::default()
+            },
+        )
+        .unwrap();
+
+        assert_eq!(loaded.settings, Settings::default());
+        assert_eq!(loaded.config_path, None);
+        assert_eq!(loaded.project_root, root);
+    }
+
+    #[test]
+    fn exact_config_and_root_must_identify_same_pyproject() {
+        let temp = TempDir::new();
+        let config = temp.write("pyproject.toml", "[tool.arid]\nmin-lines = 5\n");
+        let other_root = temp.path().join("other");
+        fs::create_dir_all(&other_root).unwrap();
+
+        let error = load_settings_with_options(
+            temp.path(),
+            SettingsOverrides::default(),
+            ProjectOptions {
+                config: Some(config),
+                project_root: Some(other_root),
+                ..ProjectOptions::default()
+            },
+        )
+        .unwrap_err();
+
+        assert!(matches!(error, ConfigError::ContradictoryConfigRoot { .. }));
+    }
+
+    #[test]
+    fn rejects_conflicting_config_selection() {
+        let temp = TempDir::new();
+        let config = temp.write("pyproject.toml", "[tool.arid]\nmin-lines = 5\n");
+
+        let error = load_settings_with_options(
+            temp.path(),
+            SettingsOverrides::default(),
+            ProjectOptions {
+                config: Some(config),
+                no_config: true,
+                project_root: None,
+            },
+        )
+        .unwrap_err();
+
+        assert!(matches!(error, ConfigError::ConflictingConfigSelection));
+    }
+
+    #[test]
+    fn rejects_non_pyproject_exact_config() {
+        let temp = TempDir::new();
+        let config = temp.write("arid.toml", "[tool.arid]\nmin-lines = 5\n");
+
+        let error = load_settings_with_options(
+            temp.path(),
+            SettingsOverrides::default(),
+            ProjectOptions {
+                config: Some(config),
+                ..ProjectOptions::default()
+            },
+        )
+        .unwrap_err();
+
+        assert!(matches!(error, ConfigError::InvalidConfigName(_)));
+    }
+
+    #[test]
+    fn rejects_missing_explicit_project_root() {
+        let temp = TempDir::new();
+
+        let error = load_settings_with_options(
+            temp.path(),
+            SettingsOverrides::default(),
+            ProjectOptions {
+                project_root: Some(temp.path().join("missing")),
+                ..ProjectOptions::default()
+            },
+        )
+        .unwrap_err();
+
+        assert!(matches!(error, ConfigError::MissingProjectRoot(_)));
     }
 
     #[test]
@@ -423,11 +773,10 @@ baseline = "config/arid-baseline.json"
         let temp = TempDir::new();
         let baseline = temp.path().join("debt.json");
 
-        fs::write(
-            temp.path().join("pyproject.toml"),
-            format!("[tool.arid]\nbaseline = {:?}\n", baseline.to_string_lossy()),
-        )
-        .unwrap();
+        temp.write(
+            "pyproject.toml",
+            &format!("[tool.arid]\nbaseline = {:?}\n", baseline.to_string_lossy()),
+        );
 
         let loaded = load_settings(temp.path(), SettingsOverrides::default()).unwrap();
 
@@ -438,8 +787,8 @@ baseline = "config/arid-baseline.json"
     fn ignores_unrelated_tool_configuration() {
         let temp = TempDir::new();
 
-        fs::write(
-            temp.path().join("pyproject.toml"),
+        temp.write(
+            "pyproject.toml",
             r#"
 [tool.ruff]
 line-length = 100
@@ -447,8 +796,7 @@ line-length = 100
 [tool.maturin]
 bindings = "bin"
 "#,
-        )
-        .unwrap();
+        );
 
         let loaded = load_settings(temp.path(), SettingsOverrides::default()).unwrap();
 
@@ -460,14 +808,13 @@ bindings = "bin"
     fn rejects_unknown_arid_keys() {
         let temp = TempDir::new();
 
-        fs::write(
-            temp.path().join("pyproject.toml"),
+        temp.write(
+            "pyproject.toml",
             r#"
 [tool.arid]
 min-line = 4
 "#,
-        )
-        .unwrap();
+        );
 
         let error = load_settings(temp.path(), SettingsOverrides::default()).unwrap_err();
 
@@ -478,8 +825,8 @@ min-line = 4
     fn overrides_project_configuration() {
         let temp = TempDir::new();
 
-        fs::write(
-            temp.path().join("pyproject.toml"),
+        temp.write(
+            "pyproject.toml",
             r#"
 [tool.arid]
 min-lines = 8
@@ -488,8 +835,7 @@ same-file = true
 hidden = true
 exclude = ["generated/**"]
 "#,
-        )
-        .unwrap();
+        );
 
         let loaded = load_settings(
             temp.path(),
@@ -515,14 +861,13 @@ exclude = ["generated/**"]
     fn rejects_zero_min_lines_from_project() {
         let temp = TempDir::new();
 
-        fs::write(
-            temp.path().join("pyproject.toml"),
+        temp.write(
+            "pyproject.toml",
             r#"
 [tool.arid]
 min-lines = 0
 "#,
-        )
-        .unwrap();
+        );
 
         let error = load_settings(temp.path(), SettingsOverrides::default()).unwrap_err();
 
