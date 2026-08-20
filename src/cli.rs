@@ -335,14 +335,7 @@ mod tests {
 
     #[test]
     fn accepts_repeatable_focus() {
-        let cli = Cli::try_parse_from([
-            "arid",
-            "--focus",
-            "src/a.py",
-            "--focus",
-            "tests",
-        ])
-        .unwrap();
+        let cli = Cli::try_parse_from(["arid", "--focus", "src/a.py", "--focus", "tests"]).unwrap();
         assert_eq!(
             cli.focus,
             vec![PathBuf::from("src/a.py"), PathBuf::from("tests")]
