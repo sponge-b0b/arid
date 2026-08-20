@@ -37,6 +37,12 @@ impl VirtualSource {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PreparationResult {
+    pub(crate) files: Vec<PreparedFile>,
+    pub(crate) errors: Vec<OperationalError>,
+}
+
 pub(crate) fn resolve_virtual_source(
     stdin_path: Option<&Path>,
     stdin_source: Option<&str>,
@@ -130,6 +136,19 @@ pub(crate) fn prepare_sources(
     workers: usize,
     project_root: &Path,
 ) -> Result<Vec<PreparedFile>, OperationalError> {
+    Ok(
+        prepare_sources_with_policy(inputs, options, workers, project_root, false)?
+            .files,
+    )
+}
+
+pub(crate) fn prepare_sources_with_policy(
+    inputs: Vec<SourceInput>,
+    options: NormalizationOptions,
+    workers: usize,
+    project_root: &Path,
+    keep_going: bool,
+) -> Result<PreparationResult, OperationalError> {
     if workers == 0 {
         return Err(OperationalError::new(
             ErrorKind::Configuration,
@@ -138,10 +157,24 @@ pub(crate) fn prepare_sources(
     }
 
     if workers == 1 || inputs.len() < 2 {
-        return inputs
+        if !keep_going {
+            let files = inputs
+                .into_iter()
+                .map(|input| prepare_source(input, options, project_root))
+                .collect::<Result<Vec<_>, _>>()?;
+
+            return Ok(PreparationResult {
+                files,
+                errors: Vec::new(),
+            });
+        }
+
+        let results = inputs
             .into_iter()
             .map(|input| prepare_source(input, options, project_root))
-            .collect();
+            .collect::<Vec<_>>();
+
+        return collect_preparation_results(results, true);
     }
 
     let worker_count = workers.min(inputs.len());
@@ -163,7 +196,25 @@ pub(crate) fn prepare_sources(
             .collect::<Vec<_>>()
     });
 
-    results.into_iter().collect()
+    collect_preparation_results(results, keep_going)
+}
+
+fn collect_preparation_results(
+    results: Vec<Result<PreparedFile, OperationalError>>,
+    keep_going: bool,
+) -> Result<PreparationResult, OperationalError> {
+    let mut files = Vec::with_capacity(results.len());
+    let mut errors = Vec::new();
+
+    for result in results {
+        match result {
+            Ok(file) => files.push(file),
+            Err(error) if keep_going => errors.push(error),
+            Err(error) => return Err(error),
+        }
+    }
+
+    Ok(PreparationResult { files, errors })
 }
 
 fn prepare_source(
@@ -393,5 +444,67 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![a, b, c]
         );
+    }
+
+    #[test]
+    fn keep_going_collects_errors_and_valid_files_in_source_order() {
+        let temp = TempDir::new();
+        let a = temp.write("a.py", "alpha = 1\n");
+        let b = temp.write("b.py", "def broken(:\n");
+        let c = temp.path().join("c.py");
+        let d = temp.write("d.py", "delta = 4\n");
+
+        let inputs = vec![
+            SourceInput::Disk(a.clone()),
+            SourceInput::Disk(b),
+            SourceInput::Disk(c),
+            SourceInput::Disk(d.clone()),
+        ];
+        let result = prepare_sources_with_policy(
+            inputs,
+            NormalizationOptions::default(),
+            4,
+            temp.path(),
+            true,
+        )
+        .unwrap();
+
+        assert_eq!(
+            result
+                .files
+                .into_iter()
+                .map(|file| file.path)
+                .collect::<Vec<_>>(),
+            vec![a, d]
+        );
+        assert_eq!(result.errors.len(), 2);
+        assert_eq!(result.errors[0].kind, ErrorKind::Parse);
+        assert_eq!(result.errors[0].path.as_deref(), Some("b.py"));
+        assert_eq!(result.errors[1].kind, ErrorKind::Read);
+        assert_eq!(result.errors[1].path.as_deref(), Some("c.py"));
+    }
+
+    #[test]
+    fn fail_fast_parallel_mode_reports_earliest_error_in_source_order() {
+        let temp = TempDir::new();
+        let a = temp.write("a.py", "alpha = 1\n");
+        let b = temp.write("b.py", "def broken_b(:\n");
+        let c = temp.write("c.py", "def broken_c(:\n");
+
+        let error = prepare_sources_with_policy(
+            vec![
+                SourceInput::Disk(a),
+                SourceInput::Disk(b),
+                SourceInput::Disk(c),
+            ],
+            NormalizationOptions::default(),
+            3,
+            temp.path(),
+            false,
+        )
+        .unwrap_err();
+
+        assert_eq!(error.kind, ErrorKind::Parse);
+        assert_eq!(error.path.as_deref(), Some("b.py"));
     }
 }
