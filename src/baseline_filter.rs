@@ -1,9 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-use crate::baseline::{
-    Baseline, BaselineError, BaselineGroup, BaselinePathCount, build_baseline,
-};
+use crate::baseline::{Baseline, BaselineError, BaselineGroup, BaselinePathCount, build_baseline};
 use crate::baseline_status::{BaselineStatus, BaselineStatusGroup, BaselineStatusPath, DebtCounts};
 use crate::corpus::Corpus;
 use crate::model::{DuplicateGroup, NormalizationOptions};
@@ -60,10 +58,10 @@ pub(crate) fn compare_baseline(
             active_groups.push(group);
         }
 
-        if let Some(baseline_group) = baseline_group {
-            if let Some(pruned_group) = prune_group(current_group, baseline_group) {
-                pruned_groups.push(pruned_group);
-            }
+        if let Some(baseline_group) = baseline_group
+            && let Some(pruned_group) = prune_group(current_group, baseline_group)
+        {
+            pruned_groups.push(pruned_group);
         }
 
         current_fingerprints.insert(current_group.fingerprint.clone());
