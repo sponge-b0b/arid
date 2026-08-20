@@ -8,8 +8,36 @@ pub fn render_markdown(report: &Report) -> String {
 
     output.push_str("# Arid duplicate-code report\n\n");
 
+    if !report.complete {
+        output.push_str(
+            "> **Warning:** Scan incomplete. Results include only successfully processed source.\n\n",
+        );
+
+        if !report.errors.is_empty() {
+            output.push_str("## Processing errors\n\n");
+
+            for error in &report.errors {
+                output.push_str("- ");
+
+                if let Some(path) = &error.path {
+                    write_inline_code(&mut output, path);
+                    output.push_str(": ");
+                }
+
+                output.push_str(&error.message);
+                output.push('\n');
+            }
+
+            output.push('\n');
+        }
+    }
+
     if report.findings.is_empty() {
-        output.push_str("No duplicate code found.\n\n");
+        if report.complete {
+            output.push_str("No duplicate code found.\n\n");
+        } else {
+            output.push_str("No duplicate code found in successfully processed source.\n\n");
+        }
     }
 
     for finding in &report.findings {
@@ -159,7 +187,10 @@ const fn distribution_name(distribution: FindingDistribution) -> &'static str {
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
     use super::*;
+    use crate::error::{ErrorKind, OperationalError};
     use crate::report::{AnalysisMetadata, Finding, Location};
 
     fn report(show_source: bool) -> Report {
@@ -279,5 +310,36 @@ mod tests {
         assert!(rendered.contains("No duplicate code found."));
         assert!(rendered.contains("- **Duplicate groups:** 0"));
         assert!(rendered.contains("- **Duplication:** 0.00%"));
+    }
+
+    #[test]
+    fn incomplete_report_is_explicit_and_lists_errors() {
+        let mut report = Report {
+            schema_version: 4,
+            tool_version: env!("CARGO_PKG_VERSION"),
+            complete: false,
+            analysis: AnalysisMetadata::default(),
+            errors: vec![OperationalError::new(ErrorKind::Parse, "failed to parse source")
+                .with_project_path(Path::new("project/broken.py"), Path::new("project"))],
+            files: 1,
+            source_lines: 2,
+            analyzed_lines: 0,
+            duplicate_groups: 0,
+            duplicate_lines: 0,
+            duplication_percent: 0.0,
+            findings: Vec::new(),
+        };
+
+        report.analysis.keep_going = true;
+
+        let rendered = render_markdown(&report);
+
+        assert!(rendered.contains(
+            "> **Warning:** Scan incomplete. Results include only successfully processed source."
+        ));
+        assert!(rendered.contains("## Processing errors"));
+        assert!(rendered.contains("- `broken.py`: failed to parse source"));
+        assert!(rendered.contains("No duplicate code found in successfully processed source."));
+        assert!(!rendered.contains("\nNo duplicate code found.\n"));
     }
 }
