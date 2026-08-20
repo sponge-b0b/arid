@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Arid Operational Error v1",
+  "description": "Schema for Arid's stable fatal operational-error document, version 1.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "tool_version", "error"],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "tool_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "error": {
+      "$ref": "#/$defs/error"
+    }
+  },
+  "$defs": {
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "message"],
+      "properties": {
+        "kind": {
+          "enum": [
+            "configuration",
+            "discovery",
+            "read",
+            "parse",
+            "normalization",
+            "baseline",
+            "output",
+            "internal"
+          ]
+        },
+        "message": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

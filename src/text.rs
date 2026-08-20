@@ -188,18 +188,22 @@ const fn distribution_name(distribution: FindingDistribution) -> &'static str {
     match distribution {
         FindingDistribution::SameFile => "same-file",
         FindingDistribution::CrossFile => "cross-file",
-        FindingDistribution::Mixed => "mixed",
+        FindingDistribution::Hybrid => "hybrid",
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::report::{Finding, Location};
+    use crate::report::{AnalysisMetadata, Finding, Location};
 
     fn report() -> Report {
         Report {
-            version: 3,
+            schema_version: 4,
+            tool_version: env!("CARGO_PKG_VERSION"),
+            complete: true,
+            analysis: AnalysisMetadata::default(),
+            errors: Vec::new(),
             files: 2,
             source_lines: 4,
             analyzed_lines: 4,
@@ -208,6 +212,7 @@ mod tests {
             duplication_percent: 50.0,
             findings: vec![Finding {
                 code: "DUP001".to_owned(),
+                fingerprint: format!("arid-finding-v1:sha256:{}", "0".repeat(64)),
                 lines: 2,
                 context: FindingContext::Executable,
                 scope: FindingScope::Function,
@@ -291,15 +296,15 @@ mod tests {
     }
 
     #[test]
-    fn mixed_distribution_uses_distribution_style() {
+    fn hybrid_distribution_uses_distribution_style() {
         let styles = TextStyles::colored();
         let mut report = report();
-        report.findings[0].distribution = FindingDistribution::Mixed;
+        report.findings[0].distribution = FindingDistribution::Hybrid;
 
         let rendered = render_text(&report, true);
 
         assert!(rendered.contains(&format!(
-            "{}(mixed){:#}",
+            "{}(hybrid){:#}",
             styles.distribution, styles.distribution,
         )));
     }
@@ -308,7 +313,11 @@ mod tests {
     fn zero_duplication_uses_success_style() {
         let styles = TextStyles::colored();
         let report = Report {
-            version: 3,
+            schema_version: 4,
+            tool_version: env!("CARGO_PKG_VERSION"),
+            complete: true,
+            analysis: AnalysisMetadata::default(),
+            errors: Vec::new(),
             files: 1,
             source_lines: 1,
             analyzed_lines: 1,

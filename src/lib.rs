@@ -31,14 +31,14 @@ use cli::{Cli, ColorWhen, OutputFormat};
 use config::{LoadedSettings, SettingsOverrides, load_settings};
 use corpus::build_corpus;
 use detect::detect_duplicates;
-use error::{ErrorKind, OperationalError};
+use error::{ErrorKind, OperationalError, render_error_json};
 use files::discover_python_files;
 use markdown::render_markdown;
 use model::{NormalizationOptions, PreparedFile};
 use normalize::prepare_file;
 use outcome::ExitStatus;
 pub use outcome::RunResult;
-use report::{ReportOptions, build_report, render_json};
+use report::{AnalysisMetadata, ReportOptions, build_report, render_json};
 use sarif::render_sarif;
 use text::render_text;
 
@@ -96,8 +96,16 @@ pub fn run(cli: &Cli) -> RunResult {
 /// discover → read → normalize → corpus → detect → baseline → report
 #[must_use]
 pub fn run_with_context(cli: &Cli, context: RunContext) -> RunResult {
+    let output_format = cli.output_format();
+
     match execute(cli, context) {
         Ok(result) => result,
+        Err(error) if output_format == OutputFormat::Json => match render_error_json(error) {
+            Ok(output) => RunResult::new(output, "", ExitStatus::Error),
+            Err(render_error) => RunResult::failure(format!(
+                "failed to render JSON operational error: {render_error}"
+            )),
+        },
         Err(error) => RunResult::failure(error.to_string()),
     }
 }
@@ -116,6 +124,8 @@ fn execute(cli: &Cli, context: RunContext) -> Result<RunResult, OperationalError
         )
     })?;
     let normalization = loaded.settings.normalization_options();
+    let baseline_path = selected_baseline_path(cli, &loaded);
+    let analysis = analysis_metadata(&loaded, baseline_path.is_some());
 
     let discovered = discover_python_files(&paths, &loaded.settings, &loaded.project_root)
         .map_err(|error| {
@@ -162,7 +172,7 @@ fn execute(cli: &Cli, context: RunContext) -> Result<RunResult, OperationalError
         return Ok(RunResult::new("", "", ExitStatus::Success));
     }
 
-    let groups = if let Some(path) = selected_baseline_path(cli, &loaded) {
+    let groups = if let Some(path) = baseline_path {
         let baseline = read_baseline(&path, normalization).map_err(|error| {
             OperationalError::new(
                 ErrorKind::Baseline,
@@ -195,6 +205,9 @@ fn execute(cli: &Cli, context: RunContext) -> Result<RunResult, OperationalError
         &ReportOptions {
             show_source: cli.show_source,
             path_root: Some(loaded.project_root),
+            analysis,
+            complete: true,
+            errors: Vec::new(),
         },
     )
     .map_err(|error| {
@@ -228,6 +241,25 @@ fn selected_baseline_path(cli: &Cli, loaded: &LoadedSettings) -> Option<PathBuf>
     cli.baseline
         .clone()
         .or_else(|| loaded.settings.baseline.clone())
+}
+
+fn analysis_metadata(loaded: &LoadedSettings, baseline_enabled: bool) -> AnalysisMetadata {
+    let settings = &loaded.settings;
+
+    AnalysisMetadata {
+        min_lines: settings.min_lines,
+        ignore_comments: settings.ignore_comments,
+        ignore_docstrings: settings.ignore_docstrings,
+        ignore_imports: settings.ignore_imports,
+        ignore_signatures: settings.ignore_signatures,
+        same_file: settings.same_file,
+        hidden: settings.hidden,
+        exclude: settings.exclude.clone(),
+        baseline_enabled,
+        focus: Vec::new(),
+        virtual_source: None,
+        keep_going: false,
+    }
 }
 
 fn validate_output_options(cli: &Cli, output_format: OutputFormat) -> Result<(), OperationalError> {
@@ -596,12 +628,18 @@ baseline = "configured.json"
         let result = run(&cli);
 
         assert_eq!(result.exit_status(), ExitStatus::Findings);
-
         let value: serde_json::Value = serde_json::from_str(result.stdout()).unwrap();
 
-        assert_eq!(value["version"], 3);
+        assert_eq!(value["schema_version"], 4);
+        assert!(value.get("version").is_none());
+        assert_eq!(value["tool_version"], env!("CARGO_PKG_VERSION"));
+        assert_eq!(value["analysis"]["min_lines"], 2);
         assert_eq!(value["duplicate_groups"], 1);
         assert_eq!(value["findings"][0]["code"], "DUP001");
+        assert!(value["findings"][0]["fingerprint"]
+            .as_str()
+            .unwrap()
+            .starts_with("arid-finding-v1:sha256:"));
     }
 
     #[test]
@@ -782,10 +820,12 @@ baseline = "configured.json"
         let result = run(&cli);
 
         assert_eq!(result.exit_status(), ExitStatus::Error);
-        assert_eq!(
-            result.stderr(),
-            "error: --color is only valid with text output\n"
-        );
+        assert!(result.stderr().is_empty());
+
+        let value: serde_json::Value = serde_json::from_str(result.stdout()).unwrap();
+        assert_eq!(value["schema_version"], 1);
+        assert_eq!(value["error"]["kind"], "configuration");
+        assert_eq!(value["error"]["message"], "--color is only valid with text output");
     }
 
     #[test]

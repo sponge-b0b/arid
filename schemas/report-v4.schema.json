@@ -1,0 +1,240 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Arid JSON Report v4",
+  "description": "Schema for Arid's stable JSON report contract, version 4.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "tool_version",
+    "complete",
+    "analysis",
+    "errors",
+    "files",
+    "source_lines",
+    "analyzed_lines",
+    "duplicate_groups",
+    "duplicate_lines",
+    "duplication_percent",
+    "findings"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 4
+    },
+    "tool_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "complete": {
+      "type": "boolean"
+    },
+    "analysis": {
+      "$ref": "#/$defs/analysis"
+    },
+    "errors": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/error"
+      }
+    },
+    "files": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "source_lines": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "analyzed_lines": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "duplicate_groups": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "duplicate_lines": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "duplication_percent": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/finding"
+      }
+    }
+  },
+  "$defs": {
+    "analysis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "min_lines",
+        "ignore_comments",
+        "ignore_docstrings",
+        "ignore_imports",
+        "ignore_signatures",
+        "same_file",
+        "hidden",
+        "exclude",
+        "baseline_enabled",
+        "focus",
+        "virtual_source",
+        "keep_going"
+      ],
+      "properties": {
+        "min_lines": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "ignore_comments": {
+          "type": "boolean"
+        },
+        "ignore_docstrings": {
+          "type": "boolean"
+        },
+        "ignore_imports": {
+          "type": "boolean"
+        },
+        "ignore_signatures": {
+          "type": "boolean"
+        },
+        "same_file": {
+          "type": "boolean"
+        },
+        "hidden": {
+          "type": "boolean"
+        },
+        "exclude": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "baseline_enabled": {
+          "type": "boolean"
+        },
+        "focus": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "virtual_source": {
+          "type": ["string", "null"],
+          "minLength": 1
+        },
+        "keep_going": {
+          "type": "boolean"
+        }
+      }
+    },
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "message"],
+      "properties": {
+        "kind": {
+          "enum": [
+            "configuration",
+            "discovery",
+            "read",
+            "parse",
+            "normalization",
+            "baseline",
+            "output",
+            "internal"
+          ]
+        },
+        "message": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "fingerprint",
+        "lines",
+        "context",
+        "scope",
+        "occurrences",
+        "files",
+        "distribution",
+        "locations"
+      ],
+      "properties": {
+        "code": {
+          "const": "DUP001"
+        },
+        "fingerprint": {
+          "type": "string",
+          "pattern": "^arid-finding-v1:sha256:[0-9a-f]{64}$"
+        },
+        "lines": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "context": {
+          "enum": ["declarative", "executable", "mixed"]
+        },
+        "scope": {
+          "enum": ["module", "class", "function", "mixed"]
+        },
+        "occurrences": {
+          "type": "integer",
+          "minimum": 2
+        },
+        "files": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "distribution": {
+          "enum": ["same-file", "cross-file", "hybrid"]
+        },
+        "locations": {
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "$ref": "#/$defs/location"
+          }
+        }
+      }
+    },
+    "location": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "start_line", "end_line"],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "start_line": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "end_line": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "source": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}
