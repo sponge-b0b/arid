@@ -136,10 +136,7 @@ pub(crate) fn prepare_sources(
     workers: usize,
     project_root: &Path,
 ) -> Result<Vec<PreparedFile>, OperationalError> {
-    Ok(
-        prepare_sources_with_policy(inputs, options, workers, project_root, false)?
-            .files,
-    )
+    Ok(prepare_sources_with_policy(inputs, options, workers, project_root, false)?.files)
 }
 
 pub(crate) fn prepare_sources_with_policy(
