@@ -39,6 +39,20 @@ pub struct Cli {
     #[arg(long, value_name = "PATH")]
     pub project_root: Option<PathBuf>,
 
+    /// Show the resolved project configuration and exit.
+    #[arg(
+        long,
+        conflicts_with_all = ["list_files", "baseline_status", "prune_baseline", "write_baseline"]
+    )]
+    pub show_config: bool,
+
+    /// List Python files selected by discovery and exit.
+    #[arg(
+        long,
+        conflicts_with_all = ["show_config", "baseline_status", "prune_baseline", "write_baseline"]
+    )]
+    pub list_files: bool,
+
     /// Minimum number of effective lines required for a duplicate.
     #[arg(long, value_name = "N")]
     pub min_lines: Option<u32>,
@@ -194,6 +208,8 @@ mod tests {
         assert_eq!(cli.config, None);
         assert!(!cli.no_config);
         assert_eq!(cli.project_root, None);
+        assert!(!cli.show_config);
+        assert!(!cli.list_files);
         assert_eq!(cli.min_lines, None);
         assert!(!cli.ignore_comments);
         assert!(!cli.no_ignore_comments);
@@ -268,9 +284,44 @@ mod tests {
     }
 
     #[test]
+    fn accepts_introspection_modes() {
+        let cli = Cli::try_parse_from(["arid", "--show-config", "--json"]).unwrap();
+        assert!(cli.show_config);
+        assert!(!cli.list_files);
+        assert_eq!(cli.output_format(), OutputFormat::Json);
+
+        let cli = Cli::try_parse_from(["arid", "--list-files"]).unwrap();
+        assert!(!cli.show_config);
+        assert!(cli.list_files);
+    }
+
+    #[test]
     fn rejects_config_with_no_config() {
         assert!(
             Cli::try_parse_from(["arid", "--config", "pyproject.toml", "--no-config",]).is_err()
+        );
+    }
+
+    #[test]
+    fn rejects_conflicting_introspection_modes() {
+        assert!(Cli::try_parse_from(["arid", "--show-config", "--list-files"]).is_err());
+        assert!(
+            Cli::try_parse_from([
+                "arid",
+                "--show-config",
+                "--baseline-status",
+                "debt.json"
+            ])
+            .is_err()
+        );
+        assert!(
+            Cli::try_parse_from([
+                "arid",
+                "--list-files",
+                "--prune-baseline",
+                "debt.json"
+            ])
+            .is_err()
         );
     }
 

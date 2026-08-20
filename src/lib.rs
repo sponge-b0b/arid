@@ -14,6 +14,7 @@ pub mod detect;
 mod error;
 pub mod files;
 mod fingerprint;
+mod introspection;
 mod markdown;
 pub mod metrics;
 pub mod model;
@@ -35,6 +36,10 @@ use corpus::build_corpus;
 use detect::detect_duplicates;
 use error::{ErrorKind, OperationalError, render_error_json};
 use files::discover_python_files;
+use introspection::{
+    discovered_file_names, render_config_json, render_config_text, render_file_list_json,
+    render_file_list_text,
+};
 use markdown::render_markdown;
 use model::{NormalizationOptions, PreparedFile};
 use normalize::prepare_file;
@@ -127,8 +132,32 @@ fn execute(cli: &Cli, context: RunContext) -> Result<RunResult, OperationalError
                     format!("failed to load configuration: {error}"),
                 )
             })?;
-    let normalization = loaded.settings.normalization_options();
     let baseline_path = selected_baseline_path(cli, &loaded);
+
+    if cli.show_config {
+        let output = match output_format {
+            OutputFormat::Text => {
+                render_config_text(&loaded, cli.no_config, baseline_path.as_deref())
+            }
+            OutputFormat::Json => {
+                render_config_json(&loaded, cli.no_config, baseline_path.as_deref()).map_err(
+                    |error| {
+                        OperationalError::new(
+                            ErrorKind::Output,
+                            format!("failed to render configuration JSON: {error}"),
+                        )
+                    },
+                )?
+            }
+            OutputFormat::Markdown | OutputFormat::Sarif => {
+                unreachable!("configuration introspection output is validated before execution")
+            }
+        };
+
+        return Ok(RunResult::new(output, "", ExitStatus::Success));
+    }
+
+    let normalization = loaded.settings.normalization_options();
     let analysis = analysis_metadata(&loaded, baseline_path.is_some());
 
     let discovered = discover_python_files(&paths, &loaded.settings, &loaded.project_root)
@@ -138,6 +167,24 @@ fn execute(cli: &Cli, context: RunContext) -> Result<RunResult, OperationalError
                 format!("failed to discover Python files: {error}"),
             )
         })?;
+
+    if cli.list_files {
+        let files = discovered_file_names(&discovered, &loaded.project_root);
+        let output = match output_format {
+            OutputFormat::Text => render_file_list_text(&files),
+            OutputFormat::Json => render_file_list_json(&files).map_err(|error| {
+                OperationalError::new(
+                    ErrorKind::Output,
+                    format!("failed to render discovered file list JSON: {error}"),
+                )
+            })?,
+            OutputFormat::Markdown | OutputFormat::Sarif => {
+                unreachable!("file-list introspection output is validated before execution")
+            }
+        };
+
+        return Ok(RunResult::new(output, "", ExitStatus::Success));
+    }
 
     let prepared = prepare_files(discovered, normalization, cli.workers, &loaded.project_root)?;
 
@@ -346,15 +393,19 @@ fn analysis_metadata(loaded: &LoadedSettings, baseline_enabled: bool) -> Analysi
 }
 
 fn validate_output_options(cli: &Cli, output_format: OutputFormat) -> Result<(), OperationalError> {
-    let baseline_administration = if cli.baseline_status.is_some() {
+    let administrative_mode = if cli.baseline_status.is_some() {
         Some("--baseline-status")
     } else if cli.prune_baseline.is_some() {
         Some("--prune-baseline")
+    } else if cli.show_config {
+        Some("--show-config")
+    } else if cli.list_files {
+        Some("--list-files")
     } else {
         None
     };
 
-    if let Some(mode) = baseline_administration {
+    if let Some(mode) = administrative_mode {
         if cli.show_source {
             return Err(OperationalError::new(
                 ErrorKind::Configuration,
@@ -569,6 +620,8 @@ min-lines = 2
             config: None,
             no_config: false,
             project_root: None,
+            show_config: false,
+            list_files: false,
             min_lines: None,
             ignore_comments: false,
             no_ignore_comments: false,
@@ -628,6 +681,80 @@ min-lines = 2
 
         assert_eq!(result.exit_status(), ExitStatus::Success);
         assert!(result.stdout().contains("No duplicate code found."));
+    }
+
+    #[test]
+    fn show_config_reports_effective_settings() {
+        let temp = TempDir::new();
+        temp.write(
+            "pyproject.toml",
+            r#"
+[tool.arid]
+min-lines = 7
+hidden = true
+exclude = ["generated/**"]
+baseline = "debt.json"
+"#,
+        );
+        temp.write("broken.py", "def broken(:\n");
+
+        let mut cli = test_cli(vec![temp.path().to_path_buf()]);
+        cli.show_config = true;
+        cli.json = true;
+        cli.min_lines = Some(5);
+
+        let result = run(&cli);
+        assert_eq!(result.exit_status(), ExitStatus::Success);
+        assert!(result.stderr().is_empty());
+
+        let value: serde_json::Value = serde_json::from_str(result.stdout()).unwrap();
+        assert_eq!(value["schema_version"], 1);
+        assert_eq!(value["configuration"]["state"], "file");
+        assert_eq!(value["settings"]["min_lines"], 5);
+        assert_eq!(value["settings"]["hidden"], true);
+        assert_eq!(value["settings"]["exclude"][0], "generated/**");
+        assert_eq!(
+            value["settings"]["baseline"],
+            temp.path().join("debt.json").to_string_lossy().as_ref()
+        );
+    }
+
+    #[test]
+    fn list_files_stops_before_source_preparation() {
+        let temp = TempDir::new();
+        write_test_config(&temp);
+        temp.write("a.py", "alpha = 1\nbeta = 2\n");
+        temp.write("broken.py", "def broken(:\n");
+        temp.write("notes.txt", "not Python\n");
+
+        let mut cli = test_cli(vec![temp.path().to_path_buf()]);
+        cli.list_files = true;
+
+        let listed = run(&cli);
+        assert_eq!(listed.exit_status(), ExitStatus::Success);
+        assert_eq!(listed.stdout(), "a.py\nbroken.py\n");
+
+        cli.list_files = false;
+        let scanned = run(&cli);
+        assert_eq!(scanned.exit_status(), ExitStatus::Error);
+        assert!(scanned.stderr().contains("broken.py"));
+    }
+
+    #[test]
+    fn introspection_rejects_non_administrative_output_options() {
+        let (_temp, mut cli) = duplicate_fixture();
+        cli.show_config = true;
+        cli.format = Some(OutputFormat::Markdown);
+        let error = run(&cli);
+        assert_eq!(error.exit_status(), ExitStatus::Error);
+        assert!(error.stderr().contains("supports only text or JSON"));
+
+        cli.show_config = false;
+        cli.list_files = true;
+        cli.format = Some(OutputFormat::Sarif);
+        let error = run(&cli);
+        assert_eq!(error.exit_status(), ExitStatus::Error);
+        assert!(error.stderr().contains("supports only text or JSON"));
     }
 
     #[test]
