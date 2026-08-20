@@ -116,21 +116,15 @@ fn execute(cli: &Cli, context: RunContext) -> Result<RunResult, OperationalError
     })?;
     let normalization = loaded.settings.normalization_options();
 
-    let discovered = discover_python_files(&paths, &loaded.settings, &loaded.project_root).map_err(
-        |error| {
+    let discovered = discover_python_files(&paths, &loaded.settings, &loaded.project_root)
+        .map_err(|error| {
             OperationalError::new(
                 ErrorKind::Discovery,
                 format!("failed to discover Python files: {error}"),
             )
-        },
-    )?;
+        })?;
 
-    let prepared = prepare_files(
-        discovered,
-        normalization,
-        cli.workers,
-        &loaded.project_root,
-    )?;
+    let prepared = prepare_files(discovered, normalization, cli.workers, &loaded.project_root)?;
 
     let corpus = build_corpus(prepared).map_err(|error| {
         OperationalError::new(
@@ -139,12 +133,13 @@ fn execute(cli: &Cli, context: RunContext) -> Result<RunResult, OperationalError
         )
     })?;
 
-    let groups = detect_duplicates(&corpus, loaded.settings.detection_options()).map_err(|error| {
-        OperationalError::new(
-            ErrorKind::Internal,
-            format!("failed to detect duplicates: {error}"),
-        )
-    })?;
+    let groups =
+        detect_duplicates(&corpus, loaded.settings.detection_options()).map_err(|error| {
+            OperationalError::new(
+                ErrorKind::Internal,
+                format!("failed to detect duplicates: {error}"),
+            )
+        })?;
 
     if let Some(path) = &cli.write_baseline {
         let baseline = build_baseline(&corpus, &groups, normalization, &loaded.project_root)
@@ -234,10 +229,7 @@ fn selected_baseline_path(cli: &Cli, loaded: &LoadedSettings) -> Option<PathBuf>
         .or_else(|| loaded.settings.baseline.clone())
 }
 
-fn validate_output_options(
-    cli: &Cli,
-    output_format: OutputFormat,
-) -> Result<(), OperationalError> {
+fn validate_output_options(cli: &Cli, output_format: OutputFormat) -> Result<(), OperationalError> {
     if cli.color.is_some() && output_format != OutputFormat::Text {
         return Err(OperationalError::new(
             ErrorKind::Configuration,
@@ -551,7 +543,11 @@ baseline = "configured.json"
 
         let error = run(&cli);
         assert_eq!(error.exit_status(), ExitStatus::Error);
-        assert!(error.stderr().contains("normalization settings do not match"));
+        assert!(
+            error
+                .stderr()
+                .contains("normalization settings do not match")
+        );
     }
 
     #[test]
@@ -629,7 +625,11 @@ baseline = "configured.json"
         let result = run(&cli);
 
         assert_eq!(result.exit_status(), ExitStatus::Findings);
-        assert!(result.stdout().starts_with("# Arid duplicate-code report\n\n"));
+        assert!(
+            result
+                .stdout()
+                .starts_with("# Arid duplicate-code report\n\n")
+        );
         assert!(result.stdout().contains("## `DUP001` — 2 duplicated lines"));
         assert!(result.stdout().contains("### `a.py:1-2`"));
         assert!(
