@@ -739,7 +739,12 @@ min-lines = 2
             value["formats"],
             serde_json::json!(["json", "markdown", "sarif", "text"])
         );
-        assert!(!value["features"].as_array().unwrap().contains(&serde_json::json!("multi-report")));
+        assert!(
+            !value["features"]
+                .as_array()
+                .unwrap()
+                .contains(&serde_json::json!("multi-report"))
+        );
     }
 
     #[test]

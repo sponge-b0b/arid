@@ -53,7 +53,10 @@ mod tests {
         assert_eq!(capabilities.baseline_schema_versions, vec![1]);
         assert_eq!(capabilities.error_schema_versions, vec![1]);
         assert_eq!(capabilities.finding_fingerprint_versions, vec![1]);
-        assert_eq!(capabilities.formats, vec!["json", "markdown", "sarif", "text"]);
+        assert_eq!(
+            capabilities.formats,
+            vec!["json", "markdown", "sarif", "text"]
+        );
         assert_eq!(
             capabilities.features,
             vec![
@@ -82,6 +85,9 @@ mod tests {
 
     #[test]
     fn capability_json_is_deterministic() {
-        assert_eq!(render_capabilities_json().unwrap(), render_capabilities_json().unwrap());
+        assert_eq!(
+            render_capabilities_json().unwrap(),
+            render_capabilities_json().unwrap()
+        );
     }
 }
