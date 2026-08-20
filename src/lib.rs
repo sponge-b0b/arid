@@ -43,7 +43,9 @@ use outcome::ExitStatus;
 pub use outcome::RunResult;
 use report::{AnalysisMetadata, ReportOptions, build_report, render_json};
 use sarif::render_sarif;
-use source::{build_source_inputs, prepare_sources, resolve_virtual_source};
+use source::{
+    build_source_inputs, prepare_sources, prepare_sources_with_policy, resolve_virtual_source,
+};
 use text::render_text;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -181,7 +183,12 @@ fn execute(cli: &Cli, context: RunContext) -> Result<RunResult, OperationalError
     let virtual_project_path = virtual_source
         .as_ref()
         .map(|source| source.project_path().to_owned());
-    let analysis = analysis_metadata(&loaded, baseline_path.is_some(), virtual_project_path);
+    let analysis = analysis_metadata(
+        &loaded,
+        baseline_path.is_some(),
+        virtual_project_path,
+        cli.keep_going,
+    );
 
     let discovered = discover_python_files(&paths, &loaded.settings, &loaded.project_root)
         .map_err(|error| {
@@ -210,12 +217,27 @@ fn execute(cli: &Cli, context: RunContext) -> Result<RunResult, OperationalError
     }
 
     let source_inputs = build_source_inputs(discovered, virtual_source);
-    let prepared = prepare_sources(
-        source_inputs,
-        normalization,
-        cli.workers,
-        &loaded.project_root,
-    )?;
+    let (prepared, preparation_errors) = if cli.keep_going {
+        let prepared = prepare_sources_with_policy(
+            source_inputs,
+            normalization,
+            cli.workers,
+            &loaded.project_root,
+            true,
+        )?;
+        (prepared.files, prepared.errors)
+    } else {
+        (
+            prepare_sources(
+                source_inputs,
+                normalization,
+                cli.workers,
+                &loaded.project_root,
+            )?,
+            Vec::new(),
+        )
+    };
+    let complete = preparation_errors.is_empty();
 
     let corpus = build_corpus(prepared).map_err(|error| {
         OperationalError::new(
@@ -365,8 +387,8 @@ fn execute(cli: &Cli, context: RunContext) -> Result<RunResult, OperationalError
             show_source: cli.show_source,
             path_root: Some(loaded.project_root),
             analysis,
-            complete: true,
-            errors: Vec::new(),
+            complete,
+            errors: preparation_errors,
         },
     )
     .map_err(|error| {
@@ -406,6 +428,7 @@ fn analysis_metadata(
     loaded: &LoadedSettings,
     baseline_enabled: bool,
     virtual_source: Option<String>,
+    keep_going: bool,
 ) -> AnalysisMetadata {
     let settings = &loaded.settings;
 
@@ -421,7 +444,7 @@ fn analysis_metadata(
         baseline_enabled,
         focus: Vec::new(),
         virtual_source,
-        keep_going: false,
+        keep_going,
     }
 }
 
@@ -447,6 +470,15 @@ fn validate_output_options(cli: &Cli, output_format: OutputFormat) -> Result<(),
         return Err(OperationalError::new(
             ErrorKind::Configuration,
             format!("--stdin-path is not valid with {mode}"),
+        ));
+    }
+
+    if cli.keep_going
+        && let Some(mode) = non_scan_mode
+    {
+        return Err(OperationalError::new(
+            ErrorKind::Configuration,
+            format!("--keep-going is not valid with {mode}"),
         ));
     }
 
@@ -605,6 +637,7 @@ min-lines = 2
             show_config: false,
             list_files: false,
             stdin_path: None,
+            keep_going: false,
             min_lines: None,
             ignore_comments: false,
             no_ignore_comments: false,
@@ -921,6 +954,22 @@ baseline = "debt.json"
     }
 
     #[test]
+    fn keep_going_rejects_administrative_modes_through_rust_api() {
+        let (_temp, mut cli) = duplicate_fixture();
+        cli.keep_going = true;
+        cli.write_baseline = Some(PathBuf::from("baseline.json"));
+
+        let error = run(&cli);
+
+        assert_eq!(error.exit_status(), ExitStatus::Error);
+        assert!(
+            error
+                .stderr()
+                .contains("--keep-going is not valid with --write-baseline")
+        );
+    }
+
+    #[test]
     fn configured_baseline_is_used_and_cli_baseline_wins() {
         let (temp, mut write_cli) = duplicate_fixture();
         let configured_path = temp.path().join("configured.json");
@@ -1011,6 +1060,49 @@ baseline = "configured.json"
                 .unwrap()
                 .starts_with("arid-finding-v1:sha256:")
         );
+    }
+
+    #[test]
+    fn keep_going_reports_partial_json_with_valid_findings() {
+        let temp = TempDir::new();
+        write_test_config(&temp);
+        temp.write("a.py", "alpha = 1\nbeta = 2\n");
+        temp.write("b.py", "alpha = 1\nbeta = 2\n");
+        temp.write("broken.py", "def broken(:\n");
+
+        let mut cli = test_cli(vec![temp.path().to_path_buf()]);
+        cli.keep_going = true;
+        cli.json = true;
+
+        let result = run(&cli);
+
+        assert_eq!(result.exit_status(), ExitStatus::Error);
+        assert!(result.stderr().is_empty());
+        let value: serde_json::Value = serde_json::from_str(result.stdout()).unwrap();
+        assert_eq!(value["complete"], false);
+        assert_eq!(value["analysis"]["keep_going"], true);
+        assert_eq!(value["files"], 2);
+        assert_eq!(value["duplicate_groups"], 1);
+        assert_eq!(value["errors"].as_array().unwrap().len(), 1);
+        assert_eq!(value["errors"][0]["kind"], "parse");
+        assert_eq!(value["errors"][0]["path"], "broken.py");
+        assert_eq!(value["findings"][0]["code"], "DUP001");
+    }
+
+    #[test]
+    fn keep_going_without_source_errors_produces_complete_report() {
+        let (_temp, mut cli) = duplicate_fixture();
+        cli.keep_going = true;
+        cli.json = true;
+
+        let result = run(&cli);
+
+        assert_eq!(result.exit_status(), ExitStatus::Findings);
+        let value: serde_json::Value = serde_json::from_str(result.stdout()).unwrap();
+        assert_eq!(value["complete"], true);
+        assert_eq!(value["analysis"]["keep_going"], true);
+        assert!(value["errors"].as_array().unwrap().is_empty());
+        assert_eq!(value["duplicate_groups"], 1);
     }
 
     #[test]

@@ -61,6 +61,13 @@ pub struct Cli {
     )]
     pub stdin_path: Option<PathBuf>,
 
+    /// Continue after independent source read, parse, or normalization failures.
+    #[arg(
+        long,
+        conflicts_with_all = ["show_config", "list_files", "baseline_status", "prune_baseline", "write_baseline"]
+    )]
+    pub keep_going: bool,
+
     /// Minimum number of effective lines required for a duplicate.
     #[arg(long, value_name = "N")]
     pub min_lines: Option<u32>,
@@ -219,6 +226,7 @@ mod tests {
         assert!(!cli.show_config);
         assert!(!cli.list_files);
         assert_eq!(cli.stdin_path, None);
+        assert!(!cli.keep_going);
         assert_eq!(cli.min_lines, None);
         assert!(!cli.ignore_comments);
         assert!(!cli.no_ignore_comments);
@@ -311,6 +319,12 @@ mod tests {
     }
 
     #[test]
+    fn accepts_keep_going() {
+        let cli = Cli::try_parse_from(["arid", "--keep-going"]).unwrap();
+        assert!(cli.keep_going);
+    }
+
+    #[test]
     fn rejects_config_with_no_config() {
         assert!(
             Cli::try_parse_from(["arid", "--config", "pyproject.toml", "--no-config",]).is_err()
@@ -339,6 +353,26 @@ mod tests {
             "--write-baseline",
         ] {
             let mut args = vec!["arid", "--stdin-path", "src/proposed.py", mode];
+            if matches!(
+                mode,
+                "--baseline-status" | "--prune-baseline" | "--write-baseline"
+            ) {
+                args.push("debt.json");
+            }
+            assert!(Cli::try_parse_from(args).is_err(), "{mode}");
+        }
+    }
+
+    #[test]
+    fn rejects_keep_going_for_administrative_modes() {
+        for mode in [
+            "--show-config",
+            "--list-files",
+            "--baseline-status",
+            "--prune-baseline",
+            "--write-baseline",
+        ] {
+            let mut args = vec!["arid", "--keep-going", mode];
             if matches!(
                 mode,
                 "--baseline-status" | "--prune-baseline" | "--write-baseline"

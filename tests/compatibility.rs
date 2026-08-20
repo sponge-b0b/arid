@@ -20,6 +20,7 @@ fn test_cli(path: PathBuf) -> Cli {
         show_config: false,
         list_files: false,
         stdin_path: None,
+        keep_going: false,
         min_lines: None,
         ignore_comments: false,
         no_ignore_comments: false,
