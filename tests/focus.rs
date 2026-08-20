@@ -64,6 +64,7 @@ fn test_cli(root: &Path) -> Cli {
         stdin_path: None,
         keep_going: false,
         focus: Vec::new(),
+        no_fail_on_findings: false,
         min_lines: None,
         ignore_comments: false,
         no_ignore_comments: false,

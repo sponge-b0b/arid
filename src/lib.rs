@@ -9,6 +9,7 @@ pub mod config;
 pub mod corpus;
 pub mod detect;
 mod error;
+mod exit_policy;
 pub mod files;
 mod fingerprint;
 mod introspection;
@@ -33,6 +34,7 @@ use config::{LoadedSettings, ProjectOptions, SettingsOverrides, load_settings_wi
 use corpus::build_corpus;
 use detect::detect_duplicates;
 use error::{ErrorKind, OperationalError, render_error_json};
+use exit_policy::apply_no_fail_on_findings;
 use files::discover_python_files;
 use introspection::{
     discovered_file_names, render_config_json, render_config_text, render_file_list_json,
@@ -419,7 +421,8 @@ fn execute(cli: &Cli, context: RunContext) -> Result<RunResult, OperationalError
         })?,
     };
 
-    Ok(RunResult::new(output, "", report.exit_status()))
+    let exit_status = apply_no_fail_on_findings(report.exit_status(), cli.no_fail_on_findings);
+    Ok(RunResult::new(output, "", exit_status))
 }
 
 fn selected_baseline_path(cli: &Cli, loaded: &LoadedSettings) -> Option<PathBuf> {
@@ -493,6 +496,15 @@ fn validate_output_options(cli: &Cli, output_format: OutputFormat) -> Result<(),
         return Err(OperationalError::new(
             ErrorKind::Configuration,
             format!("--focus is not valid with {mode}"),
+        ));
+    }
+
+    if cli.no_fail_on_findings
+        && let Some(mode) = non_scan_mode
+    {
+        return Err(OperationalError::new(
+            ErrorKind::Configuration,
+            format!("--no-fail-on-findings is not valid with {mode}"),
         ));
     }
 
@@ -653,6 +665,7 @@ min-lines = 2
             stdin_path: None,
             keep_going: false,
             focus: Vec::new(),
+            no_fail_on_findings: false,
             min_lines: None,
             ignore_comments: false,
             no_ignore_comments: false,

@@ -76,6 +76,13 @@ pub struct Cli {
     )]
     pub focus: Vec<PathBuf>,
 
+    /// Exit successfully when a complete scan has duplicate findings.
+    #[arg(
+        long,
+        conflicts_with_all = ["show_config", "list_files", "baseline_status", "prune_baseline", "write_baseline"]
+    )]
+    pub no_fail_on_findings: bool,
+
     /// Minimum number of effective lines required for a duplicate.
     #[arg(long, value_name = "N")]
     pub min_lines: Option<u32>,
@@ -236,6 +243,7 @@ mod tests {
         assert_eq!(cli.stdin_path, None);
         assert!(!cli.keep_going);
         assert!(cli.focus.is_empty());
+        assert!(!cli.no_fail_on_findings);
         assert_eq!(cli.min_lines, None);
         assert!(!cli.ignore_comments);
         assert!(!cli.no_ignore_comments);
@@ -343,6 +351,12 @@ mod tests {
     }
 
     #[test]
+    fn accepts_no_fail_on_findings() {
+        let cli = Cli::try_parse_from(["arid", "--no-fail-on-findings"]).unwrap();
+        assert!(cli.no_fail_on_findings);
+    }
+
+    #[test]
     fn rejects_config_with_no_config() {
         assert!(
             Cli::try_parse_from(["arid", "--config", "pyproject.toml", "--no-config",]).is_err()
@@ -411,6 +425,26 @@ mod tests {
             "--write-baseline",
         ] {
             let mut args = vec!["arid", "--focus", "src/a.py", mode];
+            if matches!(
+                mode,
+                "--baseline-status" | "--prune-baseline" | "--write-baseline"
+            ) {
+                args.push("debt.json");
+            }
+            assert!(Cli::try_parse_from(args).is_err(), "{mode}");
+        }
+    }
+
+    #[test]
+    fn rejects_no_fail_on_findings_for_administrative_modes() {
+        for mode in [
+            "--show-config",
+            "--list-files",
+            "--baseline-status",
+            "--prune-baseline",
+            "--write-baseline",
+        ] {
+            let mut args = vec!["arid", "--no-fail-on-findings", mode];
             if matches!(
                 mode,
                 "--baseline-status" | "--prune-baseline" | "--write-baseline"
