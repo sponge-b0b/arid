@@ -1,8 +1,5 @@
 use std::ffi::OsStr;
-use std::fs;
-use std::path::{Path, PathBuf};
-
-use rayon::prelude::*;
+use std::path::PathBuf;
 
 pub mod baseline;
 mod baseline_filter;
@@ -24,6 +21,7 @@ mod project_path;
 mod python;
 pub mod report;
 mod sarif;
+mod source;
 pub mod suffix;
 mod text;
 
@@ -41,12 +39,11 @@ use introspection::{
     render_file_list_text,
 };
 use markdown::render_markdown;
-use model::{NormalizationOptions, PreparedFile};
-use normalize::prepare_file;
 use outcome::ExitStatus;
 pub use outcome::RunResult;
 use report::{AnalysisMetadata, ReportOptions, build_report, render_json};
 use sarif::render_sarif;
+use source::{build_source_inputs, prepare_sources};
 use text::render_text;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -100,7 +97,7 @@ pub fn run(cli: &Cli) -> RunResult {
 ///
 /// Application pipeline:
 ///
-/// discover → read → normalize → corpus → detect → baseline → report
+/// discover → source input → normalize → corpus → detect → baseline → report
 #[must_use]
 pub fn run_with_context(cli: &Cli, context: RunContext) -> RunResult {
     let output_format = cli.output_format();
@@ -186,7 +183,13 @@ fn execute(cli: &Cli, context: RunContext) -> Result<RunResult, OperationalError
         return Ok(RunResult::new(output, "", ExitStatus::Success));
     }
 
-    let prepared = prepare_files(discovered, normalization, cli.workers, &loaded.project_root)?;
+    let source_inputs = build_source_inputs(discovered, None);
+    let prepared = prepare_sources(
+        source_inputs,
+        normalization,
+        cli.workers,
+        &loaded.project_root,
+    )?;
 
     let corpus = build_corpus(prepared).map_err(|error| {
         OperationalError::new(
@@ -460,70 +463,6 @@ fn resolve_text_color(explicit: Option<ColorWhen>, context: RunContext) -> bool 
     }
 }
 
-fn prepare_files(
-    paths: Vec<PathBuf>,
-    options: NormalizationOptions,
-    workers: usize,
-    project_root: &Path,
-) -> Result<Vec<PreparedFile>, OperationalError> {
-    if workers == 0 {
-        return Err(OperationalError::new(
-            ErrorKind::Configuration,
-            "worker count must be at least 1",
-        ));
-    }
-
-    if workers == 1 || paths.len() < 2 {
-        return paths
-            .into_iter()
-            .map(|path| prepare_path(path, options, project_root))
-            .collect();
-    }
-
-    let worker_count = workers.min(paths.len());
-
-    let pool = rayon::ThreadPoolBuilder::new()
-        .num_threads(worker_count)
-        .build()
-        .map_err(|error| {
-            OperationalError::new(
-                ErrorKind::Internal,
-                format!("failed to create worker pool: {error}"),
-            )
-        })?;
-
-    let results = pool.install(|| {
-        paths
-            .into_par_iter()
-            .map(|path| prepare_path(path, options, project_root))
-            .collect::<Vec<_>>()
-    });
-
-    results.into_iter().collect()
-}
-
-fn prepare_path(
-    path: PathBuf,
-    options: NormalizationOptions,
-    project_root: &Path,
-) -> Result<PreparedFile, OperationalError> {
-    let source = fs::read_to_string(&path).map_err(|error| {
-        OperationalError::new(
-            ErrorKind::Read,
-            format!("failed to read {}: {error}", path.display()),
-        )
-        .with_project_path(&path, project_root)
-    })?;
-
-    prepare_file(path.clone(), source, options).map_err(|error| {
-        OperationalError::new(
-            ErrorKind::Parse,
-            format!("failed to prepare Python source: {error}"),
-        )
-        .with_project_path(&path, project_root)
-    })
-}
-
 fn scan_paths(cli: &Cli) -> Vec<PathBuf> {
     if cli.paths.is_empty() {
         vec![PathBuf::from(".")]
@@ -564,6 +503,7 @@ fn boolean_override(enabled: bool, disabled: bool) -> Option<bool> {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
     use std::path::{Path, PathBuf};
     use std::sync::atomic::{AtomicUsize, Ordering};
 
