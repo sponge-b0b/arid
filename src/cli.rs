@@ -68,6 +68,14 @@ pub struct Cli {
     )]
     pub keep_going: bool,
 
+    /// Report duplicate groups touching PATH. May be repeated.
+    #[arg(
+        long,
+        value_name = "PATH",
+        conflicts_with_all = ["show_config", "list_files", "baseline_status", "prune_baseline", "write_baseline"]
+    )]
+    pub focus: Vec<PathBuf>,
+
     /// Minimum number of effective lines required for a duplicate.
     #[arg(long, value_name = "N")]
     pub min_lines: Option<u32>,
@@ -227,6 +235,7 @@ mod tests {
         assert!(!cli.list_files);
         assert_eq!(cli.stdin_path, None);
         assert!(!cli.keep_going);
+        assert!(cli.focus.is_empty());
         assert_eq!(cli.min_lines, None);
         assert!(!cli.ignore_comments);
         assert!(!cli.no_ignore_comments);
@@ -325,6 +334,22 @@ mod tests {
     }
 
     #[test]
+    fn accepts_repeatable_focus() {
+        let cli = Cli::try_parse_from([
+            "arid",
+            "--focus",
+            "src/a.py",
+            "--focus",
+            "tests",
+        ])
+        .unwrap();
+        assert_eq!(
+            cli.focus,
+            vec![PathBuf::from("src/a.py"), PathBuf::from("tests")]
+        );
+    }
+
+    #[test]
     fn rejects_config_with_no_config() {
         assert!(
             Cli::try_parse_from(["arid", "--config", "pyproject.toml", "--no-config",]).is_err()
@@ -373,6 +398,26 @@ mod tests {
             "--write-baseline",
         ] {
             let mut args = vec!["arid", "--keep-going", mode];
+            if matches!(
+                mode,
+                "--baseline-status" | "--prune-baseline" | "--write-baseline"
+            ) {
+                args.push("debt.json");
+            }
+            assert!(Cli::try_parse_from(args).is_err(), "{mode}");
+        }
+    }
+
+    #[test]
+    fn rejects_focus_for_administrative_modes() {
+        for mode in [
+            "--show-config",
+            "--list-files",
+            "--baseline-status",
+            "--prune-baseline",
+            "--write-baseline",
+        ] {
+            let mut args = vec!["arid", "--focus", "src/a.py", mode];
             if matches!(
                 mode,
                 "--baseline-status" | "--prune-baseline" | "--write-baseline"

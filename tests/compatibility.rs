@@ -21,6 +21,7 @@ fn test_cli(path: PathBuf) -> Cli {
         list_files: false,
         stdin_path: None,
         keep_going: false,
+        focus: Vec::new(),
         min_lines: None,
         ignore_comments: false,
         no_ignore_comments: false,

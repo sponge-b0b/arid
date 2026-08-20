@@ -43,6 +43,7 @@ use outcome::ExitStatus;
 pub use outcome::RunResult;
 use report::{AnalysisMetadata, ReportOptions, build_report, render_json};
 use sarif::render_sarif;
+use source::focus::resolve_focus;
 use source::{
     build_source_inputs, prepare_sources, prepare_sources_with_policy, resolve_virtual_source,
 };
@@ -115,7 +116,7 @@ pub fn run(cli: &Cli) -> RunResult {
 ///
 /// Application pipeline:
 ///
-/// discover → source input → normalize → corpus → detect → baseline → report
+/// discover → source input → normalize → corpus → detect → baseline → focus → report
 #[must_use]
 pub fn run_with_context(cli: &Cli, context: RunContext) -> RunResult {
     let output_format = cli.output_format();
@@ -183,12 +184,6 @@ fn execute(cli: &Cli, context: RunContext) -> Result<RunResult, OperationalError
     let virtual_project_path = virtual_source
         .as_ref()
         .map(|source| source.project_path().to_owned());
-    let analysis = analysis_metadata(
-        &loaded,
-        baseline_path.is_some(),
-        virtual_project_path,
-        cli.keep_going,
-    );
 
     let discovered = discover_python_files(&paths, &loaded.settings, &loaded.project_root)
         .map_err(|error| {
@@ -217,6 +212,14 @@ fn execute(cli: &Cli, context: RunContext) -> Result<RunResult, OperationalError
     }
 
     let source_inputs = build_source_inputs(discovered, virtual_source);
+    let focus = resolve_focus(&cli.focus, &source_inputs, &loaded.project_root)?;
+    let analysis = analysis_metadata(
+        &loaded,
+        baseline_path.is_some(),
+        focus.selectors().to_vec(),
+        virtual_project_path,
+        cli.keep_going,
+    );
     let (prepared, preparation_errors) = if cli.keep_going {
         let prepared = prepare_sources_with_policy(
             source_inputs,
@@ -379,6 +382,7 @@ fn execute(cli: &Cli, context: RunContext) -> Result<RunResult, OperationalError
     } else {
         groups
     };
+    let groups = focus.filter_groups(&corpus, groups, &loaded.project_root);
 
     let report = build_report(
         &corpus,
@@ -427,6 +431,7 @@ fn selected_baseline_path(cli: &Cli, loaded: &LoadedSettings) -> Option<PathBuf>
 fn analysis_metadata(
     loaded: &LoadedSettings,
     baseline_enabled: bool,
+    focus: Vec<String>,
     virtual_source: Option<String>,
     keep_going: bool,
 ) -> AnalysisMetadata {
@@ -442,7 +447,7 @@ fn analysis_metadata(
         hidden: settings.hidden,
         exclude: settings.exclude.clone(),
         baseline_enabled,
-        focus: Vec::new(),
+        focus,
         virtual_source,
         keep_going,
     }
@@ -479,6 +484,15 @@ fn validate_output_options(cli: &Cli, output_format: OutputFormat) -> Result<(),
         return Err(OperationalError::new(
             ErrorKind::Configuration,
             format!("--keep-going is not valid with {mode}"),
+        ));
+    }
+
+    if !cli.focus.is_empty()
+        && let Some(mode) = non_scan_mode
+    {
+        return Err(OperationalError::new(
+            ErrorKind::Configuration,
+            format!("--focus is not valid with {mode}"),
         ));
     }
 
@@ -638,6 +652,7 @@ min-lines = 2
             list_files: false,
             stdin_path: None,
             keep_going: false,
+            focus: Vec::new(),
             min_lines: None,
             ignore_comments: false,
             no_ignore_comments: false,
