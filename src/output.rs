@@ -44,10 +44,7 @@ pub(crate) fn resolve_report_targets(
         if !destinations.insert(destination.clone()) {
             return Err(OperationalError::new(
                 ErrorKind::Configuration,
-                format!(
-                    "duplicate --report destination: {}",
-                    target.path.display()
-                ),
+                format!("duplicate --report destination: {}", target.path.display()),
             ));
         }
 
@@ -96,16 +93,17 @@ pub(crate) fn write_report_targets(
             .with_project_path(&target.path, project_root)
         })?;
 
-        file.write_all(target.contents.as_bytes()).map_err(|source| {
-            OperationalError::new(
-                ErrorKind::Output,
-                format!(
-                    "failed to write report destination {}: {source}",
-                    target.path.display()
-                ),
-            )
-            .with_project_path(&target.path, project_root)
-        })?;
+        file.write_all(target.contents.as_bytes())
+            .map_err(|source| {
+                OperationalError::new(
+                    ErrorKind::Output,
+                    format!(
+                        "failed to write report destination {}: {source}",
+                        target.path.display()
+                    ),
+                )
+                .with_project_path(&target.path, project_root)
+            })?;
 
         file.commit().map_err(|source| {
             OperationalError::new(

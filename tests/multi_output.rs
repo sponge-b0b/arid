@@ -292,7 +292,10 @@ fn report_write_failure_returns_operational_error() {
 fn report_rejects_administrative_modes_through_rust_api() {
     let (temp, mut cli) = duplicate_fixture();
     cli.json = false;
-    cli.report = vec![format!("json={}", temp.path().join("report.json").display())];
+    cli.report = vec![format!(
+        "json={}",
+        temp.path().join("report.json").display()
+    )];
     cli.write_baseline = Some(temp.path().join("baseline.json"));
 
     let result = run(&cli);
