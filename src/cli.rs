@@ -116,15 +116,23 @@ pub struct Cli {
     #[arg(
         long,
         value_name = "PATH",
-        conflicts_with_all = ["baseline", "write_baseline"]
+        conflicts_with_all = ["baseline", "write_baseline", "prune_baseline"]
     )]
     pub baseline_status: Option<PathBuf>,
+
+    /// Prune stale accepted debt from a baseline.
+    #[arg(
+        long,
+        value_name = "PATH",
+        conflicts_with_all = ["baseline", "baseline_status", "write_baseline"]
+    )]
+    pub prune_baseline: Option<PathBuf>,
 
     /// Write the current duplicate debt as a baseline and exit successfully.
     #[arg(
         long,
         value_name = "PATH",
-        conflicts_with_all = ["baseline", "baseline_status", "format", "json", "color", "show_source"]
+        conflicts_with_all = ["baseline", "baseline_status", "prune_baseline", "format", "json", "color", "show_source"]
     )]
     pub write_baseline: Option<PathBuf>,
 }
@@ -193,6 +201,7 @@ mod tests {
         assert!(!cli.show_source);
         assert_eq!(cli.baseline, None);
         assert_eq!(cli.baseline_status, None);
+        assert_eq!(cli.prune_baseline, None);
         assert_eq!(cli.write_baseline, None);
     }
 
@@ -282,6 +291,9 @@ mod tests {
         let cli = Cli::try_parse_from(["arid", "--baseline-status", "debt.json"]).unwrap();
         assert_eq!(cli.baseline_status, Some(PathBuf::from("debt.json")));
 
+        let cli = Cli::try_parse_from(["arid", "--prune-baseline", "debt.json"]).unwrap();
+        assert_eq!(cli.prune_baseline, Some(PathBuf::from("debt.json")));
+
         let cli = Cli::try_parse_from(["arid", "--write-baseline", "debt.json"]).unwrap();
         assert_eq!(cli.write_baseline, Some(PathBuf::from("debt.json")));
     }
@@ -310,7 +322,28 @@ mod tests {
             ],
             [
                 "arid",
+                "--baseline",
+                "old.json",
+                "--prune-baseline",
+                "new.json",
+            ],
+            [
+                "arid",
                 "--baseline-status",
+                "old.json",
+                "--write-baseline",
+                "new.json",
+            ],
+            [
+                "arid",
+                "--baseline-status",
+                "old.json",
+                "--prune-baseline",
+                "new.json",
+            ],
+            [
+                "arid",
+                "--prune-baseline",
                 "old.json",
                 "--write-baseline",
                 "new.json",

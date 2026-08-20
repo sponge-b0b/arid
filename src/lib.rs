@@ -26,7 +26,7 @@ mod sarif;
 pub mod suffix;
 mod text;
 
-use baseline::{build_baseline, read_baseline, write_baseline};
+use baseline::{build_baseline, read_baseline, serialize_baseline, write_baseline};
 use baseline_filter::{compare_baseline, filter_active_groups};
 use baseline_status::{render_baseline_status_json, render_baseline_status_text};
 use cli::{Cli, ColorWhen, OutputFormat};
@@ -174,7 +174,13 @@ fn execute(cli: &Cli, context: RunContext) -> Result<RunResult, OperationalError
         return Ok(RunResult::new("", "", ExitStatus::Success));
     }
 
-    if let Some(path) = &cli.baseline_status {
+    let baseline_administration = cli
+        .baseline_status
+        .as_ref()
+        .map(|path| (path, false))
+        .or_else(|| cli.prune_baseline.as_ref().map(|path| (path, true)));
+
+    if let Some((path, prune)) = baseline_administration {
         let baseline = read_baseline(path, normalization).map_err(|error| {
             OperationalError::new(
                 ErrorKind::Baseline,
@@ -196,6 +202,34 @@ fn execute(cli: &Cli, context: RunContext) -> Result<RunResult, OperationalError
             )
             .with_project_path(path, &loaded.project_root)
         })?;
+
+        if prune {
+            let current = serialize_baseline(&baseline).map_err(|error| {
+                OperationalError::new(
+                    ErrorKind::Baseline,
+                    format!("failed to serialize baseline before pruning: {error}"),
+                )
+                .with_project_path(path, &loaded.project_root)
+            })?;
+            let pruned = serialize_baseline(&comparison.pruned).map_err(|error| {
+                OperationalError::new(
+                    ErrorKind::Baseline,
+                    format!("failed to serialize pruned baseline: {error}"),
+                )
+                .with_project_path(path, &loaded.project_root)
+            })?;
+
+            if current != pruned {
+                write_baseline(path, &comparison.pruned).map_err(|error| {
+                    OperationalError::new(
+                        ErrorKind::Baseline,
+                        format!("failed to prune baseline: {error}"),
+                    )
+                    .with_project_path(path, &loaded.project_root)
+                })?;
+            }
+        }
+
         let exit_status = if comparison.status.has_active() {
             ExitStatus::Findings
         } else {
@@ -212,7 +246,7 @@ fn execute(cli: &Cli, context: RunContext) -> Result<RunResult, OperationalError
                 })?
             }
             OutputFormat::Markdown | OutputFormat::Sarif => {
-                unreachable!("baseline status output is validated before execution")
+                unreachable!("baseline administrative output is validated before execution")
             }
         };
 
@@ -310,25 +344,33 @@ fn analysis_metadata(loaded: &LoadedSettings, baseline_enabled: bool) -> Analysi
 }
 
 fn validate_output_options(cli: &Cli, output_format: OutputFormat) -> Result<(), OperationalError> {
-    if cli.baseline_status.is_some() {
+    let baseline_administration = if cli.baseline_status.is_some() {
+        Some("--baseline-status")
+    } else if cli.prune_baseline.is_some() {
+        Some("--prune-baseline")
+    } else {
+        None
+    };
+
+    if let Some(mode) = baseline_administration {
         if cli.show_source {
             return Err(OperationalError::new(
                 ErrorKind::Configuration,
-                "--show-source is not valid with --baseline-status",
+                format!("--show-source is not valid with {mode}"),
             ));
         }
 
         if cli.color.is_some() {
             return Err(OperationalError::new(
                 ErrorKind::Configuration,
-                "--color is not valid with --baseline-status",
+                format!("--color is not valid with {mode}"),
             ));
         }
 
         if matches!(output_format, OutputFormat::Markdown | OutputFormat::Sarif) {
             return Err(OperationalError::new(
                 ErrorKind::Configuration,
-                "--baseline-status supports only text or JSON output",
+                format!("{mode} supports only text or JSON output"),
             ));
         }
     }
@@ -535,6 +577,7 @@ min-lines = 2
             show_source: false,
             baseline: None,
             baseline_status: None,
+            prune_baseline: None,
             write_baseline: None,
         }
     }
@@ -630,10 +673,68 @@ min-lines = 2
     }
 
     #[test]
+    fn prune_baseline_removes_only_stale_acceptance() {
+        let (temp, mut write_cli) = duplicate_fixture();
+        let baseline_path = temp.path().join("arid-baseline.json");
+        write_cli.write_baseline = Some(baseline_path.clone());
+        assert_eq!(run(&write_cli).exit_status(), ExitStatus::Success);
+
+        fs::rename(temp.path().join("b.py"), temp.path().join("c.py")).unwrap();
+
+        let mut prune_cli = test_cli(vec![temp.path().to_path_buf()]);
+        prune_cli.prune_baseline = Some(baseline_path.clone());
+        let pruned = run(&prune_cli);
+        assert_eq!(pruned.exit_status(), ExitStatus::Findings);
+        assert!(pruned.stdout().contains("Accepted occurrences: 1"));
+        assert!(pruned.stdout().contains("Active occurrences: 1"));
+        assert!(pruned.stdout().contains("Stale occurrences: 1"));
+
+        let value: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&baseline_path).unwrap()).unwrap();
+        assert_eq!(value["version"], 1);
+        assert_eq!(value["groups"].as_array().unwrap().len(), 1);
+        assert_eq!(value["groups"][0]["occurrences"].as_array().unwrap().len(), 1);
+        assert_eq!(value["groups"][0]["occurrences"][0]["path"], "a.py");
+        assert_eq!(value["groups"][0]["occurrences"][0]["count"], 1);
+
+        let baseline_bytes = fs::read(&baseline_path).unwrap();
+        prune_cli.json = true;
+        let unchanged = run(&prune_cli);
+        assert_eq!(unchanged.exit_status(), ExitStatus::Findings);
+        assert_eq!(fs::read(&baseline_path).unwrap(), baseline_bytes);
+        let value: serde_json::Value = serde_json::from_str(unchanged.stdout()).unwrap();
+        assert_eq!(value["summary"]["accepted"], 1);
+        assert_eq!(value["summary"]["active"], 1);
+        assert_eq!(value["summary"]["stale"], 0);
+
+        fs::remove_file(temp.path().join("c.py")).unwrap();
+        prune_cli.json = false;
+        let stale = run(&prune_cli);
+        assert_eq!(stale.exit_status(), ExitStatus::Success);
+        assert!(stale.stdout().contains("Accepted occurrences: 0"));
+        assert!(stale.stdout().contains("Active occurrences: 0"));
+        assert!(stale.stdout().contains("Stale occurrences: 1"));
+
+        let value: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&baseline_path).unwrap()).unwrap();
+        assert!(value["groups"].as_array().unwrap().is_empty());
+    }
+
+    #[test]
     fn baseline_status_rejects_non_administrative_output_options() {
         let (_temp, mut cli) = duplicate_fixture();
         cli.baseline_status = Some(PathBuf::from("baseline.json"));
         cli.format = Some(OutputFormat::Markdown);
+        let error = run(&cli);
+        assert_eq!(error.exit_status(), ExitStatus::Error);
+        assert!(error.stderr().contains("supports only text or JSON"));
+    }
+
+    #[test]
+    fn prune_baseline_rejects_non_administrative_output_options() {
+        let (_temp, mut cli) = duplicate_fixture();
+        cli.prune_baseline = Some(PathBuf::from("baseline.json"));
+        cli.format = Some(OutputFormat::Sarif);
         let error = run(&cli);
         assert_eq!(error.exit_status(), ExitStatus::Error);
         assert!(error.stderr().contains("supports only text or JSON"));

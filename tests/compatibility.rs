@@ -35,6 +35,7 @@ fn test_cli(path: PathBuf) -> Cli {
         show_source: false,
         baseline: None,
         baseline_status: None,
+        prune_baseline: None,
         write_baseline: None,
     }
 }
