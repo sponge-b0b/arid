@@ -19,6 +19,7 @@ pub mod metrics;
 pub mod model;
 pub mod normalize;
 pub mod outcome;
+mod output;
 mod project_path;
 mod python;
 pub mod report;
@@ -45,6 +46,7 @@ use introspection::{
 use markdown::render_markdown;
 use outcome::ExitStatus;
 pub use outcome::RunResult;
+use output::{resolve_report_targets, write_report_targets};
 use report::{AnalysisMetadata, ReportOptions, build_report, render_json};
 use sarif::render_sarif;
 use source::focus::resolve_focus;
@@ -226,6 +228,8 @@ fn execute(cli: &Cli, context: RunContext) -> Result<RunResult, OperationalError
     }
 
     let source_inputs = build_source_inputs(discovered, virtual_source);
+    let report_targets =
+        resolve_report_targets(&cli.report, &source_inputs, baseline_path.as_deref())?;
     let focus = resolve_focus(&cli.focus, &source_inputs, &loaded.project_root)?;
     let analysis = analysis_metadata(
         &loaded,
@@ -403,7 +407,7 @@ fn execute(cli: &Cli, context: RunContext) -> Result<RunResult, OperationalError
         &groups,
         &ReportOptions {
             show_source: cli.show_source,
-            path_root: Some(loaded.project_root),
+            path_root: Some(loaded.project_root.clone()),
             analysis,
             complete,
             errors: preparation_errors,
@@ -432,6 +436,8 @@ fn execute(cli: &Cli, context: RunContext) -> Result<RunResult, OperationalError
             )
         })?,
     };
+
+    write_report_targets(&report_targets, &report, &loaded.project_root)?;
 
     let exit_status = apply_no_fail_on_findings(report.exit_status(), cli.no_fail_on_findings);
     Ok(RunResult::new(output, "", exit_status))
@@ -517,6 +523,15 @@ fn validate_output_options(cli: &Cli, output_format: OutputFormat) -> Result<(),
         return Err(OperationalError::new(
             ErrorKind::Configuration,
             format!("--no-fail-on-findings is not valid with {mode}"),
+        ));
+    }
+
+    if !cli.report.is_empty()
+        && let Some(mode) = non_scan_mode
+    {
+        return Err(OperationalError::new(
+            ErrorKind::Configuration,
+            format!("--report is not valid with {mode}"),
         ));
     }
 
@@ -695,6 +710,7 @@ min-lines = 2
             exclude: Vec::new(),
             workers: 1,
             format: None,
+            report: Vec::new(),
             color: None,
             json: false,
             show_source: false,
@@ -740,7 +756,7 @@ min-lines = 2
             serde_json::json!(["json", "markdown", "sarif", "text"])
         );
         assert!(
-            !value["features"]
+            value["features"]
                 .as_array()
                 .unwrap()
                 .contains(&serde_json::json!("multi-report"))

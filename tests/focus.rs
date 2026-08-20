@@ -82,6 +82,7 @@ fn test_cli(root: &Path) -> Cli {
         exclude: Vec::new(),
         workers: 1,
         format: None,
+        report: Vec::new(),
         color: None,
         json: true,
         show_source: false,

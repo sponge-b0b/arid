@@ -156,6 +156,14 @@ pub struct Cli {
     #[arg(long, value_enum, value_name = "FORMAT", conflicts_with = "json")]
     pub format: Option<OutputFormat>,
 
+    /// Write an additional report as FORMAT=PATH. May be repeated.
+    #[arg(
+        long,
+        value_name = "FORMAT=PATH",
+        conflicts_with_all = ["show_config", "list_files", "baseline_status", "prune_baseline", "write_baseline"]
+    )]
+    pub report: Vec<String>,
+
     /// Control color in text output.
     #[arg(long, value_enum, value_name = "WHEN")]
     pub color: Option<ColorWhen>,
@@ -265,6 +273,7 @@ mod tests {
         assert!(cli.exclude.is_empty());
         assert_eq!(cli.workers, 1);
         assert_eq!(cli.format, None);
+        assert!(cli.report.is_empty());
         assert_eq!(cli.output_format(), OutputFormat::Text);
         assert_eq!(cli.color, None);
         assert!(!cli.json);
@@ -371,6 +380,25 @@ mod tests {
     fn accepts_no_fail_on_findings() {
         let cli = Cli::try_parse_from(["arid", "--no-fail-on-findings"]).unwrap();
         assert!(cli.no_fail_on_findings);
+    }
+
+    #[test]
+    fn accepts_repeatable_report_destinations() {
+        let cli = Cli::try_parse_from([
+            "arid",
+            "--report",
+            "json=artifacts/arid.json",
+            "--report",
+            "sarif=artifacts/arid.sarif",
+        ])
+        .unwrap();
+        assert_eq!(
+            cli.report,
+            vec![
+                "json=artifacts/arid.json".to_owned(),
+                "sarif=artifacts/arid.sarif".to_owned()
+            ]
+        );
     }
 
     #[test]
@@ -608,6 +636,16 @@ mod tests {
         assert!(
             Cli::try_parse_from(["arid", "--write-baseline", "debt.json", "--color", "never"])
                 .is_err()
+        );
+        assert!(
+            Cli::try_parse_from([
+                "arid",
+                "--write-baseline",
+                "debt.json",
+                "--report",
+                "json=report.json"
+            ])
+            .is_err()
         );
     }
 
