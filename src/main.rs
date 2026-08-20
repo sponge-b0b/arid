@@ -7,10 +7,7 @@ use clap::Parser;
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
-    let mut context = RunContext::new(
-        io::stdout().is_terminal(),
-        ColorEnvironment::from_process(),
-    );
+    let mut context = RunContext::new(io::stdout().is_terminal(), ColorEnvironment::from_process());
 
     if cli.stdin_path.is_some() {
         let mut source = String::new();
