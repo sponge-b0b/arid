@@ -2,7 +2,7 @@
 
 **Product:** Arid  
 **Stable target:** `2.0.0`  
-**Current phase:** Contract
+**Current phase:** Finding identity and report v4
 
 ## Purpose
 
@@ -161,7 +161,7 @@ Curated release notes are required for every published v2 tag and MUST exist bef
 
 **Goal:** freeze the v2 product boundary, technical architecture, and release plan before implementation begins.
 
-**Status:** In progress.
+**Status:** Complete.
 
 ### Artifacts
 
@@ -180,6 +180,8 @@ Curated release notes are required for every published v2 tag and MUST exist bef
 ## Phase 1 — V2 foundation and release scaffolding
 
 **Goal:** establish the shared v2 foundations before changing report consumers or higher-level automation.
+
+**Status:** Complete.
 
 ### Work
 
@@ -207,6 +209,8 @@ Foundation tests pass, 1.x release metadata checks remain valid, canonical path 
 ## Phase 2 — Finding identity and report v4
 
 **Goal:** establish the core breaking machine contract before repairing every renderer and consumer.
+
+**Status:** In progress.
 
 ### Work
 
