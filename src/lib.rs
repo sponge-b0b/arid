@@ -4,6 +4,7 @@ use std::path::PathBuf;
 pub mod baseline;
 mod baseline_filter;
 mod baseline_status;
+mod capabilities;
 pub mod cli;
 pub mod config;
 pub mod corpus;
@@ -29,6 +30,7 @@ mod text;
 use baseline::{build_baseline, read_baseline, serialize_baseline, write_baseline};
 use baseline_filter::{compare_baseline, filter_active_groups};
 use baseline_status::{render_baseline_status_json, render_baseline_status_text};
+use capabilities::render_capabilities_json;
 use cli::{Cli, ColorWhen, OutputFormat};
 use config::{LoadedSettings, ProjectOptions, SettingsOverrides, load_settings_with_options};
 use corpus::build_corpus;
@@ -136,6 +138,16 @@ pub fn run_with_context(cli: &Cli, context: RunContext) -> RunResult {
 }
 
 fn execute(cli: &Cli, context: RunContext) -> Result<RunResult, OperationalError> {
+    if cli.capabilities {
+        let output = render_capabilities_json().map_err(|error| {
+            OperationalError::new(
+                ErrorKind::Internal,
+                format!("failed to render capabilities JSON: {error}"),
+            )
+        })?;
+        return Ok(RunResult::new(output, "", ExitStatus::Success));
+    }
+
     let output_format = cli.output_format();
 
     validate_output_options(cli, output_format)?;
@@ -660,6 +672,7 @@ min-lines = 2
             config: None,
             no_config: false,
             project_root: None,
+            capabilities: false,
             show_config: false,
             list_files: false,
             stdin_path: None,
@@ -699,6 +712,34 @@ min-lines = 2
         temp.write("b.py", "alpha = 1\nbeta = 2\n");
         let cli = test_cli(vec![temp.path().to_path_buf()]);
         (temp, cli)
+    }
+
+    #[test]
+    fn capabilities_do_not_require_project_discovery() {
+        let mut cli = test_cli(vec![PathBuf::from("definitely-missing-project")]);
+        cli.capabilities = true;
+
+        let first = run(&cli);
+        let second = run(&cli);
+
+        assert_eq!(first.exit_status(), ExitStatus::Success);
+        assert!(first.stderr().is_empty());
+        assert_eq!(first.stdout(), second.stdout());
+        let value: serde_json::Value = serde_json::from_str(first.stdout()).unwrap();
+        assert_eq!(value["schema_version"], 1);
+        assert_eq!(value["tool_version"], env!("CARGO_PKG_VERSION"));
+        assert_eq!(value["report_schema_versions"], serde_json::json!([4]));
+        assert_eq!(value["baseline_schema_versions"], serde_json::json!([1]));
+        assert_eq!(value["error_schema_versions"], serde_json::json!([1]));
+        assert_eq!(
+            value["finding_fingerprint_versions"],
+            serde_json::json!([1])
+        );
+        assert_eq!(
+            value["formats"],
+            serde_json::json!(["json", "markdown", "sarif", "text"])
+        );
+        assert!(!value["features"].as_array().unwrap().contains(&serde_json::json!("multi-report")));
     }
 
     #[test]

@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Arid Capabilities v1",
+  "description": "Schema for Arid's deterministic build capability document, version 1.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "tool_version",
+    "report_schema_versions",
+    "baseline_schema_versions",
+    "error_schema_versions",
+    "finding_fingerprint_versions",
+    "formats",
+    "features"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "tool_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "report_schema_versions": {
+      "type": "array",
+      "items": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "uniqueItems": true
+    },
+    "baseline_schema_versions": {
+      "type": "array",
+      "items": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "uniqueItems": true
+    },
+    "error_schema_versions": {
+      "type": "array",
+      "items": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "uniqueItems": true
+    },
+    "finding_fingerprint_versions": {
+      "type": "array",
+      "items": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "uniqueItems": true
+    },
+    "formats": {
+      "type": "array",
+      "items": {
+        "enum": ["json", "markdown", "sarif", "text"]
+      },
+      "uniqueItems": true
+    },
+    "features": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "baseline-prune",
+          "baseline-status",
+          "focus",
+          "keep-going",
+          "multi-report",
+          "no-fail-on-findings",
+          "stdin-path",
+          "workers-auto"
+        ]
+      },
+      "uniqueItems": true
+    }
+  }
+}

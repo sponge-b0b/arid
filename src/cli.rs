@@ -39,6 +39,10 @@ pub struct Cli {
     #[arg(long, value_name = "PATH")]
     pub project_root: Option<PathBuf>,
 
+    /// Show deterministic build capabilities as JSON and exit.
+    #[arg(long, exclusive = true)]
+    pub capabilities: bool,
+
     /// Show the resolved project configuration and exit.
     #[arg(
         long,
@@ -238,6 +242,7 @@ mod tests {
         assert_eq!(cli.config, None);
         assert!(!cli.no_config);
         assert_eq!(cli.project_root, None);
+        assert!(!cli.capabilities);
         assert!(!cli.show_config);
         assert!(!cli.list_files);
         assert_eq!(cli.stdin_path, None);
@@ -315,6 +320,18 @@ mod tests {
         assert_eq!(cli.config, None);
         assert!(cli.no_config);
         assert_eq!(cli.project_root, Some(PathBuf::from("workspace")));
+    }
+
+    #[test]
+    fn accepts_capabilities() {
+        let cli = Cli::try_parse_from(["arid", "--capabilities"]).unwrap();
+        assert!(cli.capabilities);
+    }
+
+    #[test]
+    fn capabilities_is_exclusive() {
+        assert!(Cli::try_parse_from(["arid", "--capabilities", "."]).is_err());
+        assert!(Cli::try_parse_from(["arid", "--capabilities", "--json"]).is_err());
     }
 
     #[test]
