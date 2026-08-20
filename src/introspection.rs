@@ -26,12 +26,7 @@ pub(crate) fn render_config_text(
     writeln!(output, "Ignore comments: {}", settings.ignore_comments).unwrap();
     writeln!(output, "Ignore docstrings: {}", settings.ignore_docstrings).unwrap();
     writeln!(output, "Ignore imports: {}", settings.ignore_imports).unwrap();
-    writeln!(
-        output,
-        "Ignore signatures: {}",
-        settings.ignore_signatures
-    )
-    .unwrap();
+    writeln!(output, "Ignore signatures: {}", settings.ignore_signatures).unwrap();
     writeln!(output, "Same-file detection: {}", settings.same_file).unwrap();
     writeln!(output, "Hidden files: {}", settings.hidden).unwrap();
 

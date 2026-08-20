@@ -306,22 +306,11 @@ mod tests {
     fn rejects_conflicting_introspection_modes() {
         assert!(Cli::try_parse_from(["arid", "--show-config", "--list-files"]).is_err());
         assert!(
-            Cli::try_parse_from([
-                "arid",
-                "--show-config",
-                "--baseline-status",
-                "debt.json"
-            ])
-            .is_err()
+            Cli::try_parse_from(["arid", "--show-config", "--baseline-status", "debt.json"])
+                .is_err()
         );
         assert!(
-            Cli::try_parse_from([
-                "arid",
-                "--list-files",
-                "--prune-baseline",
-                "debt.json"
-            ])
-            .is_err()
+            Cli::try_parse_from(["arid", "--list-files", "--prune-baseline", "debt.json"]).is_err()
         );
     }
 
