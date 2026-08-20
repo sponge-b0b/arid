@@ -339,7 +339,10 @@ mod tests {
             "--write-baseline",
         ] {
             let mut args = vec!["arid", "--stdin-path", "src/proposed.py", mode];
-            if matches!(mode, "--baseline-status" | "--prune-baseline" | "--write-baseline") {
+            if matches!(
+                mode,
+                "--baseline-status" | "--prune-baseline" | "--write-baseline"
+            ) {
                 args.push("debt.json");
             }
             assert!(Cli::try_parse_from(args).is_err(), "{mode}");
