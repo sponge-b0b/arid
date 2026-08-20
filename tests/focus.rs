@@ -184,7 +184,10 @@ fn focus_matches_virtual_source_before_preparation() {
 
     assert_eq!(result.exit_status(), ExitStatus::Findings);
     let report = json(&result);
-    assert_eq!(report["analysis"]["focus"], serde_json::json!(["proposed.py"]));
+    assert_eq!(
+        report["analysis"]["focus"],
+        serde_json::json!(["proposed.py"])
+    );
     assert_eq!(report["analysis"]["virtual_source"], "proposed.py");
     let locations = report["findings"][0]["locations"].as_array().unwrap();
     assert_eq!(locations.len(), 2);
