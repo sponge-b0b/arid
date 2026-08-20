@@ -438,11 +438,8 @@ fn validate_output_options(cli: &Cli, output_format: OutputFormat) -> Result<(),
         None
     };
 
-    let non_scan_mode = administrative_mode.or_else(|| {
-        cli.write_baseline
-            .as_ref()
-            .map(|_| "--write-baseline")
-    });
+    let non_scan_mode =
+        administrative_mode.or_else(|| cli.write_baseline.as_ref().map(|_| "--write-baseline"));
 
     if cli.stdin_path.is_some() {
         if let Some(mode) = non_scan_mode {
@@ -694,10 +691,7 @@ min-lines = 2
         assert!(!temp.path().join("proposed.py").exists());
         let value: serde_json::Value = serde_json::from_str(result.stdout()).unwrap();
         assert_eq!(value["analysis"]["virtual_source"], "proposed.py");
-        assert_eq!(
-            value["findings"][0]["locations"][1]["path"],
-            "proposed.py"
-        );
+        assert_eq!(value["findings"][0]["locations"][1]["path"], "proposed.py");
     }
 
     #[test]
