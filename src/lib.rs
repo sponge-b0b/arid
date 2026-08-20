@@ -12,6 +12,7 @@ pub mod corpus;
 pub mod detect;
 mod error;
 pub mod files;
+mod fingerprint;
 mod markdown;
 pub mod metrics;
 pub mod model;
