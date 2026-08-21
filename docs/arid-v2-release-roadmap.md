@@ -2,7 +2,7 @@
 
 **Product:** Arid  
 **Stable target:** `2.0.0`  
-**Current phase:** Alpha publication
+**Current phase:** Real-world validation and beta stabilization
 
 ## Purpose
 
@@ -511,6 +511,8 @@ All targeted v2 tests pass from source, inherited v1/v1.1/v1.2 targeted validati
 ## Phase 12 — Alpha publication
 
 **Goal:** publish the first externally installable v2 contract for integration testing.
+
+**Status:** Complete.
 
 ### Entry criteria
 
