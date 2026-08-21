@@ -60,7 +60,7 @@ done
     exit 2
 }
 
-for command in awk cmp git grep head jq mktemp realpath sha256sum sleep; do
+for command in awk cmp git grep jq mktemp realpath sha256sum sleep; do
     command -v "$command" >/dev/null 2>&1 ||
         die "required command not found: $command"
 done
@@ -137,11 +137,16 @@ echo "Results: $RESULTS_DIR"
 wait_with_activity() {
     local pid="$1"
     local started="$SECONDS"
+    local next_report=5
+    local elapsed
 
     while kill -0 "$pid" 2>/dev/null; do
-        sleep 5
-        if kill -0 "$pid" 2>/dev/null; then
-            printf '    still running (%ss elapsed)\n' "$((SECONDS - started))"
+        sleep 1
+        elapsed="$((SECONDS - started))"
+
+        if [[ "$elapsed" -ge "$next_report" ]] && kill -0 "$pid" 2>/dev/null; then
+            printf '    still running (%ss elapsed)\n' "$elapsed"
+            next_report="$((next_report + 5))"
         fi
     done
 }
@@ -236,14 +241,15 @@ jq -e '
 
 FOCUS_PATH="$(
     jq -r '
-        .findings[]
-        | select(.distribution == "cross-file" or .distribution == "hybrid")
-        | .locations[0].path
-    ' "$FULL_JSON" |
-        head -n 1
+        [
+            .findings[]
+            | select(.distribution == "cross-file" or .distribution == "hybrid")
+            | .locations[0].path
+        ][0] // empty
+    ' "$FULL_JSON"
 )"
 
-[[ -n "$FOCUS_PATH" && "$FOCUS_PATH" != "null" ]] ||
+[[ -n "$FOCUS_PATH" ]] ||
     die "Rich full scan has no cross-file/hybrid finding suitable for focus validation"
 [[ -f "$RICH_ROOT/$FOCUS_PATH" ]] ||
     die "selected Rich focus path does not exist: $FOCUS_PATH"
