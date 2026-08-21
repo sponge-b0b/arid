@@ -3,8 +3,6 @@ set -euo pipefail
 
 export LC_ALL=C
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-
 usage() {
     cat <<'EOF'
 Usage: validation/v2-operations.sh <arid-bin>
@@ -97,6 +95,23 @@ run_expect_status() {
         cat "$stderr_file" >&2
         die "unexpected stderr: $*"
     }
+}
+
+assert_json_equal() {
+    local left="$1"
+    local right="$2"
+    local message="$3"
+
+    python3 - "$left" "$right" "$message" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+left = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+right = json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))
+if left != right:
+    raise SystemExit(sys.argv[3])
+PY
 }
 
 BASELINE_PROJECT="$TMP_ROOT/baseline-project"
@@ -250,8 +265,10 @@ run_expect_status 1 \
     --report "sarif=$ARTIFACTS/arid.sarif" \
     --report "text=$ARTIFACTS/arid.txt"
 
-cmp -s "$TMP_ROOT/multi-output.json" "$ARTIFACTS/arid.json" ||
-    die "supplemental JSON does not match primary JSON output"
+assert_json_equal \
+    "$TMP_ROOT/multi-output.json" \
+    "$ARTIFACTS/arid.json" \
+    "supplemental JSON does not match primary JSON output"
 
 python3 - \
     "$ARTIFACTS/arid.json" \
@@ -300,8 +317,10 @@ run_expect_status 2 \
     --report "json=$ARTIFACTS/partial.json" \
     --report "sarif=$ARTIFACTS/partial.sarif"
 
-cmp -s "$TMP_ROOT/partial.json" "$ARTIFACTS/partial.json" ||
-    die "partial supplemental JSON does not match primary JSON output"
+assert_json_equal \
+    "$TMP_ROOT/partial.json" \
+    "$ARTIFACTS/partial.json" \
+    "partial supplemental JSON does not match primary JSON output"
 [[ ! -e "$ARTIFACTS/partial.sarif" ]] ||
     die "SARIF was written for an incomplete scan"
 
