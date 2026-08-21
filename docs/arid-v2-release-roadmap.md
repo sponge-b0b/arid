@@ -2,7 +2,7 @@
 
 **Product:** Arid  
 **Stable target:** `2.0.0`  
-**Current phase:** Exit policy, multi-output, and capabilities
+**Current phase:** Official GitHub Action
 
 ## Purpose
 
@@ -389,7 +389,7 @@ Focus cannot miss duplication against unchanged files, focused groups retain com
 
 **Goal:** make one scan more useful to humans, CI systems, and machine consumers.
 
-**Status:** In progress.
+**Status:** Complete.
 
 ### Work
 
@@ -417,6 +417,8 @@ One scan can safely feed multiple consumers without reparsing or redetection, ou
 
 **Goal:** finish the intentional v2 Rust boundary and simplify application ownership before external integration work.
 
+**Status:** Complete.
+
 ### Work
 
 - Move application orchestration out of `lib.rs` into private `app.rs`.
@@ -443,6 +445,8 @@ The binary uses the same supported application entry points as embedding callers
 ## Phase 10 — Official GitHub Action
 
 **Goal:** make correct Arid CI integration low-friction without duplicating detector behavior.
+
+**Status:** In progress.
 
 ### Work
 
