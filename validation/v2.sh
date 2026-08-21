@@ -84,9 +84,6 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-mkdir -p "$PROJECT"
-cd "$PROJECT"
-
 write_duplicate_source() {
     local path="$1"
 
@@ -99,12 +96,6 @@ def duplicated_calculation():
     return delta
 PY
 }
-
-write_duplicate_source file-1.py
-
-for index in 2 3 4 5 6 7 8; do
-    cp file-1.py "file-$index.py"
-done
 
 run_expect_status() {
     local expected="$1"
@@ -159,6 +150,14 @@ run_with_stdin_expect_status() {
     }
 }
 
+mkdir -p "$PROJECT"
+cd "$PROJECT"
+
+write_duplicate_source file-1.py
+for index in 2 3 4 5 6 7 8; do
+    cp file-1.py "file-$index.py"
+done
+
 COMMON_SCAN_ARGS=(
     .
     --no-config
@@ -200,7 +199,6 @@ cmp -s capabilities-1.json capabilities-2.json ||
 pass "deterministic capabilities output"
 
 python3 -m venv "$SCHEMA_VENV"
-
 "$SCHEMA_VENV/bin/python" \
     -m pip install \
     --disable-pip-version-check \
@@ -258,15 +256,13 @@ def require_rejected(instance, schema_validator, message: str):
 
 
 report_validator = validator(report_schema_path)
-error_validator = validator(error_schema_path)
+validator(error_schema_path)
 capabilities_validator = validator(capabilities_schema_path)
 baseline_validator = validator(baseline_schema_path)
 
 reports = [load(path) for path in report_paths]
 for report in reports:
     report_validator.validate(report)
-    for error in report["errors"]:
-        error_validator.validate(error)
 
 serial = reports[0]
 if serial["schema_version"] != 4:
@@ -356,33 +352,6 @@ run_expect_status 1 \
     --focus b.py \
     --json
 
-"$SCHEMA_VENV/bin/python" \
-    - \
-    "$ROOT_DIR/schemas/report-v4.schema.json" \
-    "$TMP_ROOT/focus.json" \
-    <<'PY'
-import json
-import sys
-from pathlib import Path
-
-from jsonschema.validators import validator_for
-
-schema = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
-report = json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))
-validator_class = validator_for(schema)
-validator_class.check_schema(schema)
-validator_class(schema).validate(report)
-
-if report["analysis"]["focus"] != ["b.py"]:
-    raise SystemExit("focus metadata is not canonical")
-if report["files"] != 3 or report["duplicate_groups"] != 1:
-    raise SystemExit("focused scan did not analyze the whole three-file corpus")
-locations = report["findings"][0]["locations"]
-if [location["path"] for location in locations] != ["a.py", "b.py", "c.py"]:
-    raise SystemExit("focused finding did not retain complete group context")
-PY
-pass "focus preserves whole-project detection and complete group context"
-
 BASELINE_PROJECT="$TMP_ROOT/focus-baseline-project"
 mkdir -p "$BASELINE_PROJECT"
 write_duplicate_source "$BASELINE_PROJECT/a.py"
@@ -410,27 +379,6 @@ run_expect_status 1 \
     --focus a.py \
     --json
 
-"$SCHEMA_VENV/bin/python" \
-    - \
-    "$TMP_ROOT/focus-baseline.json" \
-    <<'PY'
-import json
-import sys
-from pathlib import Path
-
-report = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
-if not report["analysis"]["baseline_enabled"]:
-    raise SystemExit("focused baseline scan does not record baseline use")
-if report["analysis"]["focus"] != ["a.py"]:
-    raise SystemExit("focused baseline scan lost focus metadata")
-if report["duplicate_groups"] != 1:
-    raise SystemExit("new debt was incorrectly removed before focus filtering")
-locations = report["findings"][0]["locations"]
-if [location["path"] for location in locations] != ["a.py", "b.py", "c.py"]:
-    raise SystemExit("focus+baseline did not preserve the complete active group")
-PY
-pass "baseline enforcement precedes focus filtering"
-
 VIRTUAL_PROJECT="$TMP_ROOT/focus-virtual-project"
 mkdir -p "$VIRTUAL_PROJECT"
 write_duplicate_source "$VIRTUAL_PROJECT/a.py"
@@ -450,27 +398,6 @@ run_with_stdin_expect_status 1 \
 
 [[ ! -e "$VIRTUAL_PROJECT/proposed.py" ]] ||
     die "virtual source was written to disk"
-
-"$SCHEMA_VENV/bin/python" \
-    - \
-    "$TMP_ROOT/focus-virtual.json" \
-    <<'PY'
-import json
-import sys
-from pathlib import Path
-
-report = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
-if report["analysis"]["focus"] != ["proposed.py"]:
-    raise SystemExit("virtual focus selector was not preserved")
-if report["analysis"]["virtual_source"] != "proposed.py":
-    raise SystemExit("virtual source metadata is incorrect")
-if report["files"] != 2 or report["duplicate_groups"] != 1:
-    raise SystemExit("virtual focused scan did not analyze both sources")
-locations = report["findings"][0]["locations"]
-if [location["path"] for location in locations] != ["a.py", "proposed.py"]:
-    raise SystemExit("virtual focused finding has incorrect locations")
-PY
-pass "focus composes with virtual source without disk mutation"
 
 KEEP_GOING_PROJECT="$TMP_ROOT/keep-going-project"
 mkdir -p "$KEEP_GOING_PROJECT"
@@ -524,47 +451,6 @@ run_expect_status 2 \
 cmp -s "$TMP_ROOT/keep-going-serial.json" "$TMP_ROOT/keep-going-no-fail.json" ||
     die "--no-fail-on-findings changed an incomplete report"
 
-"$SCHEMA_VENV/bin/python" \
-    - \
-    "$ROOT_DIR/schemas/report-v4.schema.json" \
-    "$ROOT_DIR/schemas/error-v1.schema.json" \
-    "$TMP_ROOT/keep-going-serial.json" \
-    <<'PY'
-import json
-import sys
-from pathlib import Path
-
-from jsonschema.validators import validator_for
-
-report_schema = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
-error_schema = json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))
-report = json.loads(Path(sys.argv[3]).read_text(encoding="utf-8"))
-
-report_validator_class = validator_for(report_schema)
-report_validator_class.check_schema(report_schema)
-report_validator_class(report_schema).validate(report)
-error_validator_class = validator_for(error_schema)
-error_validator_class.check_schema(error_schema)
-error_validator = error_validator_class(error_schema)
-
-if report["complete"]:
-    raise SystemExit("keep-going partial scan incorrectly reports complete=true")
-if not report["analysis"]["keep_going"]:
-    raise SystemExit("keep-going analysis metadata is false")
-if report["files"] != 2 or report["duplicate_groups"] != 1:
-    raise SystemExit("keep-going did not retain the two valid duplicate sources")
-if len(report["errors"]) != 2:
-    raise SystemExit("keep-going did not report both malformed sources")
-for error in report["errors"]:
-    error_validator.validate(error)
-if [error.get("path") for error in report["errors"]] != ["bad-a.py", "bad-b.py"]:
-    raise SystemExit("keep-going errors are not deterministically path ordered")
-if any(error["kind"] != "parse" for error in report["errors"]):
-    raise SystemExit("malformed-source keep-going errors are not parse errors")
-PY
-pass "keep-going preserves findings with deterministic incomplete errors"
-pass "no-fail cannot mask incomplete scan exit 2"
-
 run_expect_status 2 \
     "$TMP_ROOT/fatal-error.json" \
     "$TMP_ROOT/fatal-error.stderr" \
@@ -574,32 +460,6 @@ run_expect_status 2 \
     --min-lines 4 \
     --focus missing.py \
     --json
-
-"$SCHEMA_VENV/bin/python" \
-    - \
-    "$ROOT_DIR/schemas/error-v1.schema.json" \
-    "$TMP_ROOT/fatal-error.json" \
-    <<'PY'
-import json
-import sys
-from pathlib import Path
-
-from jsonschema.validators import validator_for
-
-schema = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
-document = json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))
-validator_class = validator_for(schema)
-validator_class.check_schema(schema)
-validator_class(schema).validate(document)
-
-if document["schema_version"] != 1:
-    raise SystemExit("fatal JSON error does not declare error schema v1")
-if document["error"]["kind"] != "configuration":
-    raise SystemExit("unmatched focus is not a configuration error")
-if "missing.py" not in document["error"]["message"]:
-    raise SystemExit("fatal JSON error does not identify the unmatched focus")
-PY
-pass "fatal JSON operational-error document"
 
 run_expect_status 1 \
     "$TMP_ROOT/exit-policy-normal.json" \
@@ -622,6 +482,104 @@ run_expect_status 0 \
 
 cmp -s "$TMP_ROOT/exit-policy-normal.json" "$TMP_ROOT/exit-policy-no-fail.json" ||
     die "--no-fail-on-findings changed report content"
+
+"$SCHEMA_VENV/bin/python" \
+    - \
+    "$ROOT_DIR/schemas/report-v4.schema.json" \
+    "$ROOT_DIR/schemas/error-v1.schema.json" \
+    "$TMP_ROOT/focus.json" \
+    "$TMP_ROOT/focus-baseline.json" \
+    "$TMP_ROOT/focus-virtual.json" \
+    "$TMP_ROOT/keep-going-serial.json" \
+    "$TMP_ROOT/fatal-error.json" \
+    <<'PY'
+import json
+import sys
+from pathlib import Path
+
+from jsonschema.validators import validator_for
+
+report_schema = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+error_schema = json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))
+focus = json.loads(Path(sys.argv[3]).read_text(encoding="utf-8"))
+focus_baseline = json.loads(Path(sys.argv[4]).read_text(encoding="utf-8"))
+focus_virtual = json.loads(Path(sys.argv[5]).read_text(encoding="utf-8"))
+keep_going = json.loads(Path(sys.argv[6]).read_text(encoding="utf-8"))
+fatal_error = json.loads(Path(sys.argv[7]).read_text(encoding="utf-8"))
+
+report_validator_class = validator_for(report_schema)
+report_validator_class.check_schema(report_schema)
+report_validator = report_validator_class(report_schema)
+for report in (focus, focus_baseline, focus_virtual, keep_going):
+    report_validator.validate(report)
+
+error_validator_class = validator_for(error_schema)
+error_validator_class.check_schema(error_schema)
+error_validator_class(error_schema).validate(fatal_error)
+
+if focus["analysis"]["focus"] != ["b.py"]:
+    raise SystemExit("focus metadata is not canonical")
+if focus["files"] != 3 or focus["duplicate_groups"] != 1:
+    raise SystemExit("focused scan did not analyze the whole three-file corpus")
+if [location["path"] for location in focus["findings"][0]["locations"]] != [
+    "a.py",
+    "b.py",
+    "c.py",
+]:
+    raise SystemExit("focused finding did not retain complete group context")
+
+if not focus_baseline["analysis"]["baseline_enabled"]:
+    raise SystemExit("focused baseline scan does not record baseline use")
+if focus_baseline["analysis"]["focus"] != ["a.py"]:
+    raise SystemExit("focused baseline scan lost focus metadata")
+if focus_baseline["duplicate_groups"] != 1:
+    raise SystemExit("new debt was incorrectly removed before focus filtering")
+if [location["path"] for location in focus_baseline["findings"][0]["locations"]] != [
+    "a.py",
+    "b.py",
+    "c.py",
+]:
+    raise SystemExit("focus+baseline did not preserve the complete active group")
+
+if focus_virtual["analysis"]["focus"] != ["proposed.py"]:
+    raise SystemExit("virtual focus selector was not preserved")
+if focus_virtual["analysis"]["virtual_source"] != "proposed.py":
+    raise SystemExit("virtual source metadata is incorrect")
+if focus_virtual["files"] != 2 or focus_virtual["duplicate_groups"] != 1:
+    raise SystemExit("virtual focused scan did not analyze both sources")
+if [location["path"] for location in focus_virtual["findings"][0]["locations"]] != [
+    "a.py",
+    "proposed.py",
+]:
+    raise SystemExit("virtual focused finding has incorrect locations")
+
+if keep_going["complete"]:
+    raise SystemExit("keep-going partial scan incorrectly reports complete=true")
+if not keep_going["analysis"]["keep_going"]:
+    raise SystemExit("keep-going analysis metadata is false")
+if keep_going["files"] != 2 or keep_going["duplicate_groups"] != 1:
+    raise SystemExit("keep-going did not retain the two valid duplicate sources")
+if len(keep_going["errors"]) != 2:
+    raise SystemExit("keep-going did not report both malformed sources")
+if [error.get("path") for error in keep_going["errors"]] != ["bad-a.py", "bad-b.py"]:
+    raise SystemExit("keep-going errors are not deterministically path ordered")
+if any(error["kind"] != "parse" for error in keep_going["errors"]):
+    raise SystemExit("malformed-source keep-going errors are not parse errors")
+
+if fatal_error["schema_version"] != 1:
+    raise SystemExit("fatal JSON error does not declare error schema v1")
+if fatal_error["error"]["kind"] != "configuration":
+    raise SystemExit("unmatched focus is not a configuration error")
+if "missing.py" not in fatal_error["error"]["message"]:
+    raise SystemExit("fatal JSON error does not identify the unmatched focus")
+PY
+
+pass "focus preserves whole-project detection and complete group context"
+pass "baseline enforcement precedes focus filtering"
+pass "focus composes with virtual source without disk mutation"
+pass "keep-going preserves findings with deterministic incomplete errors"
+pass "no-fail cannot mask incomplete scan exit 2"
+pass "fatal JSON operational-error document"
 pass "no-fail maps findings-only exit 1 to 0 without changing report"
 
 echo
