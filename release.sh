@@ -130,6 +130,15 @@ derive() {
         2.0.*)
             ROADMAP="docs/arid-v2-release-roadmap.md"
             ACTION_RELEASE="true"
+
+            case "$STAGE" in
+                Alpha)
+                    PHASE="Alpha publication"
+                    ;;
+                Beta)
+                    PHASE="Real-world validation and beta stabilization"
+                    ;;
+            esac
             ;;
         *)
             die "no release roadmap configured for version: $version"
