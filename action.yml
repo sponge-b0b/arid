@@ -1,0 +1,112 @@
+name: Arid duplicate-code check
+description: Run Arid once and expose duplicate-code findings and metrics.
+
+author: Bob Taylor
+
+inputs:
+  version:
+    description: Exact PyPI arid package version to install.
+    required: false
+    default: "1.2.0"
+  paths:
+    description: Newline-separated files or directories to scan.
+    required: false
+    default: "."
+  focus:
+    description: Optional newline-separated focus paths.
+    required: false
+    default: ""
+  arguments:
+    description: Optional additional shell-style Arid arguments for normal scan mode.
+    required: false
+    default: ""
+  fail-on-findings:
+    description: Fail the action when active duplicate findings exist.
+    required: false
+    default: "true"
+  sarif:
+    description: Upload Arid SARIF to GitHub code scanning when the scan is complete.
+    required: false
+    default: "false"
+  job-summary:
+    description: Append the Arid Markdown report to the GitHub job summary.
+    required: false
+    default: "true"
+
+outputs:
+  tool-version:
+    description: Arid tool version reported by report-v4.
+    value: ${{ steps.arid.outputs.tool-version }}
+  has-findings:
+    description: Whether active duplicate findings were reported.
+    value: ${{ steps.arid.outputs.has-findings }}
+  duplicate-groups:
+    description: Number of active duplicate groups in the report.
+    value: ${{ steps.arid.outputs.duplicate-groups }}
+  duplicate-lines:
+    description: Number of duplicate lines in the report.
+    value: ${{ steps.arid.outputs.duplicate-lines }}
+  duplication-percent:
+    description: Duplication percentage reported by Arid.
+    value: ${{ steps.arid.outputs.duplication-percent }}
+  files:
+    description: Number of successfully processed source files.
+    value: ${{ steps.arid.outputs.files }}
+  complete:
+    description: Whether the Arid scan completed without source-processing errors.
+    value: ${{ steps.arid.outputs.complete }}
+  scan-exit-code:
+    description: Original Arid process exit code before action policy is applied.
+    value: ${{ steps.arid.outputs.scan-exit-code }}
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+      with:
+        python-version: "3.12"
+
+    - name: Install Arid
+      shell: bash
+      env:
+        ARID_ACTION_VERSION: ${{ inputs.version }}
+      run: >-
+        python -m pip install
+        --disable-pip-version-check
+        --no-cache-dir
+        "arid==${ARID_ACTION_VERSION}"
+
+    - name: Run Arid
+      id: arid
+      shell: bash
+      env:
+        ARID_ACTION_PATHS: ${{ inputs.paths }}
+        ARID_ACTION_FOCUS: ${{ inputs.focus }}
+        ARID_ACTION_ARGUMENTS: ${{ inputs.arguments }}
+        ARID_ACTION_FAIL_ON_FINDINGS: ${{ inputs.fail-on-findings }}
+        ARID_ACTION_SARIF: ${{ inputs.sarif }}
+        ARID_ACTION_JOB_SUMMARY: ${{ inputs.job-summary }}
+      run: python "$GITHUB_ACTION_PATH/action/run.py"
+
+    - name: Upload SARIF
+      if: steps.arid.outputs.sarif-ready == 'true'
+      uses: github/codeql-action/upload-sarif@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4.37.7
+      with:
+        sarif_file: ${{ steps.arid.outputs.sarif-path }}
+
+    - name: Apply Arid status
+      if: steps.arid.outputs.should-fail == 'true'
+      shell: bash
+      env:
+        ARID_SCAN_EXIT_CODE: ${{ steps.arid.outputs.scan-exit-code }}
+        ARID_HAS_FINDINGS: ${{ steps.arid.outputs.has-findings }}
+      run: |
+        if [ "$ARID_SCAN_EXIT_CODE" = "2" ]; then
+          echo "Arid scan did not complete successfully." >&2
+        elif [ "$ARID_HAS_FINDINGS" = "true" ]; then
+          echo "Arid found active duplicate code." >&2
+        else
+          echo "Arid action failed." >&2
+        fi
+        exit 1
