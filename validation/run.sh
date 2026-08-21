@@ -237,10 +237,48 @@ expect_invalid_source() {
         echo "fixture:    $relative_path" >&2
         echo "exit:       $status" >&2
 
+        if [[ -s "$stdout_file" ]]; then
+            cat "$stdout_file" >&2
+        fi
+
         if [[ -s "$stderr_file" ]]; then
             cat "$stderr_file" >&2
         fi
 
+        rm -f "$stdout_file" "$stderr_file"
+        exit 2
+    fi
+
+    if jq -e --arg path "$relative_path" '
+        (keys | sort) == ["error", "schema_version", "tool_version"]
+        and .schema_version == 1
+        and (.tool_version | type == "string" and length > 0)
+        and (.error | type == "object")
+        and ((.error | keys | sort) == ["kind", "message", "path"])
+        and .error.kind == "parse"
+        and .error.path == $path
+        and (.error.message | contains("invalid Python syntax"))
+    ' "$stdout_file" >/dev/null 2>&1; then
+        if [[ -s "$stderr_file" ]]; then
+            echo "error: v2 fatal JSON error produced unexpected stderr" >&2
+            cat "$stderr_file" >&2
+            rm -f "$stdout_file" "$stderr_file"
+            exit 2
+        fi
+
+        rm -f "$stdout_file" "$stderr_file"
+
+        echo "Invalid-source probe: PASS (error-v1)"
+        echo "  $relative_path"
+        return
+    fi
+
+    # Historical 1.x releases report fatal JSON-mode errors as plain stderr.
+    # Keep supporting that contract so the same real-world campaign can compare
+    # v2 detector behavior against a qualified v1.2 executable.
+    if [[ -s "$stdout_file" ]]; then
+        echo "error: invalid-source stdout is neither error-v1 nor empty" >&2
+        cat "$stdout_file" >&2
         rm -f "$stdout_file" "$stderr_file"
         exit 2
     fi
@@ -263,7 +301,7 @@ expect_invalid_source() {
 
     rm -f "$stdout_file" "$stderr_file"
 
-    echo "Invalid-source probe: PASS"
+    echo "Invalid-source probe: PASS (historical stderr)"
     echo "  $relative_path"
 }
 
