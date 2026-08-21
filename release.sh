@@ -288,7 +288,7 @@ checks = [
     (
         "Cargo.lock",
         rf'^\[\[package\]\]\nname = "arid-cli"\nversion = "{re.escape(version)}"$',
-        "Cargo.lock version",
+        "arid-cli lock version",
         re.M,
     ),
     (
@@ -297,13 +297,28 @@ checks = [
         "pyproject.toml classifier",
         re.M,
     ),
-    (
-        roadmap_path,
-        rf'^\*\*Current phase:\*\* {re.escape(phase)}$',
-        "roadmap current phase",
-        re.M,
-    ),
 ]
+
+# Release preparation must land on the exact target roadmap phase. Stable
+# metadata also keeps that strict invariant. Published prereleases may advance
+# through later roadmap phases before the next prerelease metadata is prepared.
+if action == "update" or "-" not in version:
+    checks.append(
+        (
+            roadmap_path,
+            rf'^\*\*Current phase:\*\* {re.escape(phase)}$',
+            "roadmap current phase",
+            re.M,
+        )
+    )
+else:
+    roadmap_matches = re.findall(
+        r'^\*\*Current phase:\*\* (.+)$',
+        Path(roadmap_path).read_text(),
+        re.M,
+    )
+    if len(roadmap_matches) != 1:
+        fail(f"expected exactly one roadmap current phase in {roadmap_path}")
 
 if action_release:
     checks.append(
@@ -341,6 +356,15 @@ PY
 }
 
 summary() {
+    local roadmap_phase="$PHASE"
+
+    if [[ "$MODE" == "check" ]]; then
+        roadmap_phase="$(
+            sed -n 's/^\*\*Current phase:\*\* \(.*\)$/\1/p' "$ROADMAP" |
+                head -n 1
+        )"
+    fi
+
     echo "$1"
     echo
 
@@ -350,7 +374,7 @@ summary() {
         "Git tag:" "$TAG" \
         "PyPI version:" "$PYPI" \
         "Python classifier:" "$CLASSIFIER" \
-        "Roadmap phase:" "$PHASE"
+        "Roadmap phase:" "$roadmap_phase"
 }
 
 CURRENT="$(current_version)"
