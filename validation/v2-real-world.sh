@@ -60,7 +60,7 @@ done
     exit 2
 }
 
-for command in awk cmp git grep head jq mktemp realpath sha256sum; do
+for command in awk cmp git grep head jq mktemp realpath sha256sum sleep; do
     command -v "$command" >/dev/null 2>&1 ||
         die "required command not found: $command"
 done
@@ -131,7 +131,20 @@ mkdir -p "$RESULTS_DIR"
 
 echo "Arid:    $ARID_VERSION"
 echo "Rich:    $(git -C "$RICH_ROOT" rev-parse HEAD)"
+echo "Workers: auto"
 echo "Results: $RESULTS_DIR"
+
+wait_with_activity() {
+    local pid="$1"
+    local started="$SECONDS"
+
+    while kill -0 "$pid" 2>/dev/null; do
+        sleep 5
+        if kill -0 "$pid" 2>/dev/null; then
+            printf '    still running (%ss elapsed)\n' "$((SECONDS - started))"
+        fi
+    done
+}
 
 run_expect_status() {
     local expected="$1"
@@ -140,9 +153,13 @@ run_expect_status() {
     shift 3
 
     local status
+    local pid
 
     set +e
-    "$@" >"$stdout_file" 2>"$stderr_file"
+    "$@" >"$stdout_file" 2>"$stderr_file" &
+    pid=$!
+    wait_with_activity "$pid"
+    wait "$pid"
     status=$?
     set -e
 
@@ -167,9 +184,13 @@ run_with_stdin_expect_status() {
     shift 4
 
     local status
+    local pid
 
     set +e
-    "$@" <"$stdin_file" >"$stdout_file" 2>"$stderr_file"
+    "$@" <"$stdin_file" >"$stdout_file" 2>"$stderr_file" &
+    pid=$!
+    wait_with_activity "$pid"
+    wait "$pid"
     status=$?
     set -e
 
@@ -191,7 +212,7 @@ COMMON_ARGS=(
     --no-config
     --project-root "$RICH_ROOT"
     --hidden
-    --workers 1
+    --workers auto
     --json
 )
 
@@ -267,7 +288,7 @@ run_expect_status 0 \
     --no-config \
     --project-root "$RICH_ROOT" \
     --hidden \
-    --workers 1 \
+    --workers auto \
     --write-baseline "$BASELINE"
 
 BASELINE_FOCUS_JSON="$RESULTS_DIR/baseline-focus.json"
@@ -359,7 +380,7 @@ run_expect_status 2 \
     --no-config \
     --project-root "$KEEP_GOING_ROOT" \
     --hidden \
-    --workers 1 \
+    --workers auto \
     --keep-going \
     --json
 
@@ -392,6 +413,7 @@ pass "Rich keep-going preserves valid findings and reports incomplete analysis"
     fi
     echo "rich_commit=$(git -C "$RICH_ROOT" rev-parse HEAD)"
     echo "rich_remote=$(git -C "$RICH_ROOT" remote get-url origin 2>/dev/null || true)"
+    echo "workers=auto"
     echo "focus_path=$FOCUS_PATH"
 } >"$RESULTS_DIR/metadata.txt"
 
@@ -402,5 +424,6 @@ echo "========================================"
 echo
 echo "Arid:      $ARID_VERSION"
 echo "Rich:      $(git -C "$RICH_ROOT" rev-parse HEAD)"
+echo "Workers:   auto"
 echo "Focus:     $FOCUS_PATH"
 echo "Results:   $RESULTS_DIR"
