@@ -179,6 +179,10 @@ if [[ "$RELEASE_KIND" == "rc" ]]; then
             [[ -x "$ROOT_DIR/validation/v1.2.sh" ]] ||
                 die "required executable not found: validation/v1.2.sh"
             ;;
+        2.0.*)
+            [[ -x "$ROOT_DIR/validation/v2.sh" ]] ||
+                die "required executable not found: validation/v2.sh"
+            ;;
     esac
 fi
 
@@ -749,10 +753,17 @@ run_targeted_validation() {
             validation_script="$ROOT_DIR/validation/v1.2.sh"
             validation_name="v1.2"
             ;;
+        2.0.*)
+            validation_script="$RELEASE_WORKTREE/validation/v2.sh"
+            validation_name="v2"
+            ;;
         *)
             return 0
             ;;
     esac
+
+    [[ -x "$validation_script" ]] ||
+        die "$TAG does not contain executable $validation_name targeted validation"
 
     echo
     echo "Validating $validation_name integration surface with published standalone artifact..."
@@ -1019,6 +1030,9 @@ write_report() {
             elif [[ "$BASE_VERSION" == 1.2.* ]]; then
                 echo "standalone_v1_2_validation=PASS"
                 echo "pypi_v1_2_validation=PASS"
+            elif [[ "$BASE_VERSION" == 2.0.* ]]; then
+                echo "standalone_v2_validation=PASS"
+                echo "pypi_v2_validation=PASS"
             fi
 
             echo "standalone_validation=$STANDALONE_RESULTS"
