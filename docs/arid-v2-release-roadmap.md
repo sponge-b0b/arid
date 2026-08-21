@@ -2,7 +2,7 @@
 
 **Product:** Arid  
 **Stable target:** `2.0.0`  
-**Current phase:** Official GitHub Action
+**Current phase:** Targeted v2 integration validation
 
 ## Purpose
 
@@ -446,7 +446,7 @@ The binary uses the same supported application entry points as embedding callers
 
 **Goal:** make correct Arid CI integration low-friction without duplicating detector behavior.
 
-**Status:** In progress.
+**Status:** Complete.
 
 ### Work
 
@@ -465,13 +465,15 @@ The binary uses the same supported application entry points as embedding callers
 
 ### Gate
 
-The Action preserves whole-project detection, produces deterministic outputs from released Arid behavior, passes helper/unit tests, and succeeds in an end-to-end workflow using a published prerelease artifact before RC qualification.
+The Action preserves whole-project detection, produces deterministic outputs from released Arid behavior, passes helper/unit tests, and the production release workflow is wired to verify the Action end-to-end against the exact published prerelease artifact. The first published v2 prerelease MUST pass that end-to-end verification as part of Phase 12.
 
 ---
 
 ## Phase 11 — Targeted v2 integration validation
 
 **Goal:** prove the complete v2 contract together before broad real-world stabilization.
+
+**Status:** In progress.
 
 ### Required validation
 
@@ -536,7 +538,7 @@ Breaking corrections discovered during alpha are allowed because the stable v2 c
 
 ### Gate
 
-At least one alpha release is published successfully, installable from PyPI, accompanied by its curated GitHub Release notes, and passes artifact smoke testing across the release matrix.
+At least one alpha release is published successfully, installable from PyPI, accompanied by its curated GitHub Release notes, passes artifact smoke testing across the release matrix, and passes the official GitHub Action end-to-end verification against that exact published alpha artifact.
 
 ---
 
