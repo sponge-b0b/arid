@@ -7,7 +7,7 @@ inputs:
   version:
     description: Exact PyPI arid package version to install.
     required: false
-    default: "1.2.0"
+    default: "2.0.0a1"
   paths:
     description: Newline-separated files or directories to scan.
     required: false
