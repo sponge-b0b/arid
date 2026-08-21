@@ -26,6 +26,10 @@ pass() {
     printf 'PASS: %s\n' "$1"
 }
 
+progress() {
+    printf '\n==> %s\n' "$1"
+}
+
 GLOBAL_ROOT_INPUT=""
 
 while [[ $# -gt 0 ]]; do
@@ -125,6 +129,10 @@ ARID_SHA256="$(sha256sum "$ARID_BIN" | awk '{print $1}')"
 rm -rf "$RESULTS_DIR"
 mkdir -p "$RESULTS_DIR"
 
+echo "Arid:    $ARID_VERSION"
+echo "Rich:    $(git -C "$RICH_ROOT" rev-parse HEAD)"
+echo "Results: $RESULTS_DIR"
+
 run_expect_status() {
     local expected="$1"
     local stdout_file="$2"
@@ -190,6 +198,7 @@ COMMON_ARGS=(
 FULL_JSON="$RESULTS_DIR/full.json"
 FULL_STDERR="$RESULTS_DIR/full.stderr"
 
+progress "Scanning the full Rich corpus"
 run_expect_status 1 \
     "$FULL_JSON" \
     "$FULL_STDERR" \
@@ -221,6 +230,7 @@ FOCUS_PATH="$(
 FOCUS_JSON="$RESULTS_DIR/focus.json"
 FOCUS_STDERR="$RESULTS_DIR/focus.stderr"
 
+progress "Validating focus against $FOCUS_PATH"
 run_expect_status 1 \
     "$FOCUS_JSON" \
     "$FOCUS_STDERR" \
@@ -249,6 +259,7 @@ pass "Rich focus filters reporting while preserving whole-corpus findings"
 
 BASELINE="$RESULTS_DIR/rich-baseline.json"
 
+progress "Writing a baseline from the full Rich corpus"
 run_expect_status 0 \
     "$RESULTS_DIR/baseline-write.stdout" \
     "$RESULTS_DIR/baseline-write.stderr" \
@@ -261,6 +272,7 @@ run_expect_status 0 \
 
 BASELINE_FOCUS_JSON="$RESULTS_DIR/baseline-focus.json"
 
+progress "Validating baseline + focus ordering"
 run_expect_status 0 \
     "$BASELINE_FOCUS_JSON" \
     "$RESULTS_DIR/baseline-focus.stderr" \
@@ -285,6 +297,7 @@ FOCUS_SOURCE="$RICH_ROOT/$FOCUS_PATH"
 FOCUS_SHA_BEFORE="$(sha256sum "$FOCUS_SOURCE" | awk '{print $1}')"
 VIRTUAL_JSON="$RESULTS_DIR/virtual-replace.json"
 
+progress "Validating virtual-source replacement for $FOCUS_PATH"
 run_with_stdin_expect_status 1 \
     "$FOCUS_SOURCE" \
     "$VIRTUAL_JSON" \
@@ -329,6 +342,7 @@ pass "Rich virtual-source replacement is detector-equivalent and non-mutating"
 
 # Use a detached worktree so the canonical corpus remains clean while the
 # keep-going probe adds one controlled malformed Python source.
+progress "Validating keep-going with one controlled Rich parse failure"
 git -C "$RICH_ROOT" worktree add --quiet --detach "$KEEP_GOING_ROOT" HEAD
 
 cat >"$KEEP_GOING_ROOT/zz_arid_invalid_fixture.py" <<'PY'
