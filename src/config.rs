@@ -155,7 +155,8 @@ pub enum ConfigError {
 ///
 /// `start` may be either a directory or file path. Configuration search
 /// begins at its containing directory and walks upward.
-pub fn load_settings(
+#[cfg(test)]
+fn load_settings(
     start: &Path,
     overrides: SettingsOverrides,
 ) -> Result<LoadedSettings, ConfigError> {

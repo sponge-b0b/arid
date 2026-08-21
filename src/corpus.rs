@@ -30,9 +30,6 @@ pub struct Corpus {
     ///
     /// Actual line tokens occupy `0..line_id_count`.
     pub line_id_count: u32,
-
-    /// Number of unique segment sentinels in the corpus.
-    pub segment_count: u32,
 }
 
 impl Corpus {
@@ -182,7 +179,6 @@ pub fn build_corpus(mut files: Vec<PreparedFile>) -> Result<Corpus, CorpusError>
         tokens,
         positions,
         line_id_count,
-        segment_count,
     })
 }
 
@@ -356,7 +352,6 @@ mod tests {
         .unwrap();
 
         assert_eq!(corpus.line_id_count, 4);
-        assert_eq!(corpus.segment_count, 2);
 
         assert_eq!(corpus.tokens, vec![0, 1, 4, 2, 3, 5,]);
 
@@ -470,6 +465,5 @@ mod tests {
         assert!(corpus.tokens.is_empty());
         assert!(corpus.positions.is_empty());
         assert_eq!(corpus.line_id_count, 0);
-        assert_eq!(corpus.segment_count, 0);
     }
 }
