@@ -104,6 +104,9 @@ case "$BASE_VERSION" in
     1.2.*)
         RELEASE_ROADMAP="docs/arid-v1.2-release-roadmap.md"
         ;;
+    2.0.*)
+        RELEASE_ROADMAP="docs/arid-v2-release-roadmap.md"
+        ;;
     *)
         die "no qualification release roadmap configured for version: $VERSION"
         ;;
@@ -116,6 +119,10 @@ RELEASE_METADATA_FILES=(
     "${COMMON_RELEASE_METADATA_FILES[@]}"
     "$RELEASE_ROADMAP"
 )
+
+if [[ "$BASE_VERSION" == 2.0.* ]]; then
+    RELEASE_METADATA_FILES+=(action.yml)
+fi
 
 TAG="v$VERSION"
 EXPECTED_ARID_VERSION="arid $VERSION"
@@ -372,7 +379,7 @@ verify_release_workflow() {
     [[ "$run_conclusion" == "success" ]] ||
         die "release workflow did not succeed: run $RELEASE_RUN_ID ($run_conclusion)"
 
-    if [[ "$BASE_VERSION" == 1.2.* ]]; then
+    if [[ "$BASE_VERSION" == 1.2.* || "$BASE_VERSION" == 2.0.* ]]; then
         jobs_json="$(
             gh api \
                 -X GET \
@@ -388,6 +395,17 @@ verify_release_workflow() {
             die "release workflow is missing a successful published Linux aarch64 verification job"
 
         pass "published Linux aarch64 workflow verification"
+
+        if [[ "$BASE_VERSION" == 2.0.* ]]; then
+            jq \
+                -e \
+                'any(.jobs[]; .name == "Verify published GitHub Action" and .conclusion == "success")' \
+                <<<"$jobs_json" \
+                >/dev/null ||
+                die "release workflow is missing a successful published GitHub Action verification job"
+
+            pass "published GitHub Action workflow verification"
+        fi
     fi
 
     pass "production release workflow"
@@ -427,7 +445,7 @@ verify_github_release() {
         >/dev/null ||
         die "GitHub release is missing $LINUX_ARCHIVE"
 
-    if [[ "$BASE_VERSION" == 1.2.* ]]; then
+    if [[ "$BASE_VERSION" == 1.2.* || "$BASE_VERSION" == 2.0.* ]]; then
         jq \
             -e \
             'any(.assets[]; .name == "arid-linux-aarch64.tar.gz")' \
@@ -990,6 +1008,10 @@ write_report() {
         echo "pypi_binary_sha256=$PYPI_SHA256"
         echo "pypi_arid_version=$PYPI_ARID_VERSION"
 
+        if [[ "$BASE_VERSION" == 2.0.* ]]; then
+            echo "published_action_verification=PASS"
+        fi
+
         if [[ "$RELEASE_KIND" == "rc" ]]; then
             if [[ "$BASE_VERSION" == 1.1.* ]]; then
                 echo "standalone_v1_1_validation=PASS"
@@ -1058,6 +1080,11 @@ printf '  %-28s %s\n' \
     "GitHub release:" "PASS" \
     "Standalone smoke:" "PASS" \
     "PyPI smoke:" "PASS"
+
+if [[ "$BASE_VERSION" == 2.0.* ]]; then
+    printf '  %-28s %s\n' \
+        "Published GitHub Action:" "PASS"
+fi
 
 if [[ "$RELEASE_KIND" == "rc" ]]; then
     printf '  %-28s %s\n' \
