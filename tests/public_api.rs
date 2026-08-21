@@ -1,6 +1,4 @@
-use arid::{
-    Cli, ColorEnvironment, ExitStatus, RunContext, RunResult, run, run_with_context,
-};
+use arid::{Cli, ColorEnvironment, ExitStatus, RunContext, RunResult, run, run_with_context};
 use clap::Parser;
 
 #[test]
