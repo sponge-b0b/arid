@@ -325,7 +325,26 @@ jobs:
         shell: bash
         run: |
           version="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)"
-          pypi_version="${version/-rc./rc}"
+
+          if [[ "$version" == 2.0.* ]]; then
+            pypi_version="$(
+              awk '
+                /^  version:$/ { in_version = 1; next }
+                in_version && /^    default: / {
+                  value = $0
+                  sub(/^    default: "/, "", value)
+                  sub(/"$/, "", value)
+                  print value
+                  exit
+                }
+              ' action.yml
+            )"
+          else
+            pypi_version="${version/-rc./rc}"
+          fi
+
+          test -n "$version"
+          test -n "$pypi_version"
 
           echo "ARID_VERSION=${version}" >> "$GITHUB_ENV"
           echo "PYPI_VERSION=${pypi_version}" >> "$GITHUB_ENV"
@@ -364,3 +383,106 @@ jobs:
 
           test "$(standalone-smoke/arid --version)" = "arid ${ARID_VERSION}"
           standalone-smoke/arid --help >/dev/null
+
+  verify-action:
+    name: Verify published GitHub Action
+    if: startsWith(github.ref, 'refs/tags/v2.0.')
+    needs:
+      - publish-pypi
+      - publish-github
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Resolve release versions
+        shell: bash
+        run: |
+          version="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)"
+          pypi_version="$(
+            awk '
+              /^  version:$/ { in_version = 1; next }
+              in_version && /^    default: / {
+                value = $0
+                sub(/^    default: "/, "", value)
+                sub(/"$/, "", value)
+                print value
+                exit
+              }
+            ' action.yml
+          )"
+
+          test -n "$version"
+          test -n "$pypi_version"
+
+          echo "ARID_VERSION=${version}" >> "$GITHUB_ENV"
+          echo "PYPI_VERSION=${pypi_version}" >> "$GITHUB_ENV"
+
+      - name: Wait for exact PyPI release
+        run: python3 qualification/pypi_ready.py "$PYPI_VERSION"
+
+      - name: Create deterministic action fixture
+        shell: bash
+        run: |
+          mkdir action-e2e
+
+          cat > action-e2e/left.py <<'PY'
+          def duplicated_calculation():
+              alpha = 1
+              beta = 2
+              gamma = alpha + beta
+              delta = gamma * 2
+              return delta
+          PY
+
+          cp action-e2e/left.py action-e2e/right.py
+
+      - name: Run published Arid Action
+        id: arid
+        uses: ./
+        with:
+          paths: action-e2e
+          focus: action-e2e/left.py
+          arguments: --no-config --project-root . --min-lines 4
+          fail-on-findings: "false"
+          sarif: "false"
+          job-summary: "true"
+
+      - name: Verify Action outputs
+        env:
+          TOOL_VERSION: ${{ steps.arid.outputs.tool-version }}
+          HAS_FINDINGS: ${{ steps.arid.outputs.has-findings }}
+          DUPLICATE_GROUPS: ${{ steps.arid.outputs.duplicate-groups }}
+          DUPLICATE_LINES: ${{ steps.arid.outputs.duplicate-lines }}
+          DUPLICATION_PERCENT: ${{ steps.arid.outputs.duplication-percent }}
+          FILES: ${{ steps.arid.outputs.files }}
+          COMPLETE: ${{ steps.arid.outputs.complete }}
+          SCAN_EXIT_CODE: ${{ steps.arid.outputs.scan-exit-code }}
+        shell: bash
+        run: |
+          test "$TOOL_VERSION" = "$ARID_VERSION"
+          test "$HAS_FINDINGS" = "true"
+          test "$DUPLICATE_GROUPS" = "1"
+          test "$DUPLICATE_LINES" -gt 0
+          test "$FILES" = "2"
+          test "$COMPLETE" = "true"
+          test "$SCAN_EXIT_CODE" = "1"
+
+          python3 - <<'PY'
+          import os
+
+          value = float(os.environ["DUPLICATION_PERCENT"])
+          if value <= 0:
+              raise SystemExit("expected positive duplication percentage")
+          PY
