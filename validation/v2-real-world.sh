@@ -56,7 +56,7 @@ done
     exit 2
 }
 
-for command in cmp git jq realpath sha256sum; do
+for command in awk cmp git grep head jq mktemp realpath sha256sum; do
     command -v "$command" >/dev/null 2>&1 ||
         die "required command not found: $command"
 done
@@ -303,18 +303,6 @@ jq -e --arg path "$FOCUS_PATH" '
     and .analysis.virtual_source == $path
 ' "$VIRTUAL_JSON" >/dev/null ||
     die "real-world virtual-source replacement did not record the selected Rich path"
-
-for report in "$FULL_JSON" "$VIRTUAL_JSON"; do
-    jq -S '{
-        files,
-        source_lines,
-        analyzed_lines,
-        duplicate_groups,
-        duplicate_lines,
-        duplication_percent,
-        findings
-    }' "$report"
-done >"$TMP_ROOT/virtual-combined.json"
 
 jq -S '{
     files,
