@@ -21,6 +21,7 @@ ADMINISTRATIVE_OPTIONS = frozenset(
         "--write-baseline",
     }
 )
+INFORMATIONAL_OPTIONS = frozenset({"--help", "--version", "-V", "-h"})
 UNSUPPORTED_ACTION_OPTIONS = frozenset({"--stdin-path"})
 
 
@@ -71,6 +72,8 @@ def validate_action_arguments(arguments: list[str]) -> None:
         option = argument.split("=", 1)[0]
         if option in ADMINISTRATIVE_OPTIONS:
             raise ActionError(f"{option} is not supported by the GitHub Action")
+        if option in INFORMATIONAL_OPTIONS:
+            raise ActionError(f"{option} is not supported because it does not run an Arid scan")
         if option in UNSUPPORTED_ACTION_OPTIONS:
             raise ActionError(
                 f"{option} is not supported because the GitHub Action does not supply stdin source"

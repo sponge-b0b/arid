@@ -40,6 +40,12 @@ class ActionHelperTests(unittest.TestCase):
         with self.assertRaises(action_run.ActionError):
             action_run.validate_action_arguments(["--baseline-status=baseline.json"])
 
+    def test_informational_options_are_rejected(self) -> None:
+        for option in sorted(action_run.INFORMATIONAL_OPTIONS):
+            with self.subTest(option=option):
+                with self.assertRaises(action_run.ActionError):
+                    action_run.validate_action_arguments([option])
+
     def test_option_like_path_after_separator_is_not_rejected(self) -> None:
         action_run.validate_action_arguments(["--", "--show-config"])
 
