@@ -1,8 +1,7 @@
 use std::io::{self, IsTerminal, Read};
 use std::process::ExitCode;
 
-use arid::cli::Cli;
-use arid::{ColorEnvironment, RunContext};
+use arid::{Cli, ColorEnvironment, RunContext};
 use clap::Parser;
 
 fn main() -> ExitCode {

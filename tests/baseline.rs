@@ -4,8 +4,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use arid::cli::Cli;
-use arid::outcome::ExitStatus;
+use arid::{Cli, ExitStatus};
 use clap::Parser;
 
 static TEMP_COUNTER: AtomicUsize = AtomicUsize::new(0);

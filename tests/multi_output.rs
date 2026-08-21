@@ -1,10 +1,10 @@
+use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use arid::cli::{Cli, ColorWhen};
-use arid::outcome::ExitStatus;
-use arid::{RunContext, run, run_with_context};
+use arid::{Cli, ExitStatus, RunContext, run, run_with_context};
+use clap::Parser;
 
 static TEMP_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
@@ -54,43 +54,12 @@ min-lines = 2
 }
 
 fn test_cli(root: &Path) -> Cli {
-    Cli {
-        paths: vec![root.to_path_buf()],
-        config: None,
-        no_config: false,
-        project_root: None,
-        capabilities: false,
-        show_config: false,
-        list_files: false,
-        stdin_path: None,
-        keep_going: false,
-        focus: Vec::new(),
-        no_fail_on_findings: false,
-        min_lines: None,
-        ignore_comments: false,
-        no_ignore_comments: false,
-        ignore_docstrings: false,
-        no_ignore_docstrings: false,
-        ignore_imports: false,
-        no_ignore_imports: false,
-        ignore_signatures: false,
-        no_ignore_signatures: false,
-        same_file: false,
-        no_same_file: false,
-        hidden: false,
-        no_hidden: false,
-        exclude: Vec::new(),
-        workers: 1,
-        format: None,
-        report: Vec::new(),
-        color: None,
-        json: true,
-        show_source: false,
-        baseline: None,
-        baseline_status: None,
-        prune_baseline: None,
-        write_baseline: None,
-    }
+    Cli::try_parse_from([
+        OsString::from("arid"),
+        OsString::from("--json"),
+        root.as_os_str().to_owned(),
+    ])
+    .unwrap()
 }
 
 fn duplicate_fixture() -> (TempDir, Cli) {
@@ -143,10 +112,15 @@ fn writes_all_concrete_formats_from_the_same_report() {
 
 #[test]
 fn supplemental_text_is_plain_when_stdout_is_colored() {
-    let (temp, mut cli) = duplicate_fixture();
+    let (temp, _) = duplicate_fixture();
     let text_path = temp.path().join("report.txt");
-    cli.json = false;
-    cli.color = Some(ColorWhen::Always);
+    let mut cli = Cli::try_parse_from([
+        OsString::from("arid"),
+        OsString::from("--color"),
+        OsString::from("always"),
+        temp.path().as_os_str().to_owned(),
+    ])
+    .unwrap();
     cli.report = vec![format!("text={}", text_path.display())];
 
     let result = run(&cli);

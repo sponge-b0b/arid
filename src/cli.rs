@@ -5,7 +5,7 @@ use clap::{Parser, ValueEnum};
 const MAX_AUTO_WORKERS: usize = 4;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
-pub enum OutputFormat {
+pub(crate) enum OutputFormat {
     Text,
     Json,
     Markdown,
@@ -13,7 +13,7 @@ pub enum OutputFormat {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
-pub enum ColorWhen {
+pub(crate) enum ColorWhen {
     Auto,
     Always,
     Never,
@@ -154,7 +154,7 @@ pub struct Cli {
 
     /// Select the report representation.
     #[arg(long, value_enum, value_name = "FORMAT", conflicts_with = "json")]
-    pub format: Option<OutputFormat>,
+    pub(crate) format: Option<OutputFormat>,
 
     /// Write an additional report as FORMAT=PATH. May be repeated.
     #[arg(
@@ -166,7 +166,7 @@ pub struct Cli {
 
     /// Control color in text output.
     #[arg(long, value_enum, value_name = "WHEN")]
-    pub color: Option<ColorWhen>,
+    pub(crate) color: Option<ColorWhen>,
 
     /// Emit JSON instead of text output. Equivalent to --format json.
     #[arg(long, conflicts_with = "format")]
@@ -207,7 +207,7 @@ pub struct Cli {
 
 impl Cli {
     #[must_use]
-    pub fn output_format(&self) -> OutputFormat {
+    pub(crate) fn output_format(&self) -> OutputFormat {
         if self.json {
             OutputFormat::Json
         } else {

@@ -1,7 +1,8 @@
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
-use arid::cli::Cli;
-use arid::outcome::ExitStatus;
+use arid::{Cli, ExitStatus};
+use clap::Parser;
 
 fn fixture(name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -12,43 +13,12 @@ fn fixture(name: &str) -> PathBuf {
 }
 
 fn test_cli(path: PathBuf) -> Cli {
-    Cli {
-        paths: vec![path],
-        config: None,
-        no_config: false,
-        project_root: None,
-        capabilities: false,
-        show_config: false,
-        list_files: false,
-        stdin_path: None,
-        keep_going: false,
-        focus: Vec::new(),
-        no_fail_on_findings: false,
-        min_lines: None,
-        ignore_comments: false,
-        no_ignore_comments: false,
-        ignore_docstrings: false,
-        no_ignore_docstrings: false,
-        ignore_imports: false,
-        no_ignore_imports: false,
-        ignore_signatures: false,
-        no_ignore_signatures: false,
-        same_file: false,
-        no_same_file: false,
-        hidden: false,
-        no_hidden: false,
-        exclude: Vec::new(),
-        workers: 1,
-        format: None,
-        report: Vec::new(),
-        color: None,
-        json: true,
-        show_source: false,
-        baseline: None,
-        baseline_status: None,
-        prune_baseline: None,
-        write_baseline: None,
-    }
+    Cli::try_parse_from([
+        OsString::from("arid"),
+        OsString::from("--json"),
+        path.into_os_string(),
+    ])
+    .unwrap()
 }
 
 fn run_fixture(name: &str) -> serde_json::Value {
