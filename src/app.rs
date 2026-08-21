@@ -31,43 +31,43 @@ use crate::text::render_text;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct ColorEnvironment {
-    pub no_color: bool,
-    pub clicolor_force: bool,
-    pub clicolor_disabled: bool,
+    no_color: bool,
+    clicolor_force: bool,
+    clicolor_disabled: bool,
 }
 
 impl ColorEnvironment {
     #[must_use]
-    pub fn from_process() -> Self {
+    pub const fn new(no_color: bool, clicolor_force: bool, clicolor_disabled: bool) -> Self {
         Self {
-            no_color: std::env::var_os("NO_COLOR")
-                .is_some_and(|value| !value.as_os_str().is_empty()),
-            clicolor_force: std::env::var_os("CLICOLOR_FORCE")
-                .is_some_and(|value| value.as_os_str() != OsStr::new("0")),
-            clicolor_disabled: std::env::var_os("CLICOLOR")
-                .is_some_and(|value| value.as_os_str() == OsStr::new("0")),
+            no_color,
+            clicolor_force,
+            clicolor_disabled,
         }
+    }
+
+    #[must_use]
+    pub fn from_process() -> Self {
+        Self::new(
+            std::env::var_os("NO_COLOR").is_some_and(|value| !value.as_os_str().is_empty()),
+            std::env::var_os("CLICOLOR_FORCE")
+                .is_some_and(|value| value.as_os_str() != OsStr::new("0")),
+            std::env::var_os("CLICOLOR").is_some_and(|value| value.as_os_str() == OsStr::new("0")),
+        )
     }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct RunContext {
-    pub text_color_capable: bool,
-    pub color_environment: ColorEnvironment,
+    text_color_capable: bool,
+    color_environment: ColorEnvironment,
     stdin_source: Option<String>,
 }
 
 impl RunContext {
     #[must_use]
     pub const fn non_terminal() -> Self {
-        Self::new(
-            false,
-            ColorEnvironment {
-                no_color: false,
-                clicolor_force: false,
-                clicolor_disabled: false,
-            },
-        )
+        Self::new(false, ColorEnvironment::new(false, false, false))
     }
 
     #[must_use]
