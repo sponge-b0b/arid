@@ -288,7 +288,7 @@ checks = [
     (
         "Cargo.lock",
         rf'^\[\[package\]\]\nname = "arid-cli"\nversion = "{re.escape(version)}"$',
-        "arid-cli lock version",
+        "Cargo.lock version",
         re.M,
     ),
     (
