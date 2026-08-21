@@ -2,7 +2,7 @@
 
 **Product:** Arid  
 **Stable target:** `2.0.0`  
-**Current phase:** Targeted v2 integration validation
+**Current phase:** Alpha publication
 
 ## Purpose
 
@@ -473,7 +473,7 @@ The Action preserves whole-project detection, produces deterministic outputs fro
 
 **Goal:** prove the complete v2 contract together before broad real-world stabilization.
 
-**Status:** In progress.
+**Status:** Complete.
 
 ### Required validation
 
