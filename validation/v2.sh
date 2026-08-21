@@ -27,6 +27,8 @@ echo
 "$SCRIPT_DIR/v2-operations.sh" "$1"
 echo
 "$SCRIPT_DIR/v2-project.sh" "$1"
+echo
+"$SCRIPT_DIR/v2-identity.sh" "$1"
 
 echo
 echo "V2 targeted integration validation PASS"
