@@ -117,15 +117,19 @@ derive() {
     case "$version" in
         1.0.*)
             ROADMAP="docs/arid-v1-release-roadmap.md"
+            ACTION_RELEASE="false"
             ;;
         1.1.*)
             ROADMAP="docs/arid-v1.1-release-roadmap.md"
+            ACTION_RELEASE="false"
             ;;
         1.2.*)
             ROADMAP="docs/arid-v1.2-release-roadmap.md"
+            ACTION_RELEASE="false"
             ;;
         2.0.*)
             ROADMAP="docs/arid-v2-release-roadmap.md"
+            ACTION_RELEASE="true"
             ;;
         *)
             die "no release roadmap configured for version: $version"
@@ -137,7 +141,12 @@ derive() {
 
     FILES=("${COMMON_FILES[@]}" "$ROADMAP")
 
-    export VERSION CLASSIFIER PHASE BADGE STATUS ROADMAP
+    if [[ "$ACTION_RELEASE" == "true" ]]; then
+        [[ -f action.yml ]] || die "required file not found: action.yml"
+        FILES+=(action.yml)
+    fi
+
+    export VERSION PYPI CLASSIFIER PHASE BADGE STATUS ROADMAP ACTION_RELEASE
 }
 
 metadata() {
@@ -149,11 +158,13 @@ import sys
 
 action = sys.argv[1]
 version = os.environ["VERSION"]
+pypi = os.environ["PYPI"]
 classifier = os.environ["CLASSIFIER"]
 phase = os.environ["PHASE"]
 badge = os.environ["BADGE"]
 status = os.environ["STATUS"]
 roadmap_path = os.environ["ROADMAP"]
+action_release = os.environ["ACTION_RELEASE"] == "true"
 
 
 def fail(message):
@@ -249,6 +260,14 @@ if action == "update":
         "roadmap release phase",
     )
 
+    if action_release:
+        sub_once(
+            "action.yml",
+            r'(^  version:\n(?:    .*\n)*?    default: ")[^"]+("$)',
+            rf'\g<1>{pypi}\2',
+            "action PyPI version default",
+        )
+
 
 checks = [
     (
@@ -276,6 +295,16 @@ checks = [
         re.M,
     ),
 ]
+
+if action_release:
+    checks.append(
+        (
+            "action.yml",
+            rf'^  version:\n(?:    .*\n)*?    default: "{re.escape(pypi)}"$',
+            "action.yml PyPI version default",
+            re.M,
+        )
+    )
 
 for path, pattern, label, flags in checks:
     if len(re.findall(pattern, Path(path).read_text(), flags)) != 1:
