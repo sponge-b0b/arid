@@ -337,6 +337,7 @@ if not report["errors"]:
 PY
 
 pass "incomplete multi-output writes partial JSON and suppresses SARIF"
+rm "$OUTPUT_PROJECT/broken.py"
 
 cp "$OUTPUT_PROJECT/a.py" "$TMP_ROOT/a-original.py"
 run_expect_status 2 \
