@@ -2,7 +2,7 @@
 
 **Product:** Arid  
 **Stable target:** `2.0.0`  
-**Current phase:** Real-world validation and beta stabilization
+**Current phase:** Performance and competitive verification
 
 ## Purpose
 
@@ -547,6 +547,8 @@ At least one alpha release is published successfully, installable from PyPI, acc
 ## Phase 13 — Real-world validation and beta stabilization
 
 **Goal:** validate v2 behavior on representative repositories and stabilize the externally visible contract.
+
+**Status:** Complete.
 
 ### Work
 
