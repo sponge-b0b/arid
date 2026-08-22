@@ -60,7 +60,7 @@ done
     exit 2
 }
 
-for command in awk cmp git grep jq mktemp realpath sha256sum sleep; do
+for command in awk cmp dirname git grep jq mktemp realpath sha256sum sleep; do
     command -v "$command" >/dev/null 2>&1 ||
         die "required command not found: $command"
 done
@@ -244,20 +244,21 @@ FOCUS_PATH="$(
         [
             .findings[]
             | select(.distribution == "cross-file" or .distribution == "hybrid")
-            | .locations[0].path
+            | .locations[].path
+            | select(contains("/"))
         ][0] // empty
     ' "$FULL_JSON"
 )"
 
 [[ -n "$FOCUS_PATH" ]] ||
-    die "Rich full scan has no cross-file/hybrid finding suitable for focus validation"
+    die "Rich full scan has no nested cross-file/hybrid finding suitable for focus validation"
 [[ -f "$RICH_ROOT/$FOCUS_PATH" ]] ||
     die "selected Rich focus path does not exist: $FOCUS_PATH"
 
 FOCUS_JSON="$RESULTS_DIR/focus.json"
 FOCUS_STDERR="$RESULTS_DIR/focus.stderr"
 
-progress "Validating focus against $FOCUS_PATH"
+progress "Validating file focus against $FOCUS_PATH"
 run_expect_status 1 \
     "$FOCUS_JSON" \
     "$FOCUS_STDERR" \
@@ -273,16 +274,61 @@ jq -e --arg focus "$FOCUS_PATH" '
     and all(.findings[]; any(.locations[]; .path == $focus))
     and any(.findings[]; any(.locations[]; .path != $focus))
 ' "$FOCUS_JSON" >/dev/null ||
-    die "real-world focus report does not preserve whole-corpus occurrence context"
+    die "real-world file focus report does not preserve whole-corpus occurrence context"
 
 jq -S --arg focus "$FOCUS_PATH" '
     [.findings[] | select(any(.locations[]; .path == $focus))]
 ' "$FULL_JSON" >"$TMP_ROOT/expected-focus.json"
 jq -S '.findings' "$FOCUS_JSON" >"$TMP_ROOT/actual-focus.json"
 cmp -s "$TMP_ROOT/expected-focus.json" "$TMP_ROOT/actual-focus.json" ||
-    die "real-world focus findings differ from the matching subset of the full Rich scan"
+    die "real-world file focus findings differ from the matching subset of the full Rich scan"
 
-pass "Rich focus filters reporting while preserving whole-corpus findings"
+pass "Rich file focus filters reporting while preserving whole-corpus findings"
+
+FOCUS_DIRECTORY="$(dirname "$FOCUS_PATH")"
+[[ "$FOCUS_DIRECTORY" != "." && -d "$RICH_ROOT/$FOCUS_DIRECTORY" ]] ||
+    die "selected Rich focus directory is invalid: $FOCUS_DIRECTORY"
+
+DIRECTORY_FOCUS_JSON="$RESULTS_DIR/focus-directory.json"
+DIRECTORY_FOCUS_STDERR="$RESULTS_DIR/focus-directory.stderr"
+
+progress "Validating directory focus against $FOCUS_DIRECTORY"
+run_expect_status 1 \
+    "$DIRECTORY_FOCUS_JSON" \
+    "$DIRECTORY_FOCUS_STDERR" \
+    "$ARID_BIN" "${COMMON_ARGS[@]}" \
+    --focus "$FOCUS_DIRECTORY"
+
+jq -e \
+    --arg focus "$FOCUS_DIRECTORY" \
+    --arg prefix "$FOCUS_DIRECTORY/" \
+    '
+        .schema_version == 4
+        and .complete == true
+        and .errors == []
+        and .analysis.focus == [$focus]
+        and .duplicate_groups > 0
+        and all(
+            .findings[];
+            any(.locations[]; (.path == $focus) or (.path | startswith($prefix)))
+        )
+    ' "$DIRECTORY_FOCUS_JSON" >/dev/null ||
+    die "real-world directory focus report does not match the selected Rich directory"
+
+jq -S \
+    --arg focus "$FOCUS_DIRECTORY" \
+    --arg prefix "$FOCUS_DIRECTORY/" \
+    '[
+        .findings[]
+        | select(
+            any(.locations[]; (.path == $focus) or (.path | startswith($prefix)))
+        )
+    ]' "$FULL_JSON" >"$TMP_ROOT/expected-directory-focus.json"
+jq -S '.findings' "$DIRECTORY_FOCUS_JSON" >"$TMP_ROOT/actual-directory-focus.json"
+cmp -s "$TMP_ROOT/expected-directory-focus.json" "$TMP_ROOT/actual-directory-focus.json" ||
+    die "real-world directory focus findings differ from the matching subset of the full Rich scan"
+
+pass "Rich directory focus matches the full-corpus finding subset"
 
 BASELINE="$RESULTS_DIR/rich-baseline.json"
 
@@ -421,6 +467,7 @@ pass "Rich keep-going preserves valid findings and reports incomplete analysis"
     echo "rich_remote=$(git -C "$RICH_ROOT" remote get-url origin 2>/dev/null || true)"
     echo "workers=auto"
     echo "focus_path=$FOCUS_PATH"
+    echo "focus_directory=$FOCUS_DIRECTORY"
 } >"$RESULTS_DIR/metadata.txt"
 
 echo
@@ -432,4 +479,5 @@ echo "Arid:      $ARID_VERSION"
 echo "Rich:      $(git -C "$RICH_ROOT" rev-parse HEAD)"
 echo "Workers:   auto"
 echo "Focus:     $FOCUS_PATH"
+echo "Focus dir: $FOCUS_DIRECTORY"
 echo "Results:   $RESULTS_DIR"
