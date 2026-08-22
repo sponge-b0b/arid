@@ -2,7 +2,7 @@
 
 **Product:** Arid  
 **Stable target:** `2.0.0`  
-**Current phase:** Migration, README, and release readiness
+**Current phase:** Pre-RC release-system qualification
 
 ## Purpose
 
@@ -599,6 +599,8 @@ Arid remains at least an order of magnitude faster than isolated Pylint duplicat
 ## Phase 15 — Migration, README, and release readiness
 
 **Goal:** make v2 understandable and adoptable before RC freeze.
+
+**Status:** Complete.
 
 ### Work
 
