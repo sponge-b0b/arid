@@ -2,7 +2,7 @@
 
 **Product:** Arid  
 **Stable target:** `2.0.0`  
-**Current phase:** Pre-RC release-system qualification
+**Current phase:** Release Candidate
 
 ## Purpose
 
@@ -629,6 +629,8 @@ A developer can understand whether v2 affects them and how to migrate without re
 ## Phase 16 — Pre-RC release-system qualification
 
 **Goal:** prove the release machinery and full artifact matrix before freezing the release candidate.
+
+**Status:** Complete.
 
 ### Work
 
