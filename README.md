@@ -487,7 +487,7 @@ For project-wide existing debt, prefer a baseline instead of scattering suppress
 
 Arid separates two questions:
 
-> **Detection answers: “Is this code duplicated?”**  
+> **Detection answers: “Is this code duplicated?”**
 > **Context helps answer: “What kind of code is duplicated?”**
 
 Arid deliberately does **not** assign severity or decide whether duplication should be removed. Duplicate code can be intentional, framework-driven, harmless, or worth refactoring.
