@@ -2,7 +2,7 @@
 
 **Product:** Arid  
 **Stable target:** `2.0.0`  
-**Current phase:** Performance and competitive verification
+**Current phase:** Migration, README, and release readiness
 
 ## Purpose
 
@@ -576,6 +576,8 @@ Real-world validation passes, no known detector semantic regression exists, beta
 ## Phase 14 — Performance and competitive verification
 
 **Goal:** prove that the automation work did not compromise Arid's established performance profile.
+
+**Status:** Complete.
 
 ### Work
 
