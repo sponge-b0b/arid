@@ -1,6 +1,6 @@
 [package]
 name = "arid-cli"
-version = "2.0.0-rc.1"
+version = "2.0.0"
 edition = "2024"
 description = "Fast Python duplicate-code checker written in Rust. A focused replacement for Pylint R0801 that complements Ruff."
 license = "MIT OR Apache-2.0"

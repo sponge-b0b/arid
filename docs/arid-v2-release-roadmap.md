@@ -2,7 +2,7 @@
 
 **Product:** Arid  
 **Stable target:** `2.0.0`  
-**Current phase:** Release Candidate
+**Current phase:** Stable
 
 ## Purpose
 
