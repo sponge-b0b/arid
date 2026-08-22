@@ -4,43 +4,49 @@
 from __future__ import annotations
 
 import argparse
-import json
+import subprocess
 import sys
+import tempfile
 import time
-import urllib.error
-import urllib.request
 from collections.abc import Callable
 
 DEFAULT_TIMEOUT = 120.0
 DEFAULT_INTERVAL = 5.0
-PYPI_URL = "https://pypi.org/simple/arid/"
-SIMPLE_API_ACCEPT = "application/vnd.pypi.simple.v1+json"
+PYPI_INDEX_URL = "https://pypi.org/simple"
 
 
-def release_is_listed(payload: object, version: str) -> bool:
-    """Return whether the Simple API lists a distribution for the exact version."""
-    if not isinstance(payload, dict):
-        raise ValueError("PyPI Simple API response is not an object")
+def pip_can_download(
+    version: str,
+    *,
+    python: str = sys.executable,
+    run: Callable[..., subprocess.CompletedProcess[bytes]] = subprocess.run,
+) -> bool:
+    """Return whether pip can resolve a wheel for the exact release."""
+    with tempfile.TemporaryDirectory(prefix="arid-pypi-ready-") as destination:
+        command = [
+            python,
+            "-m",
+            "pip",
+            "download",
+            "--isolated",
+            "--disable-pip-version-check",
+            "--no-cache-dir",
+            "--no-deps",
+            "--only-binary=:all:",
+            "--index-url",
+            PYPI_INDEX_URL,
+            "--dest",
+            destination,
+            f"arid=={version}",
+        ]
+        completed = run(
+            command,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
 
-    files = payload.get("files")
-    if not isinstance(files, list):
-        raise ValueError("PyPI Simple API response is missing files")
-
-    wheel_prefix = f"arid-{version}-"
-    sdist_name = f"arid-{version}.tar.gz"
-
-    for entry in files:
-        if not isinstance(entry, dict):
-            raise ValueError("PyPI Simple API contains an invalid file entry")
-
-        filename = entry.get("filename")
-        if not isinstance(filename, str):
-            raise ValueError("PyPI Simple API file entry is missing filename")
-
-        if filename.startswith(wheel_prefix) or filename == sdist_name:
-            return True
-
-    return False
+    return completed.returncode == 0
 
 
 def wait_for_release(
@@ -48,30 +54,15 @@ def wait_for_release(
     *,
     timeout: float = DEFAULT_TIMEOUT,
     interval: float = DEFAULT_INTERVAL,
-    open_url: Callable[..., object] = urllib.request.urlopen,
+    probe: Callable[[str], bool] = pip_can_download,
     monotonic: Callable[[], float] = time.monotonic,
     sleep: Callable[[float], None] = time.sleep,
 ) -> bool:
-    """Return True when pip's Simple API lists the exact release."""
+    """Return True when pip can download the exact release for this platform."""
     deadline = monotonic() + timeout
-    request = urllib.request.Request(
-        PYPI_URL,
-        headers={"Accept": SIMPLE_API_ACCEPT},
-    )
 
     while True:
-        response = open_url(request, timeout=10)
-        try:
-            read = getattr(response, "read", None)
-            if read is None:
-                raise ValueError("PyPI Simple API response is not readable")
-            payload = json.loads(read())
-        finally:
-            close = getattr(response, "close", None)
-            if close is not None:
-                close()
-
-        if release_is_listed(payload, version):
+        if probe(version):
             return True
 
         now = monotonic()
@@ -107,13 +98,7 @@ def main(argv: list[str] | None = None) -> int:
             timeout=args.timeout,
             interval=args.interval,
         )
-    except (
-        json.JSONDecodeError,
-        urllib.error.HTTPError,
-        urllib.error.URLError,
-        OSError,
-        ValueError,
-    ) as error:
+    except (OSError, subprocess.SubprocessError) as error:
         print(f"error: PyPI readiness check failed: {error}", file=sys.stderr)
         return 2
 
