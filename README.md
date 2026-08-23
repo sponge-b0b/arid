@@ -156,22 +156,10 @@ Install Arid as an isolated CLI tool:
 uv tool install arid
 ```
 
-For a prerelease while v2 is in beta:
-
-```bash
-uv tool install --prerelease allow "arid==2.0.0b1"
-```
-
 ### pip
 
 ```bash
 python -m pip install arid
-```
-
-For the current v2 beta:
-
-```bash
-python -m pip install --pre "arid==2.0.0b1"
 ```
 
 Verify the installation:
@@ -721,10 +709,10 @@ Execution, presentation, and administrative controls such as `--workers`, output
 
 Arid v2 includes an official composite GitHub Action.
 
-Current beta example:
+Stable example:
 
 ```yaml
-- uses: sponge-b0b/arid@v2.0.0-beta.1
+- uses: sponge-b0b/arid@v2.0.0
   with:
     paths: .
 ```
@@ -757,7 +745,7 @@ scan-exit-code
 Example with focus and a non-failing findings policy:
 
 ```yaml
-- uses: sponge-b0b/arid@v2.0.0-beta.1
+- uses: sponge-b0b/arid@v2.0.0
   id: arid
   with:
     paths: .
@@ -778,12 +766,12 @@ Arid's official pre-commit hook performs a whole-project `arid .` scan rather th
 
 Arid must already be installed and available as `arid` on `PATH`; the hook requires pre-commit 4.4.0 or newer.
 
-Until stable v2 is published, the stable hook example remains:
+Use the stable v2 release:
 
 ```yaml
 repos:
   - repo: https://github.com/sponge-b0b/arid
-    rev: v1.2.0
+    rev: v2.0.0
     hooks:
       - id: arid
 ```

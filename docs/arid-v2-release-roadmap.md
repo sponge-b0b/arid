@@ -659,6 +659,8 @@ All pre-publication source, integration, real-world, performance, documentation,
 
 **Goal:** freeze and fully qualify the `2.0.0` candidate using published artifacts.
 
+**Status:** Complete.
+
 ### Rules
 
 - No new product features after RC.
@@ -702,6 +704,8 @@ The latest RC receives a complete qualification PASS with no unresolved product,
 
 **Goal:** promote the fully qualified RC to `2.0.0` without changing product behavior.
 
+**Status:** Complete.
+
 ### Rules
 
 Stable promotion MUST be metadata-only.
@@ -738,6 +742,8 @@ Stable promotion MUST NOT change:
 
 **Goal:** record the actual v2 release outcome and leave the repository in an internally consistent stable state.
 
+**Status:** Complete.
+
 ### Work
 
 - Set roadmap current phase to Stable through normal release metadata preparation.
@@ -752,6 +758,38 @@ Stable promotion MUST NOT change:
 ### Gate
 
 Arid `2.0.0` is published, qualified, documented as stable, and the roadmap accurately reflects the shipped release and evidence.
+
+---
+
+## V2 release evidence
+
+The completed v2 release sequence is:
+
+- `v2.0.0-alpha.1`
+  - production release workflow: `32469039877`
+  - first published v2 contract and official GitHub Action qualification passed
+- `v2.0.0-beta.1`
+  - production release workflow: `32542368257`
+  - real-world stabilization and published GitHub Action qualification passed
+- `v2.0.0-rc.1`
+  - production release workflow: `32573895513`
+  - published release qualification: PASS
+  - qualification evidence: `qualification/results/v2.0.0-rc.1/qualification.txt`
+  - standalone/PyPI artifact equivalence: PASS
+  - published GitHub Action: PASS
+  - Pydantic vs Pylint 4.0.6: `211.22x`
+  - Polaris vs Pylint 4.0.6: `250.34x`
+- `v2.0.0`
+  - production release workflow: PASS, verified by stable qualification
+  - stable qualification: PASS
+  - qualification evidence: `qualification/results/v2.0.0/qualification.txt`
+  - base RC: `v2.0.0-rc.1`
+  - RC-to-stable delta: metadata only
+  - published GitHub Action: PASS
+
+Pylint `4.0.6` was the current stable Pylint release used for the final v2 public performance comparison.
+
+No committed v2 product work remains unresolved. Work explicitly listed as out of scope remains future product work rather than unfinished v2 scope.
 
 ---
 
