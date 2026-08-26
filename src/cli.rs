@@ -78,6 +78,29 @@ pub struct Cli {
     )]
     pub suppression_status: bool,
 
+    /// Explain what Arid discovery would do with PATH and exit.
+    #[arg(
+        long,
+        value_name = "PATH",
+        conflicts_with_all = [
+            "show_config",
+            "list_files",
+            "suppression_status",
+            "stdin_path",
+            "keep_going",
+            "focus",
+            "no_fail_on_findings",
+            "report",
+            "color",
+            "show_source",
+            "baseline",
+            "baseline_status",
+            "prune_baseline",
+            "write_baseline"
+        ]
+    )]
+    pub explain_path: Option<PathBuf>,
+
     /// Fail suppression or baseline status when stale maintenance state exists.
     #[arg(long)]
     pub fail_on_stale: bool,
@@ -283,6 +306,7 @@ mod tests {
         assert!(!cli.show_config);
         assert!(!cli.list_files);
         assert!(!cli.suppression_status);
+        assert_eq!(cli.explain_path, None);
         assert!(!cli.fail_on_stale);
         assert_eq!(cli.stdin_path, None);
         assert!(!cli.keep_going);
@@ -381,17 +405,27 @@ mod tests {
         assert!(cli.show_config);
         assert!(!cli.list_files);
         assert!(!cli.suppression_status);
+        assert_eq!(cli.explain_path, None);
         assert_eq!(cli.output_format(), OutputFormat::Json);
 
         let cli = Cli::try_parse_from(["arid", "--list-files"]).unwrap();
         assert!(!cli.show_config);
         assert!(cli.list_files);
         assert!(!cli.suppression_status);
+        assert_eq!(cli.explain_path, None);
 
         let cli = Cli::try_parse_from(["arid", "--suppression-status", "--json"]).unwrap();
         assert!(!cli.show_config);
         assert!(!cli.list_files);
         assert!(cli.suppression_status);
+        assert_eq!(cli.explain_path, None);
+        assert_eq!(cli.output_format(), OutputFormat::Json);
+
+        let cli = Cli::try_parse_from(["arid", "--explain-path", "src/a.py", "--json"]).unwrap();
+        assert!(!cli.show_config);
+        assert!(!cli.list_files);
+        assert!(!cli.suppression_status);
+        assert_eq!(cli.explain_path, Some(PathBuf::from("src/a.py")));
         assert_eq!(cli.output_format(), OutputFormat::Json);
     }
 
@@ -420,6 +454,16 @@ mod tests {
 
         let cli = Cli::try_parse_from(["arid", "--list-files", "--no-ignore-files"]).unwrap();
         assert!(cli.list_files);
+        assert!(cli.no_ignore_files);
+
+        let cli = Cli::try_parse_from([
+            "arid",
+            "--explain-path",
+            "src/a.py",
+            "--no-ignore-files",
+        ])
+        .unwrap();
+        assert_eq!(cli.explain_path, Some(PathBuf::from("src/a.py")));
         assert!(cli.no_ignore_files);
     }
 
@@ -491,6 +535,19 @@ mod tests {
         );
         assert!(
             Cli::try_parse_from(["arid", "--suppression-status", "--baseline", "debt.json"])
+                .is_err()
+        );
+        assert!(
+            Cli::try_parse_from([
+                "arid",
+                "--suppression-status",
+                "--explain-path",
+                "src/a.py"
+            ])
+            .is_err()
+        );
+        assert!(
+            Cli::try_parse_from(["arid", "--list-files", "--explain-path", "src/a.py"])
                 .is_err()
         );
     }
@@ -591,6 +648,34 @@ mod tests {
             Cli::try_parse_from([
                 "arid",
                 "--suppression-status",
+                "--report",
+                "json=report.json"
+            ])
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn path_explanation_rejects_scan_presentation_options() {
+        assert!(
+            Cli::try_parse_from(["arid", "--explain-path", "src/a.py", "--show-source"])
+                .is_err()
+        );
+        assert!(
+            Cli::try_parse_from([
+                "arid",
+                "--explain-path",
+                "src/a.py",
+                "--color",
+                "never"
+            ])
+            .is_err()
+        );
+        assert!(
+            Cli::try_parse_from([
+                "arid",
+                "--explain-path",
+                "src/a.py",
                 "--report",
                 "json=report.json"
             ])

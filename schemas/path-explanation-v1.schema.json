@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Arid Path Explanation v1",
+  "description": "Schema for Arid's deterministic targeted discovery explanation document, version 1.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "tool_version",
+    "path",
+    "kind",
+    "symlink",
+    "explicit",
+    "decision",
+    "reasons"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "tool_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "path": {
+      "type": "string",
+      "minLength": 1
+    },
+    "kind": {
+      "enum": ["file", "directory"]
+    },
+    "symlink": {
+      "type": "boolean"
+    },
+    "explicit": {
+      "type": "boolean"
+    },
+    "decision": {
+      "enum": ["include", "exclude"]
+    },
+    "reasons": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "explicit-file",
+          "explicit-directory",
+          "discovered",
+          "outside-scan-roots",
+          "arid-exclude",
+          "ignore-file",
+          "hidden",
+          "unsupported-source-type",
+          "symlink-directory",
+          "symlink-traversal"
+        ]
+      }
+    }
+  }
+}

@@ -146,8 +146,9 @@ pub(crate) fn is_excluded_path(
     let project_root = absolute_path(project_root)?;
     let path = absolute_path(path)?;
     let excludes = build_exclude_matcher(&project_root, &settings.exclude)?;
+    let is_dir = fs::metadata(&path).is_ok_and(|metadata| metadata.is_dir());
 
-    Ok(is_excluded(&excludes, &project_root, &path, false))
+    Ok(is_excluded(&excludes, &project_root, &path, is_dir))
 }
 
 fn discover_directory(
@@ -607,6 +608,19 @@ mod tests {
             !is_excluded_path(&temp.path().join("src/proposed.py"), &settings, temp.path())
                 .unwrap()
         );
+    }
+
+    #[test]
+    fn exclude_check_respects_directory_only_patterns() {
+        let temp = TempDir::new();
+        let directory = temp.path().join("generated");
+        fs::create_dir_all(&directory).unwrap();
+        let settings = Settings {
+            exclude: vec!["generated/".to_owned()],
+            ..Settings::default()
+        };
+
+        assert!(is_excluded_path(&directory, &settings, temp.path()).unwrap());
     }
 
     #[test]

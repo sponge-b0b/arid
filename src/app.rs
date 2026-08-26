@@ -683,6 +683,7 @@ min-lines = 2
             show_config: false,
             list_files: false,
             suppression_status: false,
+            explain_path: None,
             fail_on_stale: false,
             stdin_path: None,
             keep_going: false,

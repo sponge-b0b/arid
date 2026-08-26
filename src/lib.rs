@@ -47,6 +47,7 @@ mod model;
 mod normalize;
 mod outcome;
 mod output;
+mod path_explanation;
 mod project_path;
 mod python;
 mod report;
@@ -64,7 +65,9 @@ pub use outcome::{ExitStatus, RunResult};
 /// Runs one complete Arid invocation with deterministic non-terminal defaults.
 #[must_use]
 pub fn run(cli: &Cli) -> RunResult {
-    if cli.suppression_status {
+    if cli.explain_path.is_some() {
+        path_explanation::run(cli)
+    } else if cli.suppression_status {
         suppression_command::run(cli)
     } else {
         app::run(cli)
@@ -74,7 +77,9 @@ pub fn run(cli: &Cli) -> RunResult {
 /// Runs one complete Arid invocation with explicit output-environment context.
 #[must_use]
 pub fn run_with_context(cli: &Cli, context: RunContext) -> RunResult {
-    if cli.suppression_status {
+    if cli.explain_path.is_some() {
+        path_explanation::run(cli)
+    } else if cli.suppression_status {
         suppression_command::run(cli)
     } else {
         app::run_with_context(cli, context)
