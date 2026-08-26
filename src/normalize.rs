@@ -8,6 +8,19 @@ use crate::model::{
     StructuralScope,
 };
 use crate::python::{self, StructuralRegion, SuppressionEvent, SuppressionKind};
+use crate::suppression::{SuppressionRegion, derive_suppression_regions};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SuppressionMode {
+    Apply,
+    Audit,
+}
+
+#[derive(Debug)]
+pub(crate) struct AuditPreparedFile {
+    pub(crate) file: PreparedFile,
+    pub(crate) suppressions: Vec<SuppressionRegion>,
+}
 
 #[derive(Debug, Error)]
 pub enum PrepareError {
@@ -20,8 +33,40 @@ pub fn prepare_file(
     source: String,
     options: NormalizationOptions,
 ) -> Result<PreparedFile, PrepareError> {
-    let path = path.into();
+    let (file, _) = prepare_file_with_mode(
+        path.into(),
+        source,
+        options,
+        SuppressionMode::Apply,
+    )?;
 
+    Ok(file)
+}
+
+pub(crate) fn prepare_file_for_audit(
+    path: impl Into<PathBuf>,
+    source: String,
+    options: NormalizationOptions,
+) -> Result<AuditPreparedFile, PrepareError> {
+    let (file, suppressions) = prepare_file_with_mode(
+        path.into(),
+        source,
+        options,
+        SuppressionMode::Audit,
+    )?;
+
+    Ok(AuditPreparedFile {
+        file,
+        suppressions,
+    })
+}
+
+fn prepare_file_with_mode(
+    path: PathBuf,
+    source: String,
+    options: NormalizationOptions,
+    suppression_mode: SuppressionMode,
+) -> Result<(PreparedFile, Vec<SuppressionRegion>), PrepareError> {
     // A UTF-8 BOM is not Python source content and must not participate in
     // duplicate matching. Strip it before parsing so parser and mask offsets
     // remain relative to the same source buffer.
@@ -35,20 +80,30 @@ pub fn prepare_file(
         message: error.to_string(),
     })?;
 
+    let suppressions = if suppression_mode == SuppressionMode::Audit {
+        derive_suppression_regions(&source, &analysis.suppressions)
+    } else {
+        Vec::new()
+    };
+
     let (normalized, lines, segments) = normalize_source(
         &source,
         &analysis.masks,
         &analysis.suppressions,
         &analysis.structural_regions,
+        suppression_mode,
     );
 
-    Ok(PreparedFile {
-        path,
-        source,
-        normalized,
-        lines,
-        segments,
-    })
+    Ok((
+        PreparedFile {
+            path,
+            source,
+            normalized,
+            lines,
+            segments,
+        },
+        suppressions,
+    ))
 }
 
 fn normalize_source(
@@ -56,6 +111,7 @@ fn normalize_source(
     masks: &[Range<usize>],
     suppressions: &[SuppressionEvent],
     structural_regions: &[StructuralRegion],
+    suppression_mode: SuppressionMode,
 ) -> (String, Vec<NormalizedLine>, Vec<NormalizedSegment>) {
     let mut normalized = String::new();
     let mut lines = Vec::new();
@@ -67,6 +123,7 @@ fn normalize_source(
     let mut structural_region_index = 0_usize;
     let mut active_structural_regions = Vec::new();
 
+    let apply_suppressions = suppression_mode == SuppressionMode::Apply;
     let mut disabled = false;
     let mut segment_start: Option<u32> = None;
 
@@ -85,7 +142,7 @@ fn normalize_source(
             &mut active_structural_regions,
         );
 
-        if !disabled {
+        if !apply_suppressions || !disabled {
             let (line, retained_ranges) =
                 normalized_line(source, line_start, content_end, masks, &mut mask_index);
 
@@ -126,31 +183,33 @@ fn normalize_source(
             advance_masks(content_end, masks, &mut mask_index);
         }
 
-        // Suppression directives take effect after their physical source line.
-        // This gives intuitive behavior for an inline directive:
-        //
-        //     do_work()  # arid: disable
-        //
-        // do_work() itself remains part of the preceding segment.
-        while let Some(event) = suppressions.get(suppression_index) {
-            if event.offset >= line_total_end {
-                break;
-            }
-
-            match (disabled, event.kind) {
-                (false, SuppressionKind::Disable) => {
-                    close_segment(&mut segments, &mut segment_start, lines.len());
-                    disabled = true;
+        if apply_suppressions {
+            // Suppression directives take effect after their physical source line.
+            // This gives intuitive behavior for an inline directive:
+            //
+            //     do_work()  # arid: disable
+            //
+            // do_work() itself remains part of the preceding segment.
+            while let Some(event) = suppressions.get(suppression_index) {
+                if event.offset >= line_total_end {
+                    break;
                 }
 
-                (true, SuppressionKind::Enable) => {
-                    disabled = false;
+                match (disabled, event.kind) {
+                    (false, SuppressionKind::Disable) => {
+                        close_segment(&mut segments, &mut segment_start, lines.len());
+                        disabled = true;
+                    }
+
+                    (true, SuppressionKind::Enable) => {
+                        disabled = false;
+                    }
+
+                    _ => {}
                 }
 
-                _ => {}
+                suppression_index += 1;
             }
-
-            suppression_index += 1;
         }
 
         line_start = line_total_end;
@@ -351,9 +410,19 @@ fn is_effective(line: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::suppression::SuppressionEnd;
 
     fn prepare(source: &str) -> PreparedFile {
         prepare_file(
+            "example.py",
+            source.to_owned(),
+            NormalizationOptions::default(),
+        )
+        .unwrap()
+    }
+
+    fn prepare_audit(source: &str) -> AuditPreparedFile {
+        prepare_file_for_audit(
             "example.py",
             source.to_owned(),
             NormalizationOptions::default(),
@@ -622,6 +691,52 @@ fourth()
                 NormalizedSegment { start: 0, end: 2 },
                 NormalizedSegment { start: 2, end: 4 },
             ]
+        );
+    }
+
+    #[test]
+    fn inline_disable_takes_effect_after_its_physical_line() {
+        let file = prepare(
+            "before()\nkept()  # arid: disable\nhidden()\n# arid: enable\nafter()\n",
+        );
+
+        assert_eq!(texts(&file), vec!["before()", "kept()", "after()"]);
+        assert_eq!(
+            file.segments,
+            vec![
+                NormalizedSegment { start: 0, end: 2 },
+                NormalizedSegment { start: 2, end: 3 },
+            ]
+        );
+    }
+
+    #[test]
+    fn audit_preparation_retains_suppressed_source_without_barriers() {
+        let audit = prepare_audit(concat!(
+            "first()\n",
+            "# arid: disable\n",
+            "hidden()\n",
+            "# arid: disable\n",
+            "also_hidden()\n",
+            "# arid: enable\n",
+            "# arid: enable\n",
+            "last()\n",
+        ));
+
+        assert_eq!(
+            texts(&audit.file),
+            vec!["first()", "hidden()", "also_hidden()", "last()"]
+        );
+        assert_eq!(
+            audit.file.segments,
+            vec![NormalizedSegment { start: 0, end: 4 }]
+        );
+        assert_eq!(
+            audit.suppressions,
+            vec![SuppressionRegion {
+                disable_line: 2,
+                end: SuppressionEnd::Enable { line: 6 },
+            }]
         );
     }
 

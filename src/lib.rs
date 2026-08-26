@@ -53,6 +53,7 @@ mod report;
 mod sarif;
 mod source;
 mod suffix;
+mod suppression;
 mod text;
 
 pub use app::{ColorEnvironment, RunContext, run, run_with_context};
