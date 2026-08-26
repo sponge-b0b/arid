@@ -7,7 +7,7 @@ use crate::cli::{Cli, OutputFormat};
 use crate::config::{ProjectOptions, SettingsOverrides, load_settings_with_options};
 use crate::error::{ErrorKind, OperationalError, render_error_json};
 use crate::exit_policy::apply_fail_on_stale;
-use crate::files::discover_python_files;
+use crate::files::{DiscoveryPolicy, discover_python_files};
 use crate::model::NormalizationOptions;
 use crate::normalize::{SuppressionMode, prepare_file_with_mode};
 use crate::outcome::{ExitStatus, RunResult};
@@ -44,14 +44,20 @@ fn execute(cli: &Cli) -> Result<RunResult, OperationalError> {
                     format!("failed to load configuration: {error}"),
                 )
             })?;
+    let discovery_policy = DiscoveryPolicy::new(!cli.no_ignore_files);
 
-    let discovered = discover_python_files(&paths, &loaded.settings, &loaded.project_root)
-        .map_err(|error| {
-            OperationalError::new(
-                ErrorKind::Discovery,
-                format!("failed to discover Python files: {error}"),
-            )
-        })?;
+    let discovered = discover_python_files(
+        &paths,
+        &loaded.settings,
+        &loaded.project_root,
+        discovery_policy,
+    )
+    .map_err(|error| {
+        OperationalError::new(
+            ErrorKind::Discovery,
+            format!("failed to discover Python files: {error}"),
+        )
+    })?;
     let inputs = build_source_inputs(discovered, None);
     let prepared = prepare_sources_for_audit(
         inputs,
@@ -59,13 +65,18 @@ fn execute(cli: &Cli) -> Result<RunResult, OperationalError> {
         cli.workers,
         &loaded.project_root,
     )?;
-    let status = build_suppression_status(prepared, &loaded.settings, &loaded.project_root, true)
-        .map_err(|error| {
-            OperationalError::new(
-                ErrorKind::Internal,
-                format!("failed to audit suppressions: {error}"),
-            )
-        })?;
+    let status = build_suppression_status(
+        prepared,
+        &loaded.settings,
+        &loaded.project_root,
+        discovery_policy.ignore_files(),
+    )
+    .map_err(|error| {
+        OperationalError::new(
+            ErrorKind::Internal,
+            format!("failed to audit suppressions: {error}"),
+        )
+    })?;
 
     let exit_status = apply_fail_on_stale(
         ExitStatus::Success,
@@ -342,6 +353,34 @@ mod tests {
         assert_eq!(result.exit_status(), ExitStatus::Findings);
         assert!(result.stdout().contains("Stale suppressions: 1"));
         assert!(result.stderr().is_empty());
+    }
+
+    #[test]
+    fn no_ignore_files_changes_suppression_discovery() {
+        let temp = TempDir::new();
+        fs::create_dir_all(temp.path().join(".git")).unwrap();
+        temp.write("a.py", "alpha = 1\nbeta = 2\n");
+        temp.write(
+            "generated/ignored.py",
+            "# arid: disable\ngamma = 3\ndelta = 4\n# arid: enable\n",
+        );
+        temp.write(".gitignore", "generated/\n");
+
+        let mut normal_cli = cli(&temp, true, 1);
+        let normal = run(&normal_cli);
+        let normal_json: serde_json::Value = serde_json::from_str(normal.stdout()).unwrap();
+        assert_eq!(normal_json["files"], 1);
+        assert_eq!(normal_json["summary"]["total"], 0);
+        assert_eq!(normal_json["analysis"]["ignore_files"], true);
+
+        normal_cli.no_ignore_files = true;
+        let overridden = run(&normal_cli);
+        let overridden_json: serde_json::Value =
+            serde_json::from_str(overridden.stdout()).unwrap();
+        assert_eq!(overridden_json["files"], 2);
+        assert_eq!(overridden_json["summary"]["total"], 1);
+        assert_eq!(overridden_json["summary"]["stale"], 1);
+        assert_eq!(overridden_json["analysis"]["ignore_files"], false);
     }
 
     #[test]

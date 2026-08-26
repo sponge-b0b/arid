@@ -164,6 +164,10 @@ pub struct Cli {
     #[arg(long, conflicts_with = "hidden")]
     pub no_hidden: bool,
 
+    /// Ignore ignore-file-derived filters during directory discovery.
+    #[arg(long)]
+    pub no_ignore_files: bool,
+
     /// Exclude paths matching PATTERN. May be repeated.
     #[arg(long, value_name = "PATTERN")]
     pub exclude: Vec<String>,
@@ -297,6 +301,7 @@ mod tests {
         assert!(!cli.no_same_file);
         assert!(!cli.hidden);
         assert!(!cli.no_hidden);
+        assert!(!cli.no_ignore_files);
         assert!(cli.exclude.is_empty());
         assert_eq!(cli.workers, 1);
         assert_eq!(cli.format, None);
@@ -405,6 +410,17 @@ mod tests {
         .unwrap();
         assert_eq!(cli.baseline_status, Some(PathBuf::from("debt.json")));
         assert!(cli.fail_on_stale);
+    }
+
+    #[test]
+    fn accepts_no_ignore_files_policy() {
+        let cli = Cli::try_parse_from(["arid", "--no-ignore-files", "src"]).unwrap();
+        assert!(cli.no_ignore_files);
+        assert_eq!(cli.paths, vec![PathBuf::from("src")]);
+
+        let cli = Cli::try_parse_from(["arid", "--list-files", "--no-ignore-files"]).unwrap();
+        assert!(cli.list_files);
+        assert!(cli.no_ignore_files);
     }
 
     #[test]

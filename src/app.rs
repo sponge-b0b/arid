@@ -13,7 +13,7 @@ use crate::corpus::build_corpus;
 use crate::detect::detect_duplicates;
 use crate::error::{ErrorKind, OperationalError, render_error_json};
 use crate::exit_policy::{apply_fail_on_stale, apply_no_fail_on_findings};
-use crate::files::discover_python_files;
+use crate::files::{DiscoveryPolicy, discover_python_files};
 use crate::introspection::{
     discovered_file_names, render_config_json, render_config_text, render_file_list_json,
     render_file_list_text,
@@ -174,14 +174,20 @@ fn execute(cli: &Cli, context: RunContext) -> Result<RunResult, OperationalError
     let virtual_project_path = virtual_source
         .as_ref()
         .map(|source| source.project_path().to_owned());
+    let discovery_policy = DiscoveryPolicy::new(!cli.no_ignore_files);
 
-    let discovered = discover_python_files(&paths, &loaded.settings, &loaded.project_root)
-        .map_err(|error| {
-            OperationalError::new(
-                ErrorKind::Discovery,
-                format!("failed to discover Python files: {error}"),
-            )
-        })?;
+    let discovered = discover_python_files(
+        &paths,
+        &loaded.settings,
+        &loaded.project_root,
+        discovery_policy,
+    )
+    .map_err(|error| {
+        OperationalError::new(
+            ErrorKind::Discovery,
+            format!("failed to discover Python files: {error}"),
+        )
+    })?;
 
     if cli.list_files {
         let files = discovered_file_names(&discovered, &loaded.project_root);
@@ -695,6 +701,7 @@ min-lines = 2
             no_same_file: false,
             hidden: false,
             no_hidden: false,
+            no_ignore_files: false,
             exclude: Vec::new(),
             workers: 1,
             format: None,
@@ -873,6 +880,28 @@ baseline = "debt.json"
         let scanned = run(&cli);
         assert_eq!(scanned.exit_status(), ExitStatus::Error);
         assert!(scanned.stderr().contains("broken.py"));
+    }
+
+    #[test]
+    fn no_ignore_files_changes_list_files_discovery() {
+        let temp = TempDir::new();
+        write_test_config(&temp);
+        fs::create_dir_all(temp.path().join(".git")).unwrap();
+        temp.write("a.py", "alpha = 1\n");
+        temp.write("generated/ignored.py", "beta = 2\n");
+        temp.write(".gitignore", "generated/\n");
+
+        let mut cli = test_cli(vec![temp.path().to_path_buf()]);
+        cli.list_files = true;
+
+        let normal = run(&cli);
+        assert_eq!(normal.exit_status(), ExitStatus::Success);
+        assert_eq!(normal.stdout(), "a.py\n");
+
+        cli.no_ignore_files = true;
+        let overridden = run(&cli);
+        assert_eq!(overridden.exit_status(), ExitStatus::Success);
+        assert_eq!(overridden.stdout(), "a.py\ngenerated/ignored.py\n");
     }
 
     #[test]

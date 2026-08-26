@@ -9,6 +9,27 @@ use thiserror::Error;
 
 use crate::config::Settings;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct DiscoveryPolicy {
+    ignore_files: bool,
+}
+
+impl DiscoveryPolicy {
+    pub(crate) const fn new(ignore_files: bool) -> Self {
+        Self { ignore_files }
+    }
+
+    pub(crate) const fn ignore_files(self) -> bool {
+        self.ignore_files
+    }
+}
+
+impl Default for DiscoveryPolicy {
+    fn default() -> Self {
+        Self::new(true)
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum DiscoveryError {
     #[error("failed to determine current directory: {0}")]
@@ -41,7 +62,7 @@ pub enum DiscoveryError {
 /// Discovers Python source files from explicit files and directory roots.
 ///
 /// Directory traversal respects the normal ignore rules provided by the
-/// `ignore` crate, including `.gitignore`.
+/// `ignore` crate unless the supplied discovery policy disables ignore files.
 ///
 /// Explicit file arguments bypass those normal discovery ignore rules because
 /// naming a file directly is an explicit request to scan it. Configured Arid
@@ -52,6 +73,7 @@ pub fn discover_python_files(
     paths: &[PathBuf],
     settings: &Settings,
     project_root: &Path,
+    policy: DiscoveryPolicy,
 ) -> Result<Vec<PathBuf>, DiscoveryError> {
     let project_root = absolute_path(project_root)?;
     let excludes = build_exclude_matcher(&project_root, &settings.exclude)?;
@@ -107,6 +129,7 @@ pub fn discover_python_files(
                 &project_root,
                 &excludes,
                 settings.hidden,
+                policy,
                 &mut discovered,
             )?;
         }
@@ -132,16 +155,14 @@ fn discover_directory(
     project_root: &Path,
     excludes: &Gitignore,
     include_hidden: bool,
+    policy: DiscoveryPolicy,
     discovered: &mut BTreeSet<PathBuf>,
 ) -> Result<(), DiscoveryError> {
     let exclude_matcher = excludes.clone();
     let exclude_root = project_root.to_path_buf();
     let walk_root = root.to_path_buf();
 
-    let mut builder = WalkBuilder::new(root);
-
-    builder.follow_links(false);
-    builder.hidden(!include_hidden);
+    let mut builder = configured_walk_builder(root, include_hidden, policy);
 
     builder.filter_entry(move |entry| {
         let path = entry.path();
@@ -178,6 +199,28 @@ fn discover_directory(
     }
 
     Ok(())
+}
+
+pub(crate) fn configured_walk_builder(
+    root: &Path,
+    include_hidden: bool,
+    policy: DiscoveryPolicy,
+) -> WalkBuilder {
+    let mut builder = WalkBuilder::new(root);
+
+    builder.follow_links(false);
+    builder.hidden(!include_hidden);
+
+    if !policy.ignore_files() {
+        builder
+            .parents(false)
+            .ignore(false)
+            .git_ignore(false)
+            .git_global(false)
+            .git_exclude(false);
+    }
+
+    builder
 }
 
 fn build_exclude_matcher(
@@ -272,6 +315,27 @@ mod tests {
         }
     }
 
+    fn discover(
+        paths: &[PathBuf],
+        settings: &Settings,
+        project_root: &Path,
+    ) -> Result<Vec<PathBuf>, DiscoveryError> {
+        discover_python_files(paths, settings, project_root, DiscoveryPolicy::default())
+    }
+
+    fn discover_without_ignore_files(
+        paths: &[PathBuf],
+        settings: &Settings,
+        project_root: &Path,
+    ) -> Result<Vec<PathBuf>, DiscoveryError> {
+        discover_python_files(
+            paths,
+            settings,
+            project_root,
+            DiscoveryPolicy::new(false),
+        )
+    }
+
     #[test]
     fn discovers_py_and_pyi_files_only() {
         let temp = TempDir::new();
@@ -281,7 +345,7 @@ mod tests {
         temp.write("src/readme.txt", "");
         temp.write("src/data.json", "");
 
-        let files = discover_python_files(
+        let files = discover(
             &[temp.path().to_path_buf()],
             &Settings::default(),
             temp.path(),
@@ -302,7 +366,7 @@ mod tests {
 
         temp.write(".gitignore", "generated/\n");
 
-        let files = discover_python_files(
+        let files = discover(
             &[temp.path().to_path_buf()],
             &Settings::default(),
             temp.path(),
@@ -313,13 +377,116 @@ mod tests {
     }
 
     #[test]
+    fn no_ignore_files_bypasses_gitignore() {
+        let temp = TempDir::new();
+
+        fs::create_dir_all(temp.path().join(".git")).unwrap();
+
+        let included = temp.write("src/included.py", "");
+        let ignored = temp.write("generated/ignored.py", "");
+        temp.write(".gitignore", "generated/\n");
+
+        let files = discover_without_ignore_files(
+            &[temp.path().to_path_buf()],
+            &Settings::default(),
+            temp.path(),
+        )
+        .unwrap();
+
+        assert_eq!(files, vec![ignored, included]);
+    }
+
+    #[test]
+    fn no_ignore_files_bypasses_dot_ignore() {
+        let temp = TempDir::new();
+
+        let included = temp.write("src/included.py", "");
+        let ignored = temp.write("generated/ignored.py", "");
+        temp.write(".ignore", "generated/\n");
+
+        let files = discover_without_ignore_files(
+            &[temp.path().to_path_buf()],
+            &Settings::default(),
+            temp.path(),
+        )
+        .unwrap();
+
+        assert_eq!(files, vec![ignored, included]);
+    }
+
+    #[test]
+    fn no_ignore_files_bypasses_git_info_exclude() {
+        let temp = TempDir::new();
+
+        fs::create_dir_all(temp.path().join(".git/info")).unwrap();
+
+        let included = temp.write("src/included.py", "");
+        let ignored = temp.write("generated/ignored.py", "");
+        temp.write(".git/info/exclude", "generated/\n");
+
+        let files = discover_without_ignore_files(
+            &[temp.path().to_path_buf()],
+            &Settings::default(),
+            temp.path(),
+        )
+        .unwrap();
+
+        assert_eq!(files, vec![ignored, included]);
+    }
+
+    #[test]
+    fn no_ignore_files_bypasses_parent_ignore_files() {
+        let temp = TempDir::new();
+
+        fs::create_dir_all(temp.path().join(".git")).unwrap();
+        let included = temp.write("src/included.py", "");
+        let ignored = temp.write("src/generated/ignored.py", "");
+        temp.write(".gitignore", "src/generated/\n");
+
+        let scan_root = temp.path().join("src");
+        let normal = discover(
+            std::slice::from_ref(&scan_root),
+            &Settings::default(),
+            temp.path(),
+        )
+        .unwrap();
+        let overridden = discover_without_ignore_files(
+            std::slice::from_ref(&scan_root),
+            &Settings::default(),
+            temp.path(),
+        )
+        .unwrap();
+
+        assert_eq!(normal, vec![included.clone()]);
+        assert_eq!(overridden, vec![ignored, included]);
+    }
+
+    #[test]
     fn skips_hidden_paths_by_default() {
         let temp = TempDir::new();
 
         let visible = temp.write("src/visible.py", "");
         temp.write(".github/actions/hidden.py", "");
 
-        let files = discover_python_files(
+        let files = discover(
+            &[temp.path().to_path_buf()],
+            &Settings::default(),
+            temp.path(),
+        )
+        .unwrap();
+
+        assert_eq!(files, vec![visible]);
+    }
+
+    #[test]
+    fn no_ignore_files_does_not_include_hidden_paths() {
+        let temp = TempDir::new();
+
+        let visible = temp.write("src/visible.py", "");
+        temp.write(".github/actions/hidden.py", "");
+        temp.write(".ignore", "src/visible.py\n");
+
+        let files = discover_without_ignore_files(
             &[temp.path().to_path_buf()],
             &Settings::default(),
             temp.path(),
@@ -341,8 +508,7 @@ mod tests {
             ..Settings::default()
         };
 
-        let files =
-            discover_python_files(&[temp.path().to_path_buf()], &settings, temp.path()).unwrap();
+        let files = discover(&[temp.path().to_path_buf()], &settings, temp.path()).unwrap();
 
         assert_eq!(files, vec![hidden, visible]);
     }
@@ -355,7 +521,7 @@ mod tests {
 
         temp.write(".gitignore", "generated/\n");
 
-        let files = discover_python_files(
+        let files = discover(
             std::slice::from_ref(&ignored),
             &Settings::default(),
             temp.path(),
@@ -377,8 +543,30 @@ mod tests {
             ..Settings::default()
         };
 
-        let files =
-            discover_python_files(&[temp.path().to_path_buf()], &settings, temp.path()).unwrap();
+        let files = discover(&[temp.path().to_path_buf()], &settings, temp.path()).unwrap();
+
+        assert_eq!(files, vec![included]);
+    }
+
+    #[test]
+    fn no_ignore_files_does_not_bypass_configured_exclude() {
+        let temp = TempDir::new();
+
+        let included = temp.write("src/included.py", "");
+        temp.write("generated/ignored.py", "");
+        temp.write(".gitignore", "src/\n");
+
+        let settings = Settings {
+            exclude: vec!["generated/**".to_owned()],
+            ..Settings::default()
+        };
+
+        let files = discover_without_ignore_files(
+            &[temp.path().to_path_buf()],
+            &settings,
+            temp.path(),
+        )
+        .unwrap();
 
         assert_eq!(files, vec![included]);
     }
@@ -394,8 +582,7 @@ mod tests {
             ..Settings::default()
         };
 
-        let files =
-            discover_python_files(std::slice::from_ref(&excluded), &settings, temp.path()).unwrap();
+        let files = discover(std::slice::from_ref(&excluded), &settings, temp.path()).unwrap();
 
         assert!(files.is_empty());
     }
@@ -428,7 +615,7 @@ mod tests {
 
         let file = temp.write("src/example.py", "");
 
-        let files = discover_python_files(
+        let files = discover(
             &[temp.path().to_path_buf(), temp.path().join("src")],
             &Settings::default(),
             temp.path(),
@@ -446,7 +633,7 @@ mod tests {
         let b = temp.write("b.py", "");
         let c = temp.write("c.py", "");
 
-        let files = discover_python_files(
+        let files = discover(
             &[temp.path().to_path_buf()],
             &Settings::default(),
             temp.path(),
@@ -462,7 +649,7 @@ mod tests {
 
         let text = temp.write("notes.txt", "");
 
-        let files = discover_python_files(&[text], &Settings::default(), temp.path()).unwrap();
+        let files = discover(&[text], &Settings::default(), temp.path()).unwrap();
 
         assert!(files.is_empty());
     }
@@ -472,7 +659,7 @@ mod tests {
         let temp = TempDir::new();
         let missing = temp.path().join("missing");
 
-        let error = discover_python_files(
+        let error = discover(
             std::slice::from_ref(&missing),
             &Settings::default(),
             temp.path(),
@@ -501,7 +688,7 @@ mod tests {
         let link = temp.path().join("linked");
         symlink(&target, &link).unwrap();
 
-        let files = discover_python_files(&[link], &Settings::default(), temp.path()).unwrap();
+        let files = discover(std::slice::from_ref(&link), &Settings::default(), temp.path()).unwrap();
 
         assert!(files.is_empty());
     }
