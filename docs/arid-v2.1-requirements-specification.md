@@ -12,7 +12,7 @@
 
 # **1. Purpose**
 
-Arid 2.1 makes suppression maintenance and source discovery auditable without changing what Arid considers duplicate code.
+Arid 2.1 makes suppression maintenance and source discovery auditable without changing what Arid considers duplicate code, and makes completed normal scan speed visible in human-facing text output.
 
 Arid remains:
 
@@ -36,7 +36,9 @@ Arid 2.1 addresses two related maintenance problems:
 1. accepted suppression can outlive the duplicate code that justified it;
 2. discovery decisions can be difficult to diagnose when a path is or is not selected for analysis.
 
-The v2.1 theme is:
+It also adds one deliberately small human-feedback improvement: completed normal text scans show their total elapsed execution time so Arid's performance is visible during ordinary use.
+
+The v2.1 theme remains:
 
 > **Auditable maintenance. Explainable discovery. Same focused detector.**
 
@@ -51,6 +53,8 @@ A suppression or baseline entry is accepted maintenance state only while the con
 Arid MUST make obsolete acceptance detectable so users can remove it rather than allow maintenance state to accumulate indefinitely.
 
 Likewise, Arid MUST make an individual discovery decision explainable without introducing a general tracing subsystem or another discovery implementation.
+
+Human execution timing MUST remain presentation-only. It MUST make normal scan speed visible without contaminating deterministic machine contracts with volatile runtime data.
 
 V2.1 MUST preserve:
 
@@ -88,8 +92,9 @@ Arid 2.1 MUST add or complete:
 8. a versioned deterministic suppression-status JSON contract
 9. a versioned deterministic path-explanation JSON contract
 10. semantic equivalence between supported stdout and file representations of the same administrative JSON document
+11. an always-on human-readable `Total time:` footer for completed normal text scans
 
-These additions MUST remain compatible with the stable Arid 2.0 detector and report contracts.
+These additions MUST remain compatible with the stable Arid 2.0 detector and machine-report contracts.
 
 ---
 
@@ -123,6 +128,10 @@ Arid 2.1 MUST NOT add:
 - changes to symlink policy
 - changes to exact duplicate identity
 - another detector implementation for suppression auditing
+- detailed per-stage runtime timing in ordinary product output
+- a profiling, tracing, metrics, or telemetry subsystem merely to support elapsed timing
+- elapsed timing fields in JSON, Markdown, SARIF, or versioned machine contracts
+- a timing SLA or benchmark guarantee inferred from a single user invocation
 - a plugin framework
 - a reporter framework
 - persistent caching
@@ -130,7 +139,7 @@ Arid 2.1 MUST NOT add:
 - MCP integration
 - LSP/editor integration
 
-V2.1 MUST remain an additive maintenance and discovery-auditability release.
+V2.1 MUST remain an additive maintenance, discovery-auditability, and human-feedback release.
 
 ---
 
@@ -170,6 +179,8 @@ It MUST NOT introduce a second definition of duplication.
 Discovery explanation MUST evaluate the existing discovery policy.
 
 It MUST NOT implement an independent approximation of discovery.
+
+Execution timing MUST NOT alter detection, metrics, findings, output-format selection, or exit status.
 
 ---
 
@@ -922,6 +933,7 @@ Determinism MUST include:
 - deterministic reason ordering where multiple reasons are represented
 - deterministic summary counts
 - absence of volatile timestamps
+- absence of elapsed runtime values
 - absence of process identifiers
 - absence of temporary-directory identity
 - absence of host-specific values unrelated to the result
@@ -929,7 +941,7 @@ Determinism MUST include:
 - independence from worker scheduling
 - independence from filesystem traversal arrival order
 
-Execution strategy MUST NOT leak into the public administrative contract.
+Execution strategy and elapsed runtime MUST NOT leak into the public administrative contract.
 
 ---
 
@@ -993,6 +1005,8 @@ Versioned JSON output is the stable machine contract.
 
 Markdown and SARIF are not required for the new administrative domains.
 
+Human timing is not part of any administrative or report machine model.
+
 ---
 
 # **26. CLI Composition and Validation**
@@ -1033,6 +1047,8 @@ Invalid combinations MUST fail as CLI usage errors rather than being silently ig
 
 The technical architecture MUST enumerate the final `clap` conflict/requirement relationships before implementation.
 
+The `Total time:` footer MUST NOT require or add a CLI flag in v2.1.
+
 ---
 
 # **27. Configuration Compatibility**
@@ -1072,6 +1088,8 @@ In particular:
 
 is CI/invocation policy rather than persistent duplicate-detection policy.
 
+The elapsed-time footer is built-in human text presentation and MUST NOT add a `[tool.arid]` setting in v2.1.
+
 ---
 
 # **28. Error and Completeness Semantics**
@@ -1101,6 +1119,8 @@ A failed path explanation MUST NOT fabricate an included or excluded result.
 Machine-readable administrative output MUST never silently represent incomplete information as a complete successful audit.
 
 The technical architecture MUST define how existing `error-v1` behavior composes with the new JSON administrative modes without creating another unrelated operational-error taxonomy.
+
+Elapsed timing MUST NOT change error classification or exit status.
 
 ---
 
@@ -1132,7 +1152,11 @@ It MUST NOT create an independently maintained duplicate detector.
 
 `--no-ignore-files` MUST alter traversal policy only and MUST NOT introduce a second discovery implementation.
 
-V2.1 MUST preserve deterministic behavior across worker modes.
+The human timing feature MUST use a monotonic elapsed-time source and add only negligible clock-read and formatting overhead to normal scans.
+
+It MUST NOT add per-stage instrumentation or an additional execution pass.
+
+V2.1 MUST preserve deterministic behavior across worker modes for deterministic contracts. Human elapsed timing is intentionally volatile presentation and is excluded from deterministic text-byte equivalence.
 
 Meaningful unexplained performance regression in ordinary scans MUST be investigated before release.
 
@@ -1140,7 +1164,7 @@ Meaningful unexplained performance regression in ordinary scans MUST be investig
 
 # **30. Validation Requirements**
 
-V2.1 validation MUST cover the new maintenance and discovery contracts and prove that existing detector behavior remains unchanged.
+V2.1 validation MUST cover the new maintenance, discovery, and human-timing contracts and prove that existing detector behavior remains unchanged.
 
 At minimum targeted validation MUST verify:
 
@@ -1166,7 +1190,7 @@ suppression audit respects same-file setting
 baseline acceptance does not incorrectly make suppression stale
 focus/report filtering does not redefine suppression activity
 suppression-status ordering is deterministic
-suppression-status text output is deterministic
+suppression-status text output is deterministic apart from any separately defined human timing presentation
 suppression-status-v1 validates against its JSON Schema
 suppression-status-v1 output is deterministic
 EOF-terminated suppression serializes correctly
@@ -1214,6 +1238,17 @@ path-explanation-v1 output is deterministic
 --no-ignore-files composes consistently with --suppression-status
 --no-ignore-files composes consistently with --baseline-status
 
+completed normal text scan with exit 0 contains exactly one Total time footer
+completed normal text scan with exit 1 contains exactly one Total time footer
+Total time uses µs below 1 ms
+Total time uses ms below 1 s
+Total time uses s at or above 1 s
+exit-2 failure does not emit Total time
+JSON output contains no elapsed timing field or footer
+Markdown output contains no elapsed timing footer
+SARIF output contains no elapsed timing field or footer
+supplemental report files contain no elapsed timing footer
+
 administrative JSON stdout/file semantic equivalence
 normal report-v4 remains unchanged
 baseline-v1 remains unchanged
@@ -1256,6 +1291,7 @@ Before stable 2.1.0, user-facing documentation MUST explain:
 10. `suppression-status-v1`
 11. `path-explanation-v1`
 12. administrative exit-status semantics
+13. the normal text `Total time:` footer and its deliberate absence from machine formats
 
 Documentation MUST make clear that:
 
@@ -1273,11 +1309,13 @@ before EOF.
 
 Documentation MUST also make clear that repeated state-setting directives are valid no-ops.
 
-The README SHOULD include concise examples for the new common CLI workflows without becoming a complete duplication of the reference documentation.
+Documentation MUST describe `Total time:` as human-facing elapsed execution feedback rather than benchmark evidence or a stable machine field.
+
+The README SHOULD include concise examples for the new common CLI workflows and timing footer without becoming a complete duplication of the reference documentation.
 
 V2.1 does not require a migration guide because the release is additive and existing valid 2.0 usage requires no migration.
 
-Curated release notes MUST explicitly state that normal duplicate-detection semantics remain unchanged.
+Curated release notes MUST explicitly state that normal duplicate-detection semantics remain unchanged and that normal text presentation gains the timing footer.
 
 ---
 
@@ -1297,6 +1335,8 @@ Before stable `2.1.0`:
 - `--explain-path` discovery-policy validation MUST pass
 - `--no-ignore-files` traversal validation MUST pass
 - stdout/file administrative semantic-equivalence validation MUST pass where supported
+- normal text total-time footer validation MUST pass
+- machine-format timing-absence validation MUST pass
 - report-v4 compatibility validation MUST pass
 - baseline-v1 compatibility validation MUST pass
 - ordinary suppression-behavior regression validation MUST pass
@@ -1309,7 +1349,7 @@ Before stable `2.1.0`:
 - stable promotion MUST remain metadata-only from the qualified RC
 - published stable artifacts MUST pass the established post-publication qualification path
 
-Qualification MUST exercise the published artifact for the new administrative machine contracts rather than relying solely on source-checkout execution.
+Qualification MUST exercise the published artifact for the new administrative machine contracts and the human timing footer rather than relying solely on source-checkout execution.
 
 ---
 
@@ -1332,7 +1372,7 @@ existing baseline files
 finding fingerprint identity
 normalization behavior
 normal suppression behavior
-text/Markdown/SARIF scan semantics
+Markdown/SARIF scan semantics
 serial default
 numeric workers
 --workers auto
@@ -1341,6 +1381,14 @@ pre-commit integration
 official GitHub Actions integration
 published platform set
 ```
+
+Normal human text scan output intentionally gains one additional footer line:
+
+```text
+Total time: <duration>
+```
+
+That volatile presentation value is not a stable machine contract and MUST NOT be added to JSON, Markdown, SARIF, fingerprints, schemas, or supplemental report files.
 
 The following are additive:
 
@@ -1351,6 +1399,7 @@ The following are additive:
 --no-ignore-files
 suppression-status-v1
 path-explanation-v1
+human-readable Total time footer on completed normal text scans
 ```
 
 Formal documentation that suppression directives are idempotent and may remain disabled through EOF describes and freezes valid suppression behavior; it MUST NOT intentionally break existing normal scan behavior.
@@ -1359,11 +1408,92 @@ No other incompatibility should be introduced in v2.1.
 
 ---
 
-# **34. V2.1 Completion Criterion**
+# **34. Human-Readable Execution Timing**
+
+V2.1 MUST add a concise total elapsed-time footer to completed normal duplicate-scan output when the primary output format is text.
+
+The footer label MUST be:
+
+```text
+Total time:
+```
+
+Representative output:
+
+```text
+No duplicate code found.
+
+Total time: 18.7 ms
+```
+
+The footer MUST be emitted for completed normal text scans whose final exit status is:
+
+```text
+0  no policy failure / no reportable findings
+1  reportable findings or another successful policy result
+```
+
+The footer MUST NOT be emitted for exit status `2` because such an invocation represents usage, configuration, discovery, source-processing, output, or internal failure rather than a completed successful scan result.
+
+The footer applies to normal duplicate scans, including compatible normal-scan options such as baseline enforcement, focus, stdin source, worker selection, normalization overrides, and `--no-fail-on-findings`.
+
+Administrative terminal operations such as configuration display, file listing, baseline administration, suppression status, and path explanation are not required to display total time in v2.1.
+
+The footer MUST be appended only to the primary human text output. It MUST NOT be inserted into:
+
+```text
+JSON
+Markdown
+SARIF
+report-v4
+suppression-status-v1
+path-explanation-v1
+error-v1
+baseline-v1
+supplemental --report files
+```
+
+Elapsed time MUST be measured from a monotonic clock over the normal Arid application scan execution path. The implementation MAY exclude process startup, CLI parsing, standard-input acquisition performed before the application runner, and the operating system's final stdout flush because those lie outside the scan result construction boundary.
+
+The measured interval SHOULD include work performed by the application runner for the completed scan, including where applicable:
+
+```text
+configuration resolution
+discovery
+source preparation
+normalization
+corpus construction
+duplicate detection
+baseline processing
+focus filtering
+report construction
+primary rendering
+supplemental report writes
+```
+
+The display MUST use adaptive units:
+
+```text
+< 1 ms   → µs
+< 1 s    → ms
+>= 1 s   → s
+```
+
+Formatting SHOULD use restrained precision appropriate to human elapsed-time feedback. It MUST NOT imply benchmark-grade precision.
+
+The timing feature MUST use one total elapsed measurement. V2.1 MUST NOT add per-stage timing, timing metadata models, a timing registry, tracing spans, telemetry, or profiling infrastructure merely to support this footer.
+
+The `Total time:` value is intentionally nondeterministic human presentation. It is excluded from deterministic text-byte comparisons while every machine-readable contract remains deterministic as previously required.
+
+V2.1 MUST NOT add a configuration option or CLI switch to disable or customize this footer.
+
+---
+
+# **35. V2.1 Completion Criterion**
 
 Arid 2.1 is complete when the following statement is true:
 
-> **Arid still detects the same exact normalized Python duplicates as 2.0, but can audit whether source suppressions remain necessary, fail CI when suppression or baseline maintenance state becomes stale, explain why an individual path is or is not selected by discovery, deliberately bypass ignore-file traversal without bypassing Arid's own discovery policy, and expose those administrative decisions through deterministic versioned machine contracts.**
+> **Arid still detects the same exact normalized Python duplicates as 2.0, but can audit whether source suppressions remain necessary, fail CI when suppression or baseline maintenance state becomes stale, explain why an individual path is or is not selected by discovery, deliberately bypass ignore-file traversal without bypassing Arid's own discovery policy, expose those administrative decisions through deterministic versioned machine contracts, and remind users how fast a completed normal text scan was through a concise total-time footer.**
 
 The intended maintenance invariant is:
 
@@ -1397,4 +1527,4 @@ maintenance check fails when requested
 baseline is explicitly pruned
 ```
 
-V2.1 MUST strengthen maintenance and discovery auditability without broadening Arid's detector.
+V2.1 MUST strengthen maintenance and discovery auditability and human performance visibility without broadening Arid's detector.

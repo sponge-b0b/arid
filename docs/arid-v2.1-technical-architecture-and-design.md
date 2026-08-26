@@ -17,7 +17,7 @@
 
 This document defines the technical architecture for Arid 2.1.
 
-The v2 architecture remains the implementation base. V2.1 adds suppression maintenance and discovery auditability around the stable 2.0 detector without redesigning duplicate identity, report v4, baseline v1, or the normal scan pipeline.
+The v2 architecture remains the implementation base. V2.1 adds suppression maintenance, discovery auditability, and a small human-facing execution-time footer around the stable 2.0 detector without redesigning duplicate identity, report v4, baseline v1, or the normal scan pipeline.
 
 The v2.1 architecture exists to implement:
 
@@ -31,6 +31,7 @@ The v2.1 architecture exists to implement:
 - `suppression-status-v1`
 - `path-explanation-v1`
 - deterministic administrative JSON output and direct-file equivalence
+- an always-on `Total time:` footer for completed normal text scans
 
 The detector itself is not redesigned.
 
@@ -107,6 +108,8 @@ All public administrative collections, paths, classifications, reasons, and summ
 
 Filesystem traversal arrival order, worker completion order, and unordered map iteration MUST NOT affect serialized output.
 
+Human elapsed timing is an explicit exception only for primary normal text presentation. It MUST NOT enter deterministic machine models or serialized machine contracts.
+
 ## **2.7 Ordinary scans stay cheap**
 
 A normal invocation such as:
@@ -116,6 +119,8 @@ arid .
 ```
 
 MUST NOT run suppression-audit detection, path explanation, or extra discovery matching merely because v2.1 supports those operations.
+
+The timing footer adds only one monotonic elapsed measurement and formatting step.
 
 ## **2.8 Mutation remains narrow**
 
@@ -129,6 +134,22 @@ Existing baseline mutation remains limited to:
 ```
 
 `--fail-on-stale` is exit policy only.
+
+## **2.9 Timing is presentation, not telemetry**
+
+The `Total time:` footer exists to make Arid's speed visible to a human running a normal text scan.
+
+It MUST NOT create:
+
+- report metadata
+- a timing domain model
+- per-stage timers
+- tracing spans
+- a metrics registry
+- a profiling subsystem
+- new machine schema fields
+
+One monotonic start point and one elapsed duration are sufficient.
 
 ---
 
@@ -153,6 +174,10 @@ Existing baseline mutation remains limited to:
 | Schema version field | numeric `schema_version: 1` |
 | Administrative file output | reuse `--report json=PATH` only for the two new administrative models |
 | File writes | same atomic output primitive used by existing report files |
+| Human timing source | `std::time::Instant` or equivalent monotonic elapsed clock |
+| Human timing placement | append after successful normal scan/report work to primary text stdout only |
+| Human timing formats | `<1 ms` µs; `<1 s` ms; otherwise s |
+| Machine timing | none; volatile elapsed values never enter machine contracts |
 | Capabilities v1 | unchanged in 2.1; no mutation of the published schema |
 | Report v4 | unchanged |
 | Baseline v1 | unchanged |
@@ -167,7 +192,7 @@ V2.1 SHOULD require only a small source delta:
 
 ```text
 src/
-├── app.rs                  # extend invocation orchestration
+├── app.rs                  # invocation orchestration + total-time footer
 ├── cli.rs                  # new CLI flags / validation inputs
 ├── exit_policy.rs          # generic stale-policy helper
 ├── files.rs                # discovery policy + targeted explanation support
@@ -188,6 +213,8 @@ validation/
 A separate `path_explanation.rs` MAY be introduced only if `files.rs` becomes materially harder to understand without it.
 
 A separate `suppression_status.rs` MAY likewise be introduced only if rendering/model concerns make `suppression.rs` unreasonably broad.
+
+A separate timing module SHOULD NOT be introduced merely for one elapsed-duration formatter unless implementation evidence shows `app.rs` would otherwise become materially less clear.
 
 The design does not require new framework layers.
 
@@ -214,6 +241,8 @@ enum Mode {
 `--no-ignore-files` is not a mode. It changes discovery policy for modes that perform discovery.
 
 `--fail-on-stale` is not a mode. It changes exit policy for `SuppressionStatus` and `BaselineStatus` only.
+
+The total-time footer is not a mode or option. It is primary text presentation attached to completed `Scan` results.
 
 Mode resolution remains early in `app.rs` before expensive work.
 
@@ -600,6 +629,8 @@ Worker count is omitted because it is execution strategy, not audit semantics.
 
 Baseline/focus state is omitted because those layers do not define suppression activity.
 
+Elapsed execution time is omitted because it is human presentation, not audit semantics.
+
 ## **13.2 Path representation**
 
 Paths use the existing canonical project-relative representation when possible.
@@ -629,6 +660,8 @@ It SHOULD contain:
 No-op directives are not listed independently.
 
 The renderer consumes `SuppressionStatus`; it does not recompute classification.
+
+Administrative suppression-status text does not receive the normal-scan total-time footer in v2.1.
 
 ---
 
@@ -987,7 +1020,7 @@ The target presented in output is normalized independently of how the user spell
 
 For compatible existing scans involving a path outside project root, Arid MAY retain an absolute normalized representation rather than reject the diagnostic. Such a path is result-relevant and therefore not considered unrelated volatile metadata.
 
-No temporary path, process ID, timestamp, or current worker information is emitted.
+No temporary path, process ID, timestamp, current worker information, or elapsed timing is emitted.
 
 ---
 
@@ -1005,6 +1038,8 @@ Serialization occurs from typed logical models, not ad-hoc `serde_json::json!` f
 Text renderers consume the same logical model.
 
 Schema tests MUST deserialize/validate representative documents and assert deterministic ordering.
+
+No administrative JSON renderer receives elapsed timing input.
 
 ---
 
@@ -1048,6 +1083,8 @@ If stdout is text and supplemental JSON is requested, both still represent the s
 
 No separate abbreviated file model exists.
 
+Elapsed timing is not part of either representation.
+
 ---
 
 # **26. Output Module Refactor**
@@ -1075,6 +1112,8 @@ fn write_atomic_output(
 
 is sufficient.
 
+The total-time footer SHOULD be appended at the application boundary after normal report rendering and supplemental report writes rather than inserted into `Report` or renderer models.
+
 ---
 
 # **27. Error Semantics**
@@ -1094,11 +1133,13 @@ supplemental file write failure → output
 internal mapping invariant      → internal
 ```
 
-No `suppression` or `path-explanation` error kind is added merely to identify which administrative mode was running.
+No `suppression`, `path-explanation`, or `timing` error kind is added merely to identify which operation or presentation step was running.
 
 When primary output is JSON and execution fails after CLI parsing, existing `error-v1` behavior remains authoritative.
 
 A partial suppression audit is never emitted as a successful suppression-status-v1 document.
+
+An exit-2 normal scan does not receive a `Total time:` footer.
 
 ---
 
@@ -1112,6 +1153,8 @@ V2.1 therefore leaves capabilities-v1 unchanged.
 
 The new versioned administrative schemas and CLI version provide the 2.1 machine-contract boundary.
 
+The human timing footer likewise does not require a capabilities-v1 mutation.
+
 If a future release requires `--capabilities` to enumerate the 2.1 feature set explicitly, that work requires a separately versioned capabilities contract rather than silently changing capabilities-v1.
 
 ---
@@ -1122,7 +1165,7 @@ If a future release requires `--capabilities` to enumerate the 2.1 feature set e
 
 Normal scans retain the 2.0 path and SHOULD incur no additional detector pass.
 
-The only acceptable normal-path overhead is negligible state handling required to preserve/refactor existing suppression semantics.
+The only acceptable normal-path overhead is negligible state handling required to preserve/refactor existing suppression semantics plus one monotonic clock measurement and formatting step for completed primary text scans.
 
 ## **29.2 Suppression status**
 
@@ -1143,6 +1186,54 @@ It does not recursively rescan the project solely to answer one path question wh
 The flag changes only walker filtering configuration.
 
 Any performance difference is a consequence of discovering a larger source corpus, not a second discovery pass.
+
+## **29.5 Human total-time measurement**
+
+Use a monotonic elapsed clock such as:
+
+```rust
+std::time::Instant
+```
+
+The timer SHOULD begin at the application runner's normal scan execution boundary before configuration/discovery work and be read only after successful report construction/rendering and supplemental report writes.
+
+The measured interval therefore includes the meaningful application work Arid controls while intentionally excluding process startup, CLI parsing, pre-run stdin acquisition, and the final operating-system stdout flush when those happen outside the application runner.
+
+The primary text footer is appended only after the final scan exit status is known to be `Success` or `Findings`.
+
+Conceptually:
+
+```text
+start Instant
+    ↓
+normal application scan pipeline
+    ↓
+render primary output
+    ↓
+write supplemental report targets
+    ↓
+resolve exit 0 / 1
+    ↓
+append Total time footer to primary text stdout
+```
+
+If the output format is JSON, Markdown, or SARIF, no elapsed value is serialized or appended.
+
+If the final outcome is exit `2`, no footer is added.
+
+Supplemental `--report` outputs are rendered from existing report models and never receive timing.
+
+Formatting is adaptive:
+
+```text
+elapsed < 1 ms   → integer or suitably concise µs
+elapsed < 1 s    → concise decimal ms
+elapsed >= 1 s   → concise decimal s
+```
+
+The formatter SHOULD avoid excessive precision and SHOULD avoid unit-boundary artifacts such as displaying a rounded `1000.0 ms` when seconds would be clearer.
+
+No per-stage timing is collected.
 
 ---
 
@@ -1214,16 +1305,43 @@ Ordering and EOF serialization receive explicit regression tests.
 
 One matrix test SHOULD lock `--fail-on-stale` behavior for both suppression and baseline status.
 
+## **30.6 Timing tests**
+
+Unit tests SHOULD exercise the formatter with fixed `Duration` values around:
+
+```text
+sub-millisecond
+1 millisecond
+sub-second
+1 second
+multi-second
+```
+
+Application/integration tests MUST verify:
+
+```text
+exit 0 + primary text → exactly one Total time footer
+exit 1 + primary text → exactly one Total time footer
+exit 2                → no Total time footer
+JSON                   → no timing
+Markdown               → no timing
+SARIF                  → no timing
+supplemental reports   → no timing
+```
+
+Tests MUST NOT assert an exact real elapsed value.
+
 ---
 
 # **31. Validation Design**
 
-The v2.1 validation path SHOULD prove four things independently:
+The v2.1 validation path SHOULD prove five things independently:
 
 1. ordinary 2.0 duplicate results remain unchanged;
 2. suppression status classifies known active/stale fixtures correctly;
 3. path explanation agrees with actual `--list-files`/scan discovery outcomes;
-4. `--no-ignore-files` changes only ignore-file-derived traversal decisions.
+4. `--no-ignore-files` changes only ignore-file-derived traversal decisions; and
+5. normal primary text scans display total elapsed time while deterministic machine formats remain timing-free.
 
 A strong discovery consistency test SHOULD, for representative files, compare:
 
@@ -1234,6 +1352,8 @@ actual --list-files membership
 ```
 
 under both normal traversal and `--no-ignore-files`.
+
+Timing validation SHOULD check presence, units, and format boundaries rather than comparing elapsed values across runs.
 
 The real-world validation corpus remains the final regression guard for detector stability.
 
@@ -1255,12 +1375,15 @@ Implementation SHOULD proceed inside-out:
 9. path explanation model/renderers/schema
 10. administrative supplemental JSON file output
 11. CLI/app orchestration
-12. documentation / validation / qualification
+12. human total-time footer
+13. documentation / validation / qualification
 ```
 
 Lower-level domain behavior is made correct first even if application orchestration temporarily requires follow-up changes.
 
 Do not preserve an awkward upper-layer interface merely to avoid updating its callers.
+
+The timing footer is intentionally late in implementation order because it belongs at the application/output boundary and MUST NOT influence lower-level detector or administrative-domain design.
 
 ---
 
@@ -1279,10 +1402,13 @@ The v2.1 architecture is correctly implemented when:
 - `--no-ignore-files` disables ignore-file filtering without disabling hidden or Arid exclude policy
 - the two new JSON contracts validate against immutable v1 schemas
 - stdout and direct JSON files render the same logical administrative state
-- no new detector, reporter framework, waiver database, or discovery implementation is introduced
+- completed normal primary text scans with exit `0` or `1` contain exactly one human-readable `Total time:` footer
+- JSON, Markdown, SARIF, supplemental reports, and exit-2 failures remain free of volatile timing presentation
+- timing uses one monotonic elapsed measurement without per-stage instrumentation
+- no new detector, reporter framework, waiver database, discovery implementation, telemetry framework, or timing subsystem is introduced
 
 ---
 
 # **34. V2.1 Technical Completion Criterion**
 
-Arid 2.1 is technically complete when one stable 2.0 detector can be used both normally and through a suppression-disabled preparation view to audit suppression maintenance; the existing baseline comparison can enforce stale cleanup without changing baseline-v1; the existing discovery system can both explain one target and selectively bypass ignore files without bypassing Arid policy; and both new administrative domains expose deterministic, versioned, directly writable JSON contracts without changing ordinary scan behavior.
+Arid 2.1 is technically complete when one stable 2.0 detector can be used both normally and through a suppression-disabled preparation view to audit suppression maintenance; the existing baseline comparison can enforce stale cleanup without changing baseline-v1; the existing discovery system can both explain one target and selectively bypass ignore files without bypassing Arid policy; both new administrative domains expose deterministic, versioned, directly writable JSON contracts; and the application boundary can append one concise total-time footer to completed normal text scans without putting volatile runtime data into any machine-readable contract or changing detector behavior.

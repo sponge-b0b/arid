@@ -2,25 +2,27 @@
 
 **Product:** Arid  
 **Stable target:** `2.1.0`  
-**Current phase:** Phase 1 — Suppression state and audit foundation
+**Current phase:** Phase 2 — Suppression audit and machine contract
 
 ## Purpose
 
-Arid v2.1 is a focused maintenance and discovery-auditability release built around one principle:
+Arid v2.1 is a focused maintenance, discovery-auditability, and human-feedback release built around one principle:
 
 > **Auditable maintenance. Explainable discovery. Same focused detector.**
 
-V2.1 deliberately preserves Arid 2.0 duplicate-detection semantics while making two previously opaque forms of state observable and enforceable:
+V2.1 deliberately preserves Arid 2.0 duplicate-detection semantics while making two previously opaque forms of state observable and enforceable and making Arid's execution speed visible in normal human-facing scan output:
 
-1. whether accepted source suppressions are still necessary; and
-2. why a specific path is or is not selected by Arid discovery.
+1. whether accepted source suppressions are still necessary;
+2. why a specific path is or is not selected by Arid discovery; and
+3. how long the completed duplicate scan took.
 
-The release is intended to deliver four outcomes:
+The release is intended to deliver five outcomes:
 
 1. **Suppression lifecycle visibility** — `--suppression-status` classifies effective suppression regions as active or stale.
 2. **Maintenance ratchets** — `--fail-on-stale` can fail suppression or baseline status when obsolete acceptance remains.
 3. **Discovery explainability** — `--explain-path <PATH>` and `--no-ignore-files` make traversal decisions easier to diagnose without weakening Arid's own exclusion policy.
 4. **Stable administrative machine contracts** — `suppression-status-v1` and `path-explanation-v1` provide deterministic JSON for automation.
+5. **Visible execution speed** — completed normal text scans end with a concise human-readable `Total time:` footer.
 
 The detector itself is not redesigned for v2.1.
 
@@ -55,6 +57,8 @@ If these documents disagree, implementation MUST stop and the contract documents
 - `schemas/path-explanation-v1.schema.json`.
 - Deterministic administrative JSON.
 - Supplemental administrative JSON file output with stdout/file semantic equivalence.
+- An always-on human-readable `Total time:` footer for completed normal text scans.
+- Adaptive human timing units in microseconds, milliseconds, or seconds.
 - Reuse of existing `error-v1`, report-v4, baseline-v1, and Rust public API contracts.
 - README/reference documentation, targeted validation, real-world regression validation, release qualification, and release-tooling support for 2.1.
 
@@ -82,6 +86,10 @@ V2.1 does not add:
 - a second detector
 - a second discovery implementation
 - a reporter/plugin framework
+- detailed per-stage runtime timing in normal product output
+- a profiling or telemetry subsystem for the timing footer
+- timing fields in JSON, Markdown, SARIF, or versioned machine contracts
+- a timing SLA or benchmark guarantee derived from one invocation
 - persistent caching
 - daemon/RPC/MCP operation
 - LSP/editor integration
@@ -112,7 +120,7 @@ official GitHub Action behavior unless documentation/version metadata requires u
 supported platform set
 ```
 
-New behavior is opt-in through:
+New CLI controls are:
 
 ```text
 --suppression-status
@@ -120,6 +128,8 @@ New behavior is opt-in through:
 --explain-path <PATH>
 --no-ignore-files
 ```
+
+In addition, completed normal text scans gain an always-on human-facing `Total time:` footer. This is an intentional text-presentation addition only; deterministic machine formats remain unchanged.
 
 Formal documentation of idempotent directives and disable-through-EOF freezes existing valid suppression behavior rather than intentionally changing normal scans.
 
@@ -136,6 +146,7 @@ No phase may introduce:
 - another discovery implementation
 - a generic reporter framework
 - mutation from a read-only administrative mode
+- a runtime telemetry framework merely to print total elapsed time
 
 The expected release sequence is:
 
@@ -171,7 +182,7 @@ Curated release notes are required for every published v2.1 tag and MUST exist b
 
 ### Gate
 
-- All three documents agree on the five v2.1 product capabilities.
+- All three documents agree on the six v2.1 product capabilities.
 - Suppression semantics agree that directives are idempotent state setters.
 - Disable-through-EOF is valid.
 - Repeated same-state directives are valid no-ops.
@@ -179,6 +190,7 @@ Curated release notes are required for every published v2.1 tag and MUST exist b
 - `--fail-on-stale` semantics agree for suppression and baseline status.
 - Discovery explanation and ignore-file override use one discovery policy definition.
 - New administrative schemas and output boundaries are explicit.
+- Human execution timing is presentation-only and excluded from deterministic machine contracts.
 - No implementation begins while a known contract contradiction remains.
 
 **Gate result:** PASS.
@@ -188,6 +200,8 @@ Curated release notes are required for every published v2.1 tag and MUST exist b
 ## Phase 1 — Suppression state and audit foundation
 
 **Goal:** establish the lower-level suppression model and audit preparation path without changing ordinary scan behavior.
+
+**Status:** Complete.
 
 ### Work
 
@@ -209,9 +223,18 @@ Curated release notes are required for every published v2.1 tag and MUST exist b
 - Audit preparation does not change parser, normalization, structural, or physical-line mapping semantics.
 - Normal scans do not allocate or retain audit-only state unnecessarily.
 
+### Evidence
+
+- `978e3f67` — `feat(suppression): add effective suppression regions`
+- `6e9417c6` — `feat(suppression): add audit preparation mode`
+- `67a9290f` — `fix(suppression): remove unreachable audit wrapper`
+- Local gate: `cargo fmt --check`, `cargo test --locked`, clippy with `-D warnings`, scoped `git diff --check`, and clean status — PASS.
+
 ### Gate
 
 Suppression state tests pass, representative normal-scan fixtures remain unchanged, and audit preparation can expose all effective suppression regions without running duplicate detection itself.
+
+**Gate result:** PASS.
 
 ---
 
@@ -350,9 +373,9 @@ Representative path decisions agree with actual `--list-files` membership under 
 
 ---
 
-## Phase 6 — Administrative output and application integration
+## Phase 6 — Output and application integration
 
-**Goal:** integrate the new modes cleanly into the existing CLI/application boundary and provide equivalent direct JSON files.
+**Goal:** integrate the new administrative modes cleanly, provide equivalent direct JSON files, and add the human-facing total-time footer without changing machine contracts.
 
 ### Work
 
@@ -366,20 +389,30 @@ Representative path decisions agree with actual `--list-files` membership under 
 - Render stdout and supplemental JSON from the same typed administrative model and renderer.
 - Reuse existing `OperationalError` / `error-v1` semantics.
 - Leave `capabilities-v1` unchanged as an immutable published contract.
-- Confirm ordinary scan `--report` behavior remains unchanged.
+- Add one monotonic elapsed timer for normal scan execution.
+- Append `Total time: <duration>` to completed primary text scan output after normal scan/report work succeeds.
+- Format elapsed time adaptively as microseconds below 1 ms, milliseconds below 1 s, and seconds at or above 1 s.
+- Keep timing out of JSON, Markdown, SARIF, supplemental report files, report-v4, and every versioned machine contract.
+- Do not print the timing footer for exit-2 failures or incomplete scans.
+- Do not add per-stage timers, a timing registry, telemetry, or profiling infrastructure.
+- Confirm ordinary scan `--report` behavior remains unchanged apart from the primary text footer.
 - Confirm the normal scan path does not execute audit detection or targeted explanation work.
 
 ### Required invariants
 
 - Administrative JSON file output is semantically equivalent to JSON stdout for the same model.
-- Existing scan report output is unaffected.
+- Existing scan machine output is unaffected.
+- The timing footer is human-facing presentation only and is intentionally excluded from deterministic-output guarantees.
+- A completed normal text scan with exit `0` or `1` contains exactly one `Total time:` footer.
+- Exit `2` does not gain timing output.
+- Supplemental report files do not gain timing output.
 - Existing administrative modes do not accidentally gain new supplemental output behavior.
-- No reporter registry or generalized output framework is introduced.
+- No reporter registry, timing framework, or generalized output framework is introduced.
 - `error-v1`, report-v4, baseline-v1, and capabilities-v1 schemas remain unchanged.
 
 ### Gate
 
-CLI mode-composition tests pass, stdout/file equivalence tests pass, atomic-write failures map to exit `2`, existing output regression suites remain green, and normal-scan performance shows no unexplained v2.1 overhead.
+CLI mode-composition tests pass, stdout/file equivalence tests pass, atomic-write failures map to exit `2`, timing-format/footer tests pass, machine formats remain timing-free and deterministic, existing output regression suites remain green, and normal-scan performance shows no unexplained v2.1 overhead beyond negligible clock measurement/formatting.
 
 ---
 
@@ -392,11 +425,12 @@ CLI mode-composition tests pass, stdout/file equivalence tests pass, atomic-writ
 - Add/update focused v2.1 validation tooling, preferably `validation/v2.1.sh` or the smallest equivalent extension.
 - Add release-tooling support so `2.1.*` maps to `docs/arid-v2.1-release-roadmap.md`.
 - Preserve prior release-family checks in `release.sh --check`.
-- Update README for the four new CLI controls and suppression semantics.
+- Update README for the four new CLI controls, suppression semantics, and the normal text `Total time:` footer.
 - Document active/stale lifecycle examples.
 - Document disable-through-EOF and repeated-directive no-op behavior.
 - Document ignore-file override versus Arid `exclude`.
 - Document both new JSON schema locations and machine-contract expectations.
+- Document that elapsed timing is human presentation and is intentionally absent from deterministic machine formats.
 - Add/update CLI help snapshots or integration checks where used.
 - Run source formatting, tests, lint, diff checks, and targeted integration validation.
 - Run the established real-world repository validation campaign.
@@ -419,6 +453,11 @@ discovery-policy fixtures
 path explanation vs --list-files consistency
 path-explanation-v1 schema validation
 stdout/file administrative JSON equivalence
+normal text scan Total time footer on exit 0
+normal text scan Total time footer on exit 1
+adaptive timing unit formatting
+timing absent from exit-2 output
+timing absent from JSON/Markdown/SARIF and supplemental reports
 report-v4 compatibility
 baseline-v1 compatibility
 error-v1 compatibility
@@ -452,12 +491,14 @@ All intended 2.1 behavior is code complete, documentation is sufficient for prer
 - PyPI installation smoke.
 - Standalone archive smoke.
 - New CLI controls execute from published artifacts.
+- A normal published text scan displays the `Total time:` footer.
+- Published JSON/Markdown/SARIF output remains free of elapsed timing data.
 - Both new JSON documents validate against the published schema files from the release.
 - Direct JSON files are equivalent to stdout behavior from the same published executable.
 
 ### Gate
 
-A published alpha passes artifact/install smoke and the new administrative machine contracts work from the actual released artifacts on supported release paths.
+A published alpha passes artifact/install smoke, normal text timing is visible, machine contracts remain timing-free, and the new administrative machine contracts work from the actual released artifacts on supported release paths.
 
 ---
 
@@ -477,13 +518,14 @@ A published alpha passes artifact/install smoke and the new administrative machi
 - Exercise suppression status on repositories with representative suppressions.
 - Exercise ignore-file override and path explanation across representative repository layouts.
 - Verify active/stale and path-explanation determinism across worker/platform modes where applicable.
+- Verify the timing footer remains a single concise line across representative normal text scans and timing stays absent from machine formats.
 - Run performance comparison against the qualified 2.0 baseline.
 - Reconcile README/reference docs with actual beta behavior.
 - Prepare substantive stable release notes early enough that final RC-to-stable promotion remains metadata-only.
 
 ### Gate
 
-The beta is feature-frozen, real-world validation passes, machine contracts remain stable, ordinary detector behavior matches 2.0 expectations, and no material unexplained performance regression remains.
+The beta is feature-frozen, real-world validation passes, machine contracts remain stable, ordinary detector behavior matches 2.0 expectations, the timing footer behaves as specified, and no material unexplained performance regression remains.
 
 ---
 
@@ -509,6 +551,8 @@ The RC qualification MUST include:
 - `path-explanation-v1` validation against published output
 - stale-policy exit matrix on the published executable
 - direct JSON file equivalence on the published executable
+- normal text `Total time:` footer on the published executable
+- absence of timing data from JSON/Markdown/SARIF machine-oriented output
 - baseline-v1 compatibility
 - report-v4 compatibility
 - ordinary detector real-world validation
@@ -558,7 +602,7 @@ The RC passes the complete qualification suite and is acceptable for stable prom
 
 The roadmap accurately describes the shipped release, stable qualification is recorded, and the following statement is true:
 
-> **Arid 2.1 preserves the 2.0 detector while making suppression maintenance auditable and enforceable, making individual discovery decisions explainable, allowing ignore-file traversal to be bypassed without bypassing Arid policy, and exposing the new administrative state through deterministic versioned machine contracts.**
+> **Arid 2.1 preserves the 2.0 detector while making suppression maintenance auditable and enforceable, making individual discovery decisions explainable, allowing ignore-file traversal to be bypassed without bypassing Arid policy, exposing the new administrative state through deterministic versioned machine contracts, and making normal human-facing scans visibly fast through a concise total-time footer.**
 
 ---
 
@@ -578,6 +622,10 @@ one path can be explained against actual discovery policy
 ignore-file traversal can be disabled without disabling Arid policy
         +
 suppression-status-v1 and path-explanation-v1 are stable and deterministic
+        +
+completed normal text scans display a concise Total time footer
+        +
+machine-readable outputs remain free of volatile timing data
         +
 published artifacts pass the established release qualification path
 ```
