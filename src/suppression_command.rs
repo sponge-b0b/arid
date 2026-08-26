@@ -11,6 +11,7 @@ use crate::files::{DiscoveryPolicy, discover_python_files};
 use crate::model::NormalizationOptions;
 use crate::normalize::{SuppressionMode, prepare_file_with_mode};
 use crate::outcome::{ExitStatus, RunResult};
+use crate::output::{resolve_administrative_json_targets, write_atomic_output};
 use crate::source::{SourceInput, build_source_inputs};
 use crate::suppression::{
     AuditPreparedFile, build_suppression_status, render_suppression_status_json,
@@ -58,6 +59,11 @@ fn execute(cli: &Cli) -> Result<RunResult, OperationalError> {
             format!("failed to discover Python files: {error}"),
         )
     })?;
+    let report_targets = resolve_administrative_json_targets(
+        &cli.report,
+        &discovered,
+        "--suppression-status",
+    )?;
     let inputs = build_source_inputs(discovered, None);
     let prepared = prepare_sources_for_audit(
         inputs,
@@ -83,14 +89,26 @@ fn execute(cli: &Cli) -> Result<RunResult, OperationalError> {
         status.has_stale(),
         cli.fail_on_stale,
     );
-    let output = match cli.output_format() {
-        OutputFormat::Text => render_suppression_status_text(&status),
-        OutputFormat::Json => render_suppression_status_json(&status).map_err(|error| {
+    let json_output = if cli.output_format() == OutputFormat::Json || !report_targets.is_empty() {
+        Some(render_suppression_status_json(&status).map_err(|error| {
             OperationalError::new(
                 ErrorKind::Output,
                 format!("failed to render suppression status JSON: {error}"),
             )
-        })?,
+        })?)
+    } else {
+        None
+    };
+
+    if let Some(json) = json_output.as_deref() {
+        for target in &report_targets {
+            write_atomic_output(&target.path, json, &loaded.project_root)?;
+        }
+    }
+
+    let output = match cli.output_format() {
+        OutputFormat::Text => render_suppression_status_text(&status),
+        OutputFormat::Json => json_output.expect("JSON output is rendered for JSON stdout"),
         OutputFormat::Markdown | OutputFormat::Sarif => {
             unreachable!("suppression status output is validated before execution")
         }
@@ -112,7 +130,6 @@ fn validate_options(cli: &Cli) -> Result<(), OperationalError> {
         (cli.baseline_status.is_some(), "--baseline-status"),
         (cli.prune_baseline.is_some(), "--prune-baseline"),
         (cli.write_baseline.is_some(), "--write-baseline"),
-        (!cli.report.is_empty(), "--report"),
         (cli.show_source, "--show-source"),
         (cli.color.is_some(), "--color"),
     ];
@@ -400,6 +417,38 @@ mod tests {
         assert_eq!(value["summary"]["stale"], 1);
         assert_eq!(value["regions"][0]["path"], "b.py");
         assert_eq!(value["regions"][1]["path"], "c.py");
+    }
+
+    #[test]
+    fn supplemental_json_matches_json_stdout() {
+        let temp = fixture();
+        let report_path = temp.path().join("suppression-status.json");
+        let mut text_cli = cli(&temp, false, 1);
+        text_cli.report = vec![format!("json={}", report_path.display())];
+
+        let text = run(&text_cli);
+        assert_eq!(text.exit_status(), ExitStatus::Success);
+        let direct = fs::read_to_string(&report_path).unwrap();
+
+        let json = run(&cli(&temp, true, 1));
+        assert_eq!(json.exit_status(), ExitStatus::Success);
+        assert_eq!(direct, json.stdout());
+    }
+
+    #[test]
+    fn rejects_non_json_supplemental_report() {
+        let temp = fixture();
+        let mut cli = cli(&temp, false, 1);
+        cli.report = vec![format!("text={}", temp.path().join("status.txt").display())];
+
+        let result = run(&cli);
+
+        assert_eq!(result.exit_status(), ExitStatus::Error);
+        assert!(
+            result
+                .stderr()
+                .contains("supports only json=PATH supplemental reports")
+        );
     }
 
     #[test]

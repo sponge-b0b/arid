@@ -74,6 +74,53 @@ pub(crate) fn resolve_report_targets(
     Ok(targets)
 }
 
+pub(crate) fn resolve_administrative_json_targets(
+    specs: &[String],
+    protected_paths: &[PathBuf],
+    operation: &str,
+) -> Result<Vec<ReportTarget>, OperationalError> {
+    let mut targets = Vec::with_capacity(specs.len());
+    let mut destinations = BTreeSet::new();
+    let protected_paths = protected_paths
+        .iter()
+        .map(|path| comparison_path(path))
+        .collect::<Result<BTreeSet<_>, _>>()?;
+
+    for spec in specs {
+        let target = parse_report_target(spec)?;
+
+        if target.format != OutputFormat::Json {
+            return Err(OperationalError::new(
+                ErrorKind::Configuration,
+                format!("{operation} supports only json=PATH supplemental reports"),
+            ));
+        }
+
+        let destination = comparison_path(&target.path)?;
+
+        if !destinations.insert(destination.clone()) {
+            return Err(OperationalError::new(
+                ErrorKind::Configuration,
+                format!("duplicate --report destination: {}", target.path.display()),
+            ));
+        }
+
+        if protected_paths.contains(&destination) {
+            return Err(OperationalError::new(
+                ErrorKind::Configuration,
+                format!(
+                    "--report destination overlaps an input path: {}",
+                    target.path.display()
+                ),
+            ));
+        }
+
+        targets.push(target);
+    }
+
+    Ok(targets)
+}
+
 pub(crate) fn write_report_targets(
     targets: &[ReportTarget],
     report: &Report,
@@ -82,40 +129,49 @@ pub(crate) fn write_report_targets(
     let rendered = render_report_targets(targets, report)?;
 
     for target in rendered {
-        let mut file = AtomicWriteFile::open(&target.path).map_err(|source| {
-            OperationalError::new(
-                ErrorKind::Output,
-                format!(
-                    "failed to open report destination {}: {source}",
-                    target.path.display()
-                ),
-            )
-            .with_project_path(&target.path, project_root)
-        })?;
-
-        file.write_all(target.contents.as_bytes())
-            .map_err(|source| {
-                OperationalError::new(
-                    ErrorKind::Output,
-                    format!(
-                        "failed to write report destination {}: {source}",
-                        target.path.display()
-                    ),
-                )
-                .with_project_path(&target.path, project_root)
-            })?;
-
-        file.commit().map_err(|source| {
-            OperationalError::new(
-                ErrorKind::Output,
-                format!(
-                    "failed to replace report destination {}: {source}",
-                    target.path.display()
-                ),
-            )
-            .with_project_path(&target.path, project_root)
-        })?;
+        write_atomic_output(&target.path, &target.contents, project_root)?;
     }
+
+    Ok(())
+}
+
+pub(crate) fn write_atomic_output(
+    path: &Path,
+    contents: &str,
+    project_root: &Path,
+) -> Result<(), OperationalError> {
+    let mut file = AtomicWriteFile::open(path).map_err(|source| {
+        OperationalError::new(
+            ErrorKind::Output,
+            format!(
+                "failed to open report destination {}: {source}",
+                path.display()
+            ),
+        )
+        .with_project_path(path, project_root)
+    })?;
+
+    file.write_all(contents.as_bytes()).map_err(|source| {
+        OperationalError::new(
+            ErrorKind::Output,
+            format!(
+                "failed to write report destination {}: {source}",
+                path.display()
+            ),
+        )
+        .with_project_path(path, project_root)
+    })?;
+
+    file.commit().map_err(|source| {
+        OperationalError::new(
+            ErrorKind::Output,
+            format!(
+                "failed to replace report destination {}: {source}",
+                path.display()
+            ),
+        )
+        .with_project_path(path, project_root)
+    })?;
 
     Ok(())
 }
@@ -273,5 +329,21 @@ mod tests {
         assert!(parse_report_target("json").is_err());
         assert!(parse_report_target("xml=out.xml").is_err());
         assert!(parse_report_target("json=").is_err());
+    }
+
+    #[test]
+    fn administrative_targets_are_json_only() {
+        let error = resolve_administrative_json_targets(
+            &["text=out.txt".to_owned()],
+            &[],
+            "--suppression-status",
+        )
+        .unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("supports only json=PATH supplemental reports")
+        );
     }
 }

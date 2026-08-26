@@ -9,6 +9,7 @@ use crate::config::{ProjectOptions, Settings, SettingsOverrides, load_settings_w
 use crate::error::{ErrorKind, OperationalError, render_error_json};
 use crate::files::{DiscoveryPolicy, configured_walk_builder, is_excluded_path, is_python_file};
 use crate::outcome::{ExitStatus, RunResult};
+use crate::output::{resolve_administrative_json_targets, write_atomic_output};
 use crate::project_path::project_relative_path;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -156,15 +157,31 @@ fn execute(cli: &Cli) -> Result<RunResult, OperationalError> {
         &loaded.project_root,
         policy,
     )?;
-
-    let output = match cli.output_format() {
-        OutputFormat::Text => render_path_explanation_text(&explanation),
-        OutputFormat::Json => render_path_explanation_json(&explanation).map_err(|error| {
+    let report_targets = resolve_administrative_json_targets(
+        &cli.report,
+        &[target.to_path_buf()],
+        "--explain-path",
+    )?;
+    let json_output = if cli.output_format() == OutputFormat::Json || !report_targets.is_empty() {
+        Some(render_path_explanation_json(&explanation).map_err(|error| {
             OperationalError::new(
                 ErrorKind::Output,
                 format!("failed to render path explanation JSON: {error}"),
             )
-        })?,
+        })?)
+    } else {
+        None
+    };
+
+    if let Some(json) = json_output.as_deref() {
+        for target in &report_targets {
+            write_atomic_output(&target.path, json, &loaded.project_root)?;
+        }
+    }
+
+    let output = match cli.output_format() {
+        OutputFormat::Text => render_path_explanation_text(&explanation),
+        OutputFormat::Json => json_output.expect("JSON output is rendered for JSON stdout"),
         OutputFormat::Markdown | OutputFormat::Sarif => {
             unreachable!("path explanation output is validated before execution")
         }
@@ -188,7 +205,6 @@ fn validate_options(cli: &Cli) -> Result<(), OperationalError> {
         (cli.baseline_status.is_some(), "--baseline-status"),
         (cli.prune_baseline.is_some(), "--prune-baseline"),
         (cli.write_baseline.is_some(), "--write-baseline"),
-        (!cli.report.is_empty(), "--report"),
         (cli.show_source, "--show-source"),
         (cli.color.is_some(), "--color"),
     ];
@@ -836,6 +852,42 @@ mod tests {
         assert_eq!(
             value["reasons"],
             serde_json::json!(["explicit-directory"])
+        );
+    }
+
+    #[test]
+    fn supplemental_json_matches_json_stdout() {
+        let temp = TempDir::new();
+        let target = temp.write("src/example.py", "pass\n");
+        let report_path = temp.path().join("path-explanation.json");
+        let mut text_cli = cli(&temp, &target);
+        text_cli.report = vec![format!("json={}", report_path.display())];
+
+        let text = run(&text_cli);
+        assert_eq!(text.exit_status(), ExitStatus::Success);
+        let direct = fs::read_to_string(&report_path).unwrap();
+
+        let mut json_cli = cli(&temp, &target);
+        json_cli.json = true;
+        let json = run(&json_cli);
+        assert_eq!(json.exit_status(), ExitStatus::Success);
+        assert_eq!(direct, json.stdout());
+    }
+
+    #[test]
+    fn rejects_non_json_supplemental_report() {
+        let temp = TempDir::new();
+        let target = temp.write("src/example.py", "pass\n");
+        let mut cli = cli(&temp, &target);
+        cli.report = vec![format!("text={}", temp.path().join("path.txt").display())];
+
+        let result = run(&cli);
+
+        assert_eq!(result.exit_status(), ExitStatus::Error);
+        assert!(
+            result
+                .stderr()
+                .contains("supports only json=PATH supplemental reports")
         );
     }
 

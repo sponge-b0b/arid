@@ -67,7 +67,6 @@ pub struct Cli {
             "keep_going",
             "focus",
             "no_fail_on_findings",
-            "report",
             "color",
             "show_source",
             "baseline",
@@ -90,7 +89,6 @@ pub struct Cli {
             "keep_going",
             "focus",
             "no_fail_on_findings",
-            "report",
             "color",
             "show_source",
             "baseline",
@@ -514,6 +512,28 @@ mod tests {
     }
 
     #[test]
+    fn administrative_modes_accept_report_destinations() {
+        let suppression = Cli::try_parse_from([
+            "arid",
+            "--suppression-status",
+            "--report",
+            "json=suppressions.json",
+        ])
+        .unwrap();
+        assert_eq!(suppression.report, vec!["json=suppressions.json"]);
+
+        let explanation = Cli::try_parse_from([
+            "arid",
+            "--explain-path",
+            "src/a.py",
+            "--report",
+            "json=path.json",
+        ])
+        .unwrap();
+        assert_eq!(explanation.report, vec!["json=path.json"]);
+    }
+
+    #[test]
     fn rejects_config_with_no_config() {
         assert!(
             Cli::try_parse_from(["arid", "--config", "pyproject.toml", "--no-config",]).is_err()
@@ -644,15 +664,6 @@ mod tests {
         assert!(
             Cli::try_parse_from(["arid", "--suppression-status", "--color", "never"]).is_err()
         );
-        assert!(
-            Cli::try_parse_from([
-                "arid",
-                "--suppression-status",
-                "--report",
-                "json=report.json"
-            ])
-            .is_err()
-        );
     }
 
     #[test]
@@ -668,16 +679,6 @@ mod tests {
                 "src/a.py",
                 "--color",
                 "never"
-            ])
-            .is_err()
-        );
-        assert!(
-            Cli::try_parse_from([
-                "arid",
-                "--explain-path",
-                "src/a.py",
-                "--report",
-                "json=report.json"
             ])
             .is_err()
         );
