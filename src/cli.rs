@@ -78,6 +78,10 @@ pub struct Cli {
     )]
     pub suppression_status: bool,
 
+    /// Fail suppression or baseline status when stale maintenance state exists.
+    #[arg(long)]
+    pub fail_on_stale: bool,
+
     /// Analyze one virtual Python source supplied through standard input.
     #[arg(
         long,
@@ -275,6 +279,7 @@ mod tests {
         assert!(!cli.show_config);
         assert!(!cli.list_files);
         assert!(!cli.suppression_status);
+        assert!(!cli.fail_on_stale);
         assert_eq!(cli.stdin_path, None);
         assert!(!cli.keep_going);
         assert!(cli.focus.is_empty());
@@ -383,6 +388,23 @@ mod tests {
         assert!(!cli.list_files);
         assert!(cli.suppression_status);
         assert_eq!(cli.output_format(), OutputFormat::Json);
+    }
+
+    #[test]
+    fn accepts_fail_on_stale_policy() {
+        let cli = Cli::try_parse_from(["arid", "--suppression-status", "--fail-on-stale"]).unwrap();
+        assert!(cli.suppression_status);
+        assert!(cli.fail_on_stale);
+
+        let cli = Cli::try_parse_from([
+            "arid",
+            "--baseline-status",
+            "debt.json",
+            "--fail-on-stale",
+        ])
+        .unwrap();
+        assert_eq!(cli.baseline_status, Some(PathBuf::from("debt.json")));
+        assert!(cli.fail_on_stale);
     }
 
     #[test]

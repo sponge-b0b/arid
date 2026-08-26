@@ -6,6 +6,7 @@ use rayon::prelude::*;
 use crate::cli::{Cli, OutputFormat};
 use crate::config::{ProjectOptions, SettingsOverrides, load_settings_with_options};
 use crate::error::{ErrorKind, OperationalError, render_error_json};
+use crate::exit_policy::apply_fail_on_stale;
 use crate::files::discover_python_files;
 use crate::model::NormalizationOptions;
 use crate::normalize::{SuppressionMode, prepare_file_with_mode};
@@ -66,6 +67,11 @@ fn execute(cli: &Cli) -> Result<RunResult, OperationalError> {
             )
         })?;
 
+    let exit_status = apply_fail_on_stale(
+        ExitStatus::Success,
+        status.has_stale(),
+        cli.fail_on_stale,
+    );
     let output = match cli.output_format() {
         OutputFormat::Text => render_suppression_status_text(&status),
         OutputFormat::Json => render_suppression_status_json(&status).map_err(|error| {
@@ -79,7 +85,7 @@ fn execute(cli: &Cli) -> Result<RunResult, OperationalError> {
         }
     };
 
-    Ok(RunResult::new(output, "", ExitStatus::Success))
+    Ok(RunResult::new(output, "", exit_status))
 }
 
 fn validate_options(cli: &Cli) -> Result<(), OperationalError> {
@@ -323,6 +329,19 @@ mod tests {
         assert!(result.stdout().contains("Stale suppressions: 1"));
         assert!(result.stdout().contains("active: b.py:1-4 (enable)"));
         assert!(result.stdout().contains("stale: c.py:1-4 (enable)"));
+    }
+
+    #[test]
+    fn fail_on_stale_turns_stale_suppression_into_findings_exit() {
+        let temp = fixture();
+        let mut cli = cli(&temp, false, 1);
+        cli.fail_on_stale = true;
+
+        let result = run(&cli);
+
+        assert_eq!(result.exit_status(), ExitStatus::Findings);
+        assert!(result.stdout().contains("Stale suppressions: 1"));
+        assert!(result.stderr().is_empty());
     }
 
     #[test]

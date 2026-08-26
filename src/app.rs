@@ -12,7 +12,7 @@ use crate::config::{
 use crate::corpus::build_corpus;
 use crate::detect::detect_duplicates;
 use crate::error::{ErrorKind, OperationalError, render_error_json};
-use crate::exit_policy::apply_no_fail_on_findings;
+use crate::exit_policy::{apply_fail_on_stale, apply_no_fail_on_findings};
 use crate::files::discover_python_files;
 use crate::introspection::{
     discovered_file_names, render_config_json, render_config_text, render_file_list_json,
@@ -330,6 +330,11 @@ fn execute(cli: &Cli, context: RunContext) -> Result<RunResult, OperationalError
         } else {
             ExitStatus::Success
         };
+        let exit_status = apply_fail_on_stale(
+            exit_status,
+            comparison.status.has_stale(),
+            cli.fail_on_stale,
+        );
         let output = match output_format {
             OutputFormat::Text => render_baseline_status_text(&comparison.status),
             OutputFormat::Json => {
@@ -463,6 +468,13 @@ fn validate_output_options(cli: &Cli, output_format: OutputFormat) -> Result<(),
 
     let non_scan_mode =
         administrative_mode.or_else(|| cli.write_baseline.as_ref().map(|_| "--write-baseline"));
+
+    if cli.fail_on_stale && cli.baseline_status.is_none() {
+        return Err(OperationalError::new(
+            ErrorKind::Configuration,
+            "--fail-on-stale requires --suppression-status or --baseline-status",
+        ));
+    }
 
     if cli.stdin_path.is_some()
         && let Some(mode) = non_scan_mode
@@ -665,6 +677,7 @@ min-lines = 2
             show_config: false,
             list_files: false,
             suppression_status: false,
+            fail_on_stale: false,
             stdin_path: None,
             keep_going: false,
             focus: Vec::new(),
@@ -945,6 +958,27 @@ baseline = "debt.json"
         assert!(stale.stdout().contains("Accepted occurrences: 0"));
         assert!(stale.stdout().contains("Active occurrences: 0"));
         assert!(stale.stdout().contains("Stale occurrences: 2"));
+
+        status_cli.fail_on_stale = true;
+        let enforced = run(&status_cli);
+        assert_eq!(enforced.exit_status(), ExitStatus::Findings);
+        assert!(enforced.stdout().contains("Stale occurrences: 2"));
+    }
+
+    #[test]
+    fn fail_on_stale_requires_status_mode() {
+        let (_temp, mut cli) = duplicate_fixture();
+        cli.fail_on_stale = true;
+
+        let error = run(&cli);
+
+        assert_eq!(error.exit_status(), ExitStatus::Error);
+        assert!(error.stdout().is_empty());
+        assert!(
+            error
+                .stderr()
+                .contains("--fail-on-stale requires --suppression-status or --baseline-status")
+        );
     }
 
     #[test]

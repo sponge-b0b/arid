@@ -45,6 +45,10 @@ impl BaselineStatus {
     pub(crate) fn has_active(&self) -> bool {
         self.summary.active > 0
     }
+
+    pub(crate) fn has_stale(&self) -> bool {
+        self.summary.stale > 0
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -136,11 +140,13 @@ mod tests {
     }
 
     #[test]
-    fn status_summary_controls_active_state() {
+    fn status_summary_controls_active_and_stale_state() {
         assert!(status().has_active());
+        assert!(status().has_stale());
 
         let empty = BaselineStatus::new(Vec::new());
         assert!(!empty.has_active());
+        assert!(!empty.has_stale());
         assert_eq!(empty.summary, DebtCounts::default());
     }
 

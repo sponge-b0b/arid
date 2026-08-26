@@ -100,6 +100,12 @@ pub(crate) struct SuppressionStatus {
     regions: Vec<SuppressionStatusRegion>,
 }
 
+impl SuppressionStatus {
+    pub(crate) fn has_stale(&self) -> bool {
+        self.summary.stale > 0
+    }
+}
+
 #[derive(Debug, Error)]
 pub(crate) enum SuppressionAuditError {
     #[error(transparent)]
@@ -520,6 +526,7 @@ mod tests {
         assert_eq!(status.summary.total, 2);
         assert_eq!(status.summary.active, 1);
         assert_eq!(status.summary.stale, 1);
+        assert!(status.has_stale());
         assert_eq!(status.regions[0].path, "b.py");
         assert_eq!(status.regions[0].status, SuppressionStatusKind::Active);
         assert_eq!(status.regions[1].path, "c.py");
@@ -542,6 +549,7 @@ mod tests {
 
         assert_eq!(status.summary.active, 2);
         assert_eq!(status.summary.stale, 0);
+        assert!(!status.has_stale());
     }
 
     #[test]
@@ -594,6 +602,7 @@ mod tests {
 
         assert_eq!(status.summary, SuppressionSummary::default());
         assert!(status.regions.is_empty());
+        assert!(!status.has_stale());
     }
 
     #[test]
