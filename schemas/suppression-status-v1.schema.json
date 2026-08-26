@@ -1,0 +1,136 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Arid Suppression Status v1",
+  "description": "Schema for Arid's deterministic suppression-maintenance audit document, version 1.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "tool_version",
+    "files",
+    "analysis",
+    "summary",
+    "regions"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "tool_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "files": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "analysis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "min_lines",
+        "ignore_comments",
+        "ignore_docstrings",
+        "ignore_imports",
+        "ignore_signatures",
+        "same_file",
+        "hidden",
+        "exclude",
+        "ignore_files"
+      ],
+      "properties": {
+        "min_lines": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "ignore_comments": {
+          "type": "boolean"
+        },
+        "ignore_docstrings": {
+          "type": "boolean"
+        },
+        "ignore_imports": {
+          "type": "boolean"
+        },
+        "ignore_signatures": {
+          "type": "boolean"
+        },
+        "same_file": {
+          "type": "boolean"
+        },
+        "hidden": {
+          "type": "boolean"
+        },
+        "exclude": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "ignore_files": {
+          "type": "boolean"
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["total", "active", "stale"],
+      "properties": {
+        "total": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "active": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "stale": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "regions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "path",
+          "start_line",
+          "end_line",
+          "termination",
+          "status"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "start_line": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "end_line": {
+            "oneOf": [
+              {
+                "type": "integer",
+                "minimum": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "termination": {
+            "enum": ["enable", "eof"]
+          },
+          "status": {
+            "enum": ["active", "stale"]
+          }
+        }
+      }
+    }
+  }
+}

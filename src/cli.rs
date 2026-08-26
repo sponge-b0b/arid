@@ -57,6 +57,27 @@ pub struct Cli {
     )]
     pub list_files: bool,
 
+    /// Audit effective Arid suppression regions and exit.
+    #[arg(
+        long,
+        conflicts_with_all = [
+            "show_config",
+            "list_files",
+            "stdin_path",
+            "keep_going",
+            "focus",
+            "no_fail_on_findings",
+            "report",
+            "color",
+            "show_source",
+            "baseline",
+            "baseline_status",
+            "prune_baseline",
+            "write_baseline"
+        ]
+    )]
+    pub suppression_status: bool,
+
     /// Analyze one virtual Python source supplied through standard input.
     #[arg(
         long,
@@ -253,6 +274,7 @@ mod tests {
         assert!(!cli.capabilities);
         assert!(!cli.show_config);
         assert!(!cli.list_files);
+        assert!(!cli.suppression_status);
         assert_eq!(cli.stdin_path, None);
         assert!(!cli.keep_going);
         assert!(cli.focus.is_empty());
@@ -348,11 +370,19 @@ mod tests {
         let cli = Cli::try_parse_from(["arid", "--show-config", "--json"]).unwrap();
         assert!(cli.show_config);
         assert!(!cli.list_files);
+        assert!(!cli.suppression_status);
         assert_eq!(cli.output_format(), OutputFormat::Json);
 
         let cli = Cli::try_parse_from(["arid", "--list-files"]).unwrap();
         assert!(!cli.show_config);
         assert!(cli.list_files);
+        assert!(!cli.suppression_status);
+
+        let cli = Cli::try_parse_from(["arid", "--suppression-status", "--json"]).unwrap();
+        assert!(!cli.show_config);
+        assert!(!cli.list_files);
+        assert!(cli.suppression_status);
+        assert_eq!(cli.output_format(), OutputFormat::Json);
     }
 
     #[test]
@@ -418,6 +448,13 @@ mod tests {
         assert!(
             Cli::try_parse_from(["arid", "--list-files", "--prune-baseline", "debt.json"]).is_err()
         );
+        assert!(
+            Cli::try_parse_from(["arid", "--suppression-status", "--show-config"]).is_err()
+        );
+        assert!(
+            Cli::try_parse_from(["arid", "--suppression-status", "--baseline", "debt.json"])
+                .is_err()
+        );
     }
 
     #[test]
@@ -425,6 +462,7 @@ mod tests {
         for mode in [
             "--show-config",
             "--list-files",
+            "--suppression-status",
             "--baseline-status",
             "--prune-baseline",
             "--write-baseline",
@@ -445,6 +483,7 @@ mod tests {
         for mode in [
             "--show-config",
             "--list-files",
+            "--suppression-status",
             "--baseline-status",
             "--prune-baseline",
             "--write-baseline",
@@ -465,6 +504,7 @@ mod tests {
         for mode in [
             "--show-config",
             "--list-files",
+            "--suppression-status",
             "--baseline-status",
             "--prune-baseline",
             "--write-baseline",
@@ -485,6 +525,7 @@ mod tests {
         for mode in [
             "--show-config",
             "--list-files",
+            "--suppression-status",
             "--baseline-status",
             "--prune-baseline",
             "--write-baseline",
@@ -498,6 +539,25 @@ mod tests {
             }
             assert!(Cli::try_parse_from(args).is_err(), "{mode}");
         }
+    }
+
+    #[test]
+    fn suppression_status_rejects_scan_presentation_options() {
+        assert!(
+            Cli::try_parse_from(["arid", "--suppression-status", "--show-source"]).is_err()
+        );
+        assert!(
+            Cli::try_parse_from(["arid", "--suppression-status", "--color", "never"]).is_err()
+        );
+        assert!(
+            Cli::try_parse_from([
+                "arid",
+                "--suppression-status",
+                "--report",
+                "json=report.json"
+            ])
+            .is_err()
+        );
     }
 
     #[test]

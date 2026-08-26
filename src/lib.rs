@@ -54,8 +54,29 @@ mod sarif;
 mod source;
 mod suffix;
 mod suppression;
+mod suppression_command;
 mod text;
 
-pub use app::{ColorEnvironment, RunContext, run, run_with_context};
+pub use app::{ColorEnvironment, RunContext};
 pub use cli::Cli;
 pub use outcome::{ExitStatus, RunResult};
+
+/// Runs one complete Arid invocation with deterministic non-terminal defaults.
+#[must_use]
+pub fn run(cli: &Cli) -> RunResult {
+    if cli.suppression_status {
+        suppression_command::run(cli)
+    } else {
+        app::run(cli)
+    }
+}
+
+/// Runs one complete Arid invocation with explicit output-environment context.
+#[must_use]
+pub fn run_with_context(cli: &Cli, context: RunContext) -> RunResult {
+    if cli.suppression_status {
+        suppression_command::run(cli)
+    } else {
+        app::run_with_context(cli, context)
+    }
+}

@@ -664,6 +664,7 @@ min-lines = 2
             capabilities: false,
             show_config: false,
             list_files: false,
+            suppression_status: false,
             stdin_path: None,
             keep_going: false,
             focus: Vec::new(),

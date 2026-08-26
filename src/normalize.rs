@@ -11,7 +11,7 @@ use crate::python::{self, StructuralRegion, SuppressionEvent, SuppressionKind};
 use crate::suppression::{SuppressionRegion, derive_suppression_regions};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum SuppressionMode {
+pub(crate) enum SuppressionMode {
     Apply,
     Audit,
 }
@@ -37,7 +37,7 @@ pub fn prepare_file(
     Ok(file)
 }
 
-fn prepare_file_with_mode(
+pub(crate) fn prepare_file_with_mode(
     path: PathBuf,
     source: String,
     options: NormalizationOptions,
