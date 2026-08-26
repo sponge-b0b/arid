@@ -16,12 +16,6 @@ enum SuppressionMode {
     Audit,
 }
 
-#[derive(Debug)]
-pub(crate) struct AuditPreparedFile {
-    pub(crate) file: PreparedFile,
-    pub(crate) suppressions: Vec<SuppressionRegion>,
-}
-
 #[derive(Debug, Error)]
 pub enum PrepareError {
     #[error("{path}: {message}")]
@@ -41,24 +35,6 @@ pub fn prepare_file(
     )?;
 
     Ok(file)
-}
-
-pub(crate) fn prepare_file_for_audit(
-    path: impl Into<PathBuf>,
-    source: String,
-    options: NormalizationOptions,
-) -> Result<AuditPreparedFile, PrepareError> {
-    let (file, suppressions) = prepare_file_with_mode(
-        path.into(),
-        source,
-        options,
-        SuppressionMode::Audit,
-    )?;
-
-    Ok(AuditPreparedFile {
-        file,
-        suppressions,
-    })
 }
 
 fn prepare_file_with_mode(
@@ -421,11 +397,12 @@ mod tests {
         .unwrap()
     }
 
-    fn prepare_audit(source: &str) -> AuditPreparedFile {
-        prepare_file_for_audit(
-            "example.py",
+    fn prepare_audit(source: &str) -> (PreparedFile, Vec<SuppressionRegion>) {
+        prepare_file_with_mode(
+            PathBuf::from("example.py"),
             source.to_owned(),
             NormalizationOptions::default(),
+            SuppressionMode::Audit,
         )
         .unwrap()
     }
@@ -712,7 +689,7 @@ fourth()
 
     #[test]
     fn audit_preparation_retains_suppressed_source_without_barriers() {
-        let audit = prepare_audit(concat!(
+        let (file, suppressions) = prepare_audit(concat!(
             "first()\n",
             "# arid: disable\n",
             "hidden()\n",
@@ -724,15 +701,15 @@ fourth()
         ));
 
         assert_eq!(
-            texts(&audit.file),
+            texts(&file),
             vec!["first()", "hidden()", "also_hidden()", "last()"]
         );
         assert_eq!(
-            audit.file.segments,
+            file.segments,
             vec![NormalizedSegment { start: 0, end: 4 }]
         );
         assert_eq!(
-            audit.suppressions,
+            suppressions,
             vec![SuppressionRegion {
                 disable_line: 2,
                 end: SuppressionEnd::Enable { line: 6 },
