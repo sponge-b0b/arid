@@ -2,7 +2,7 @@
 
 **Product:** Arid  
 **Stable target:** `2.1.0`  
-**Current phase:** Alpha publication
+**Current phase:** Phase 9 — Real-world validation and beta stabilization
 
 ## Purpose
 
@@ -543,6 +543,8 @@ All intended 2.1 behavior is code complete, documentation is sufficient for prer
 
 **Goal:** publish the first feature-complete v2.1 prerelease and validate the packaged machine contracts.
 
+**Status:** Complete.
+
 ### Rules
 
 - The intended v2.1 functionality is code complete before alpha publication.
@@ -550,21 +552,25 @@ All intended 2.1 behavior is code complete, documentation is sufficient for prer
 - Any incompatible machine-contract correction discovered after publication requires an explicitly versioned contract decision rather than silent schema mutation.
 - Product fixes are allowed; new scope is not.
 
-### Evidence to capture
+### Evidence
 
-- Release workflow result for `v2.1.0-alpha.N`.
-- All supported platform artifacts published successfully.
-- PyPI installation smoke.
-- Standalone archive smoke.
-- New CLI controls execute from published artifacts.
-- A normal published text scan displays the `Total time:` footer.
-- Published JSON/Markdown/SARIF output remains free of elapsed timing data.
-- Both new JSON documents validate against the published schema files from the release.
-- Direct JSON files are equivalent to stdout behavior from the same published executable.
+- `v2.1.0-alpha.1` published successfully from the exact release-preparation commit.
+- Production release workflow — PASS across all supported build targets.
+- GitHub prerelease published with Linux x86-64, Linux aarch64, macOS arm64, macOS x86-64, and Windows x86-64 standalone assets.
+- Exact PyPI `arid==2.1.0a1` install and smoke — PASS.
+- Exact published Linux x86-64 standalone archive smoke — PASS.
+- Full `validation/v2.1.sh` contract suite against the published standalone executable — PASS.
+- Full `validation/v2.1.sh` contract suite against the exact PyPI-installed executable — PASS.
+- New CLI controls execute correctly from both published artifact paths.
+- Published normal text scans contain the `Total time:` footer while JSON, Markdown, SARIF, and exit-2 output remain timing-free as specified.
+- `suppression-status-v1` and `path-explanation-v1` documents from published executables validate against the tagged schemas.
+- Administrative JSON stdout and direct `--report json=PATH` files are byte-equivalent from published executables.
 
 ### Gate
 
 A published alpha passes artifact/install smoke, normal text timing is visible, machine contracts remain timing-free, and the new administrative machine contracts work from the actual released artifacts on supported release paths.
+
+**Gate result:** PASS.
 
 ---
 
