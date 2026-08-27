@@ -603,6 +603,10 @@ fn render_path_explanation_json(
         tool_version: env!("CARGO_PKG_VERSION"),
         explanation,
     })
+    .map(|mut output| {
+        output.push('\n');
+        output
+    })
 }
 
 fn scan_paths(cli: &Cli) -> Vec<PathBuf> {
@@ -871,6 +875,7 @@ mod tests {
         json_cli.json = true;
         let json = run(&json_cli);
         assert_eq!(json.exit_status(), ExitStatus::Success);
+        assert!(json.stdout().ends_with('\n'));
         assert_eq!(direct, json.stdout());
     }
 

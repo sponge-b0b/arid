@@ -380,7 +380,10 @@ pub(crate) fn render_suppression_status_text(status: &SuppressionStatus) -> Stri
 pub(crate) fn render_suppression_status_json(
     status: &SuppressionStatus,
 ) -> Result<String, serde_json::Error> {
-    serde_json::to_string_pretty(status)
+    serde_json::to_string_pretty(status).map(|mut output| {
+        output.push('\n');
+        output
+    })
 }
 
 #[cfg(test)]
@@ -638,8 +641,9 @@ mod tests {
             true,
         )
         .unwrap();
-        let value: serde_json::Value =
-            serde_json::from_str(&render_suppression_status_json(&status).unwrap()).unwrap();
+        let rendered = render_suppression_status_json(&status).unwrap();
+        assert!(rendered.ends_with('\n'));
+        let value: serde_json::Value = serde_json::from_str(&rendered).unwrap();
 
         assert_eq!(value["schema_version"], 1);
         assert_eq!(value["tool_version"], env!("CARGO_PKG_VERSION"));
