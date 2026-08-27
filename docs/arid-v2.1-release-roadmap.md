@@ -2,7 +2,7 @@
 
 **Product:** Arid  
 **Stable target:** `2.1.0`  
-**Current phase:** Real-world validation and beta stabilization
+**Current phase:** Stable promotion
 
 ## Purpose
 
@@ -148,23 +148,25 @@ No phase may introduce:
 - mutation from a read-only administrative mode
 - a runtime telemetry framework merely to print total elapsed time
 
-The expected release sequence is:
+The expected release path is:
 
 ```text
 2.1.0-alpha.N
     ↓
 2.1.0-beta.N
     ↓
-2.1.0-rc.N
+[2.1.0-rc.N when beta qualification requires a corrected frozen build]
     ↓
 2.1.0
 ```
 
-Additional prereleases are created only when failed gates or material fixes require them. The roadmap does not require an arbitrary count of alpha, beta, or RC releases.
+Additional prereleases are created only when a distinct qualification risk, failed gate, or material fix requires them. The roadmap does not require an arbitrary count of alpha, beta, or RC releases.
 
-The final RC-to-stable promotion MUST remain metadata-only.
+An RC is conditional rather than ceremonial. It is required when beta qualification produces product, packaging, machine-contract, compatibility, or other material release changes that need one final frozen build. If the published beta itself satisfies the remaining stabilization gates without such changes, stable may be promoted directly from that qualified beta after stable-readiness qualification.
 
-Curated release notes are required for every published v2.1 tag and MUST exist before publication. Stable `docs/releases/v2.1.0.md` MUST be substantively complete before the final RC is qualified.
+The final qualified-prerelease-to-stable promotion MUST remain metadata/documentation-only.
+
+Curated release notes are required for every published v2.1 tag and MUST exist before publication. Stable `docs/releases/v2.1.0.md` MUST be substantively complete before stable-readiness qualification.
 
 ---
 
@@ -578,6 +580,8 @@ A published alpha passes artifact/install smoke, normal text timing is visible, 
 
 **Goal:** freeze the v2.1 feature set after real-world use and resolve prerelease defects without scope expansion.
 
+**Status:** Complete.
+
 ### Rules
 
 - No new product features after beta begins.
@@ -593,26 +597,47 @@ A published alpha passes artifact/install smoke, normal text timing is visible, 
 - Verify the timing footer remains a single concise line across representative normal text scans and timing stays absent from machine formats.
 - Run performance comparison against the qualified 2.0 baseline.
 - Reconcile README/reference docs with actual beta behavior.
-- Prepare substantive stable release notes early enough that final RC-to-stable promotion remains metadata-only.
+- Prepare substantive stable release notes early enough that final qualified-prerelease-to-stable promotion remains metadata/documentation-only.
+
+### Evidence
+
+- `v2.1.0-beta.1` published successfully through the production release workflow; all supported platform builds and publication checks — PASS.
+- Exact published Linux x86-64 standalone and exact PyPI `arid==2.1.0b1` installation both passed the full `validation/v2.1.sh` contract suite.
+- Full established real-world detector campaign against the published beta executable across Black, Django, mypy, Rich, malformed-source cases, path cases, and worker determinism — PASS.
+- Real Polaris-layout suppression lifecycle exercise: one suppression around an actual Polaris duplicate classified `active`; one deliberately unnecessary disable-through-EOF suppression classified `stale`.
+- Suppression-status JSON from the Polaris-layout exercise was byte-deterministic across workers 1 and 4; `--fail-on-stale` correctly returned findings status for stale maintenance.
+- Real repository discovery exercise: ignored Python path explained as `ignore-file`; repeated explanation was byte-deterministic; `--no-ignore-files` made the path includable; `--explain-path` agreed with `--list-files` traversal.
+- Real Polaris-layout timing exercise: normal text contained exactly one valid `Total time:` footer and machine JSON remained timing-free.
+- Published-to-published Linux x86-64 performance comparison versus `2.0.0` on the same machine and pinned corpora — PASS with no measurable regression: Requests `-3.03%`, Pydantic `-0.37%`, Polaris `-0.07%`.
+- Stable release notes prepared in `docs/releases/v2.1.0.md` (`c7673404`).
+- No product, packaging, compatibility, deterministic-output, machine-contract, or detector-semantic defect was found during beta stabilization.
 
 ### Gate
 
 The beta is feature-frozen, real-world validation passes, machine contracts remain stable, ordinary detector behavior matches 2.0 expectations, the timing footer behaves as specified, and no material unexplained performance regression remains.
 
+**Gate result:** PASS.
+
 ---
 
 ## Phase 10 — Release Candidate
 
-**Goal:** qualify a build believed ready for stable `2.1.0` without product-code changes.
+**Goal:** when beta stabilization requires material fixes, qualify one corrected build believed ready for stable `2.1.0` without further product-code changes.
 
-### Rules
+**Status:** Not required for `2.1.0`.
+
+### Decision
+
+The published `2.1.0-beta.1` artifact completed the full beta stabilization program without requiring any product, packaging, compatibility, machine-contract, deterministic-output, or detector-semantic fix. Creating an RC with unchanged product behavior would not reduce a distinct remaining release risk, so v2.1 proceeds directly from the qualified beta to stable-readiness qualification.
+
+### Rules when an RC is required
 
 - No new product features after RC.
 - Fixes are limited to qualification failures, regressions, packaging defects, documentation defects required for correctness, or release-process defects.
 - Any source-code change after RC requires affected validation gates to be rerun and generally requires another RC.
 - Stable `docs/releases/v2.1.0.md` is substantively complete before final RC qualification.
 
-### Qualification
+### Qualification when an RC is required
 
 The RC qualification MUST include:
 
@@ -633,20 +658,22 @@ The RC qualification MUST include:
 
 ### Gate
 
-The RC passes the complete qualification suite and is acceptable for stable promotion with no product-code changes.
+If used, the RC passes the complete qualification suite and is acceptable for stable promotion with no product-code changes.
+
+**Gate result for `2.1.0`:** Not applicable; qualified beta proceeds directly to stable promotion.
 
 ---
 
 ## Phase 11 — Stable promotion
 
-**Goal:** promote the qualified RC to `2.1.0`.
+**Goal:** promote the qualified prerelease to `2.1.0`.
 
 ### Rules
 
-- Stable promotion is metadata-only when the RC remains qualified.
+- Stable promotion is metadata/documentation-only while the qualified prerelease remains unchanged in product behavior.
 - The stable tag must point to the exact promoted commit.
 - GitHub and PyPI publication must be verified.
-- RC-to-stable repository delta must contain only expected release metadata/documentation state changes.
+- Qualified-prerelease-to-stable repository delta must contain only expected release metadata/documentation state changes.
 - Stable qualification verifies published artifacts and the metadata-only promotion path without unnecessarily repeating unrelated development work.
 
 ### Gate
