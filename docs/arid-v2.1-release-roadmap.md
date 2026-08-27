@@ -2,7 +2,7 @@
 
 **Product:** Arid  
 **Stable target:** `2.1.0`  
-**Current phase:** Stable promotion
+**Current phase:** Stable
 
 ## Purpose
 
