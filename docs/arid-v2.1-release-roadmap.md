@@ -2,7 +2,7 @@
 
 **Product:** Arid  
 **Stable target:** `2.1.0`  
-**Current phase:** Phase 7 — Integration, documentation, and pre-publication validation
+**Current phase:** Alpha publication
 
 ## Purpose
 
@@ -470,6 +470,8 @@ CLI mode-composition tests pass, stdout/file equivalence tests pass, atomic-writ
 
 **Goal:** prove the complete v2.1 product contract before publishing prereleases.
 
+**Status:** Complete.
+
 ### Work
 
 - Add/update focused v2.1 validation tooling, preferably `validation/v2.1.sh` or the smallest equivalent extension.
@@ -517,9 +519,23 @@ real-world detector regression validation
 performance regression validation
 ```
 
+### Evidence
+
+- `bcd38b24` — `chore(v2.1): prepare pre-publication validation`
+- `70c19c7f` — `fix(validation): mark v2.1 suite executable`
+- `d6cf1142` — `fix(output): preserve administrative JSON byte equivalence`
+- `0871d799` — `fix(release): extend v2 workflow checks to v2.1`
+- Standard Rust formatting, test, Clippy, release-tooling, and diff gates — PASS.
+- Full `validation/v2.1.sh` suite, including all inherited v2 integration contracts — PASS.
+- Established Black, Django, mypy, Rich, and filesystem-path real-world validation campaign — PASS.
+- V2.0.0 → v2.1 benchmark regression qualification on Requests, Pydantic, and Polaris — PASS; no measurable performance regression.
+- Non-publishing production release workflow dispatch — PASS across Linux x86-64, Linux aarch64, macOS arm64, macOS x86-64, and Windows x86-64.
+
 ### Gate
 
 All intended 2.1 behavior is code complete, documentation is sufficient for prerelease users, all pre-publication validation passes, and no out-of-scope product behavior has entered the release.
+
+**Gate result:** PASS.
 
 ---
 
