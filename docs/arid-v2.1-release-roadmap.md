@@ -2,7 +2,7 @@
 
 **Product:** Arid  
 **Stable target:** `2.1.0`  
-**Current phase:** Phase 9 — Real-world validation and beta stabilization
+**Current phase:** Real-world validation and beta stabilization
 
 ## Purpose
 
