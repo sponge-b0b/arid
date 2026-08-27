@@ -2,7 +2,7 @@
 
 **Product:** Arid  
 **Stable target:** `2.1.0`  
-**Current phase:** Phase 2 — Suppression audit and machine contract
+**Current phase:** Phase 7 — Integration, documentation, and pre-publication validation
 
 ## Purpose
 
@@ -242,6 +242,8 @@ Suppression state tests pass, representative normal-scan fixtures remain unchang
 
 **Goal:** implement complete active/stale suppression auditing and publish its stable machine contract.
 
+**Status:** Complete.
+
 ### Work
 
 - Add the suppression audit domain model.
@@ -266,15 +268,25 @@ Suppression state tests pass, representative normal-scan fixtures remain unchang
 - EOF-terminated regions are normal audit records, not errors.
 - A partial or failed audit never produces a successful status document.
 
+### Evidence
+
+- `a1963acd` — `feat(suppression): add suppression status audit`
+- Local standard Rust gate — PASS.
+- Functional active/stale text and JSON smoke, worker determinism, and `suppression-status-v1` schema validation — PASS.
+
 ### Gate
 
 Known active, stale, suppressed-vs-suppressed, boundary-only, and empty-audit fixtures classify correctly; JSON validates against `suppression-status-v1`; output is deterministic across worker modes; detector semantics remain unchanged.
+
+**Gate result:** PASS.
 
 ---
 
 ## Phase 3 — Generic stale-policy enforcement
 
 **Goal:** make stale maintenance state enforceable without changing the underlying audit/comparison models.
+
+**Status:** Complete.
 
 ### Work
 
@@ -296,15 +308,25 @@ Known active, stale, suppressed-vs-suppressed, boundary-only, and empty-audit fi
 - Operational failure remains exit `2`.
 - Ordinary scans never call stale-policy logic.
 
+### Evidence
+
+- `3b9d1d89` — `feat(policy): add stale maintenance enforcement`
+- Local standard Rust gate — PASS.
+- Suppression and baseline 0/1/2 exit-policy matrix plus invalid standalone `--fail-on-stale` usage — PASS.
+
 ### Gate
 
 The complete suppression/baseline exit matrix passes, baseline-v1 compatibility tests remain unchanged, and invalid standalone `--fail-on-stale` usage is rejected clearly.
+
+**Gate result:** PASS.
 
 ---
 
 ## Phase 4 — Shared discovery policy and ignore-file override
 
 **Goal:** make discovery policy explicit and add `--no-ignore-files` without weakening unrelated source-selection rules.
+
+**Status:** Complete.
 
 ### Work
 
@@ -334,15 +356,25 @@ The complete suppression/baseline exit matrix passes, baseline-v1 compatibility 
 - Hidden files do not become visible merely because ignore files are disabled.
 - Explicit files retain their existing bypass of traversal ignore rules.
 
+### Evidence
+
+- `3c2eff1b` — `feat(discovery): add ignore-file traversal override`
+- Local standard Rust gate — PASS.
+- Focused discovery-policy gate covering ignore files, Arid excludes, hidden paths, explicit files, and directory symlinks — PASS.
+
 ### Gate
 
 Hermetic discovery fixtures prove normal and override behavior for `.ignore`, `.gitignore`, parent ignore sources, Arid excludes, hidden paths, Python extensions, and symlink cases. `--list-files` demonstrates the expected corpus under both policies.
+
+**Gate result:** PASS.
 
 ---
 
 ## Phase 5 — Targeted path explanation and machine contract
 
 **Goal:** explain one discovery decision using the same policy as actual traversal.
+
+**Status:** Complete.
 
 ### Work
 
@@ -367,15 +399,25 @@ Hermetic discovery fixtures prove normal and override behavior for `.ignore`, `.
 - Its decision agrees with real discovery for the same invocation context.
 - The JSON reason vocabulary is stable and never inferred from prose.
 
+### Evidence
+
+- `cf285290` — `feat(discovery): add targeted path explanation`
+- Local standard Rust gate — PASS.
+- Focused discovery-parity, Unicode/space determinism, symlink, missing-target, and `path-explanation-v1` schema gate — PASS.
+
 ### Gate
 
 Representative path decisions agree with actual `--list-files` membership under normal traversal and `--no-ignore-files`; schema validation passes; ordering is deterministic; path cases with spaces and Unicode pass.
+
+**Gate result:** PASS.
 
 ---
 
 ## Phase 6 — Output and application integration
 
 **Goal:** integrate the new administrative modes cleanly, provide equivalent direct JSON files, and add the human-facing total-time footer without changing machine contracts.
+
+**Status:** Complete.
 
 ### Work
 
@@ -410,9 +452,17 @@ Representative path decisions agree with actual `--list-files` membership under 
 - No reporter registry, timing framework, or generalized output framework is introduced.
 - `error-v1`, report-v4, baseline-v1, and capabilities-v1 schemas remain unchanged.
 
+### Evidence
+
+- `d75c7ab2` — `feat(output): integrate administrative reports and scan timing`
+- Local standard Rust gate — PASS.
+- Focused output/timing gate covering text exits 0/1, exit 2, machine formats, supplemental reports, administrative stdout/file equivalence, schemas, JSON-only validation, and atomic-write failure — PASS.
+
 ### Gate
 
 CLI mode-composition tests pass, stdout/file equivalence tests pass, atomic-write failures map to exit `2`, timing-format/footer tests pass, machine formats remain timing-free and deterministic, existing output regression suites remain green, and normal-scan performance shows no unexplained v2.1 overhead beyond negligible clock measurement/formatting.
+
+**Gate result:** PASS.
 
 ---
 

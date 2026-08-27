@@ -107,6 +107,10 @@ Arid v2 is designed to:
 - support `[tool.arid]` configuration in `pyproject.toml`
 - provide deterministic text, JSON, Markdown, and SARIF output
 - support baseline-based incremental adoption and safe baseline maintenance
+- audit source suppressions as active or stale maintenance state
+- enforce stale suppression or baseline maintenance when requested
+- explain targeted discovery decisions without running duplicate detection
+- bypass ignore-file-derived traversal filters without bypassing Arid exclusion policy
 - support focused reporting without narrowing whole-project detection
 - support explicit project/configuration selection and introspection
 - support one virtual Python source through standard input
@@ -116,6 +120,7 @@ Arid v2 is designed to:
 - provide an official GitHub Action
 - support opt-in parallel file preparation while remaining serial by default
 - publish versioned JSON Schemas for Arid-owned machine contracts
+- show total elapsed time for completed normal text scans without adding volatile timing to machine formats
 - publish artifacts for Linux x86_64 and ARM64, macOS x86_64 and ARM64, and Windows x86_64
 - integrate with pre-commit while preserving whole-project detection
 - run substantially faster than Pylint's duplicate-code checker
@@ -222,7 +227,7 @@ Configurable boolean options support positive and negative forms:
 
 This allows CLI arguments to override either value from `pyproject.toml`.
 
-### Hidden and excluded paths
+### Hidden, ignored, and excluded paths
 
 Hidden files and directories are skipped by default during directory discovery. Include them with:
 
@@ -230,9 +235,17 @@ Hidden files and directories are skipped by default during directory discovery. 
 arid . --hidden
 ```
 
-Arid still honors normal ignore handling and configured excludes.
+Directory discovery normally honors ignore-file-derived rules, including `.ignore`, `.gitignore`, parent Git ignore rules, global Git ignores, and `.git/info/exclude`.
 
-Exclude matching paths:
+To bypass only those ignore-file rules for one invocation:
+
+```bash
+arid . --no-ignore-files
+```
+
+`--no-ignore-files` does **not** disable Arid's own `exclude` policy and does not implicitly include hidden paths. Use `--hidden` separately when hidden discovery is intended.
+
+Exclude matching paths with Arid policy:
 
 ```bash
 arid . --exclude 'generated/**'
@@ -285,6 +298,14 @@ arid . --format sarif
 
 `text` is the default. `--json` remains shorthand for `--format json`.
 
+Completed normal text scans end with a human-facing elapsed-time footer such as:
+
+```text
+Total time: 18.7 ms
+```
+
+The footer uses adaptive microsecond, millisecond, or second units. It is intentionally absent from JSON, Markdown, SARIF, supplemental report files, administrative machine contracts, and exit-2 failures so deterministic machine output remains stable.
+
 Include original source snippets:
 
 ```bash
@@ -311,9 +332,16 @@ arid . \
   --report sarif=artifacts/arid.sarif
 ```
 
-`--report FORMAT=PATH` may be repeated for `text`, `json`, `markdown`, and `sarif`.
+`--report FORMAT=PATH` may be repeated for `text`, `json`, `markdown`, and `sarif` during normal scans.
 
-All outputs are rendered from one in-memory logical report.
+`--suppression-status` and `--explain-path` may also write a supplemental report, but their administrative contract is JSON-only:
+
+```bash
+arid . --suppression-status --report json=artifacts/suppressions.json
+arid . --explain-path src/example.py --report json=artifacts/path.json
+```
+
+All outputs for an invocation are rendered from the same in-memory logical model.
 
 ### Baselines
 
@@ -335,6 +363,12 @@ Inspect baseline state:
 
 ```bash
 arid . --baseline-status arid-baseline.json
+```
+
+Treat stale baseline acceptance as CI failure while preserving the status document:
+
+```bash
+arid . --baseline-status arid-baseline.json --fail-on-stale
 ```
 
 Prune stale accepted debt safely:
@@ -382,7 +416,7 @@ When no explicit selector is used, Arid preserves normal nearest-ancestor config
 
 Contradictory root/config combinations fail instead of being guessed.
 
-### Introspection
+### Introspection and discovery explanation
 
 Show the resolved project configuration:
 
@@ -395,6 +429,15 @@ List exactly which Python files normal discovery would select:
 ```bash
 arid . --list-files
 ```
+
+Explain why one existing file or directory is included or excluded under the same discovery policy:
+
+```bash
+arid . --explain-path src/example.py
+arid . --explain-path generated/example.py --json
+```
+
+The explanation distinguishes stable reasons such as Arid excludes, ignore-file rules, hidden paths, unsupported source types, scan-root boundaries, explicit inputs, and symlink policy. It is targeted: Arid does not parse the Python source, run duplicate detection, or recursively enumerate the target's descendants merely to explain the decision.
 
 Show deterministic build capabilities as JSON:
 
@@ -465,9 +508,30 @@ Code inside a disabled region does not participate in duplicate detection.
 
 Suppression regions also create matching boundaries, so Arid does not construct a duplicate that bridges across disabled source.
 
-Use suppression for local duplication that a project intentionally accepts.
+Suppression directives are idempotent state transitions. A repeated `# arid: disable` while already disabled and a repeated `# arid: enable` while already enabled are valid no-ops. A disabled region may also continue through EOF; a closing enable directive is not required.
 
-For project-wide existing debt, prefer a baseline instead of scattering suppressions across many files.
+Audit all effective suppression regions without changing normal detection behavior:
+
+```bash
+arid . --suppression-status
+```
+
+Each effective region is classified as:
+
+- `active` — removing the suppression would expose otherwise-reportable duplicate code or allow a duplicate to cross the suppression boundary
+- `stale` — the suppression is no longer needed under the current analysis settings
+
+No-op directives do not create audit records.
+
+Treat stale suppressions as CI failure while still emitting the audit result:
+
+```bash
+arid . --suppression-status --fail-on-stale
+```
+
+This supports a maintenance invariant of **zero new duplication + zero obsolete suppression**. Intentional duplication may remain suppressed, but obsolete suppression directives can be required to disappear instead of becoming permanent lint graffiti.
+
+Use suppression for local duplication that a project intentionally accepts. For project-wide existing debt, prefer a baseline instead of scattering suppressions across many files.
 
 ---
 
@@ -493,7 +557,11 @@ Occurrences: 2 across 2 files (cross-file)
 
 Found 1 duplicate group.
 4 duplicate lines (2.31%).
+
+Total time: 18.7 ms
 ```
+
+`Total time:` is presentation-only. Its value is expected to vary between invocations and is not part of Arid's deterministic machine-output guarantees.
 
 ### Effective normalized lines
 
@@ -597,6 +665,12 @@ Arid publishes JSON Schema documents for its versioned machine contracts:
 - [Operational error schema v1](schemas/error-v1.schema.json) — fatal JSON-mode operational errors
 - [Capabilities schema v1](schemas/capabilities-v1.schema.json) — `arid --capabilities`
 - [Baseline schema v1](schemas/baseline-v1.schema.json) — files created by `--write-baseline`
+- [Suppression status schema v1](schemas/suppression-status-v1.schema.json) — deterministic `--suppression-status --json` lifecycle audit
+- [Path explanation schema v1](schemas/path-explanation-v1.schema.json) — deterministic `--explain-path PATH --json` discovery decision
+
+The two v2.1 administrative contracts may also be written directly with `--report json=PATH`; the supplemental file is rendered from the same typed model and JSON renderer as stdout.
+
+Elapsed scan timing is deliberately excluded from all versioned JSON contracts and other machine-oriented formats.
 
 [Report schema v3](schemas/report-v3.schema.json) remains published unchanged as the historical v1 report contract.
 
@@ -701,7 +775,7 @@ arid . \
 
 Supplying one or more CLI `--exclude` values overrides the configured exclude list for that scan.
 
-Execution, presentation, and administrative controls such as `--workers`, output format/color, focus, keep-going, introspection, virtual stdin, multi-output, and baseline maintenance are CLI-only unless explicitly listed in the configuration table above.
+Execution, presentation, and administrative controls such as `--workers`, output format/color, focus, keep-going, introspection, virtual stdin, multi-output, suppression/baseline status, stale-policy enforcement, discovery explanation, ignore-file override, and baseline maintenance are CLI-only unless explicitly listed in the configuration table above.
 
 ---
 
@@ -852,7 +926,7 @@ report
 
 Arid analyzes Python source entirely in Rust and never imports or executes the project being scanned.
 
-V2 workflow controls reuse this same detector path; focus, baselines, multiple outputs, the GitHub Action, and virtual input do not create alternate duplicate detectors.
+V2 workflow controls reuse this same detector path; focus, baselines, multiple outputs, the GitHub Action, and virtual input do not create alternate duplicate detectors. Suppression audit and targeted path explanation are explicit administrative paths and do not replace or alter normal duplicate detection.
 
 ---
 
@@ -862,11 +936,11 @@ Arid uses predictable exit codes:
 
 | Exit code | Meaning |
 | --- | --- |
-| `0` | Successful complete scan; no findings failed policy. |
-| `1` | Complete scan with duplicate findings under the default policy. |
+| `0` | Successful complete scan or administrative result with no enforced policy failure. |
+| `1` | Complete scan findings or an enforced stale-maintenance policy failure. |
 | `2` | Invocation/configuration/operational failure or incomplete scan. |
 
-`--no-fail-on-findings` can map a complete findings-only `1` to `0`, but never masks `2`.
+`--no-fail-on-findings` can map a complete findings-only `1` to `0`, but never masks `2`. `--fail-on-stale` can make stale `--suppression-status` or `--baseline-status` state exit `1`; without that flag, stale maintenance state remains informational.
 
 ---
 
@@ -912,7 +986,7 @@ See [Arid v2 performance report](docs/arid-v2-performance-report.md) for the exa
 
 ## Development
 
-Arid includes dedicated tooling and documentation for release qualification, performance benchmarking, real-world validation, and v2 migration:
+Arid includes dedicated tooling and documentation for release qualification, performance benchmarking, real-world validation, and v2 maintenance:
 
 - [V2 migration guide](docs/arid-v2-migration-guide.md)
 - [V2 performance report](docs/arid-v2-performance-report.md)
@@ -920,6 +994,9 @@ Arid includes dedicated tooling and documentation for release qualification, per
 - [Benchmarks](benchmarks/README.md)
 - [Validation](validation/README.md)
 - [V2 release roadmap](docs/arid-v2-release-roadmap.md)
+- [V2.1 release roadmap](docs/arid-v2.1-release-roadmap.md)
+
+The targeted v2.1 integration suite is `validation/v2.1.sh`; it runs the inherited v2 suite first and then validates the v2.1 maintenance, discovery, machine-contract, and timing behavior.
 
 ---
 

@@ -117,8 +117,8 @@ pass "inherited plain-text diagnostics"
 
 run_expect_status 1 auto.txt auto.stderr \
     "$ARID_BIN" . --format text --color auto
-cmp -s text.txt auto.txt ||
-    die "redirected auto-color text differs from default redirected text"
+cmp -s <(grep -v '^Total time: ' text.txt) <(grep -v '^Total time: ' auto.txt) ||
+    die "redirected auto-color text differs from default redirected text apart from timing"
 assert_no_ansi auto.txt
 
 run_expect_status 1 forced.txt forced.stderr \
