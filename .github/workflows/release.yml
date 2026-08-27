@@ -326,7 +326,7 @@ jobs:
         run: |
           version="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)"
 
-          if [[ "$version" == 2.0.* ]]; then
+          if [[ "$version" == 2.* ]]; then
             pypi_version="$(
               awk '
                 /^  version:$/ { in_version = 1; next }
@@ -386,7 +386,7 @@ jobs:
 
   verify-action:
     name: Verify published GitHub Action
-    if: startsWith(github.ref, 'refs/tags/v2.0.')
+    if: startsWith(github.ref, 'refs/tags/v2.')
     needs:
       - publish-pypi
       - publish-github
