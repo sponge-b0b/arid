@@ -58,6 +58,8 @@ mod source;
 mod suffix;
 #[cfg_attr(not(test), allow(dead_code))]
 mod summary;
+#[cfg_attr(not(test), allow(dead_code))]
+mod summary_json;
 mod suppression;
 mod suppression_command;
 mod text;

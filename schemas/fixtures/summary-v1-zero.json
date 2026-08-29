@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "tool_version": "2.2.0",
+  "complete": true,
+  "analysis": {
+    "min_lines": 4,
+    "ignore_comments": true,
+    "ignore_docstrings": true,
+    "ignore_imports": true,
+    "ignore_signatures": true,
+    "same_file": true,
+    "hidden": false,
+    "ignore_files": true,
+    "exclude": [],
+    "baseline_enabled": false,
+    "focus": [],
+    "virtual_source": null,
+    "keep_going": false
+  },
+  "errors": [],
+  "files": 2,
+  "files_with_duplicates": 0,
+  "source_lines": 20,
+  "analyzed_lines": 16,
+  "duplicate_groups": 0,
+  "occurrences": 0,
+  "duplicate_lines": 0,
+  "duplication_percent": 0.0,
+  "context": {
+    "executable": 0,
+    "declarative": 0,
+    "mixed": 0
+  },
+  "scope": {
+    "function": 0,
+    "module": 0,
+    "class": 0,
+    "mixed": 0
+  },
+  "distribution": {
+    "cross_file": 0,
+    "same_file": 0,
+    "hybrid": 0
+  },
+  "hotspots": []
+}

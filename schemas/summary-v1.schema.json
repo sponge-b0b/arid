@@ -1,0 +1,273 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Arid Summary v1",
+  "description": "Schema for Arid's compact deterministic duplicate summary contract, version 1.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "tool_version",
+    "complete",
+    "analysis",
+    "errors",
+    "files",
+    "files_with_duplicates",
+    "source_lines",
+    "analyzed_lines",
+    "duplicate_groups",
+    "occurrences",
+    "duplicate_lines",
+    "duplication_percent",
+    "context",
+    "scope",
+    "distribution",
+    "hotspots"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "tool_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "complete": {
+      "type": "boolean"
+    },
+    "analysis": {
+      "$ref": "#/$defs/analysis"
+    },
+    "errors": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/error"
+      }
+    },
+    "files": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "files_with_duplicates": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "source_lines": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "analyzed_lines": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "duplicate_groups": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "occurrences": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "duplicate_lines": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "duplication_percent": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "context": {
+      "$ref": "#/$defs/context"
+    },
+    "scope": {
+      "$ref": "#/$defs/scope"
+    },
+    "distribution": {
+      "$ref": "#/$defs/distribution"
+    },
+    "hotspots": {
+      "type": "array",
+      "maxItems": 5,
+      "items": {
+        "$ref": "#/$defs/hotspot"
+      }
+    }
+  },
+  "$defs": {
+    "analysis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "min_lines",
+        "ignore_comments",
+        "ignore_docstrings",
+        "ignore_imports",
+        "ignore_signatures",
+        "same_file",
+        "hidden",
+        "ignore_files",
+        "exclude",
+        "baseline_enabled",
+        "focus",
+        "virtual_source",
+        "keep_going"
+      ],
+      "properties": {
+        "min_lines": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "ignore_comments": {
+          "type": "boolean"
+        },
+        "ignore_docstrings": {
+          "type": "boolean"
+        },
+        "ignore_imports": {
+          "type": "boolean"
+        },
+        "ignore_signatures": {
+          "type": "boolean"
+        },
+        "same_file": {
+          "type": "boolean"
+        },
+        "hidden": {
+          "type": "boolean"
+        },
+        "ignore_files": {
+          "type": "boolean"
+        },
+        "exclude": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "baseline_enabled": {
+          "type": "boolean"
+        },
+        "focus": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "virtual_source": {
+          "type": ["string", "null"],
+          "minLength": 1
+        },
+        "keep_going": {
+          "type": "boolean"
+        }
+      }
+    },
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "message"],
+      "properties": {
+        "kind": {
+          "enum": [
+            "configuration",
+            "discovery",
+            "read",
+            "parse",
+            "normalization",
+            "baseline",
+            "output",
+            "internal"
+          ]
+        },
+        "message": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "context": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["executable", "declarative", "mixed"],
+      "properties": {
+        "executable": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "declarative": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "mixed": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["function", "module", "class", "mixed"],
+      "properties": {
+        "function": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "module": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "class": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "mixed": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "distribution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cross_file", "same_file", "hybrid"],
+      "properties": {
+        "cross_file": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "same_file": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "hybrid": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "hotspot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "groups", "occurrences"],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "groups": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "occurrences": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    }
+  }
+}

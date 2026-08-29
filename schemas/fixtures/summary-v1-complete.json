@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "tool_version": "2.2.0",
+  "complete": true,
+  "analysis": {
+    "min_lines": 4,
+    "ignore_comments": true,
+    "ignore_docstrings": true,
+    "ignore_imports": true,
+    "ignore_signatures": true,
+    "same_file": true,
+    "hidden": false,
+    "ignore_files": true,
+    "exclude": [],
+    "baseline_enabled": false,
+    "focus": [],
+    "virtual_source": null,
+    "keep_going": false
+  },
+  "errors": [],
+  "files": 8,
+  "files_with_duplicates": 3,
+  "source_lines": 800,
+  "analyzed_lines": 600,
+  "duplicate_groups": 4,
+  "occurrences": 9,
+  "duplicate_lines": 120,
+  "duplication_percent": 20.0,
+  "context": {
+    "executable": 2,
+    "declarative": 1,
+    "mixed": 1
+  },
+  "scope": {
+    "function": 1,
+    "module": 1,
+    "class": 1,
+    "mixed": 1
+  },
+  "distribution": {
+    "cross_file": 2,
+    "same_file": 1,
+    "hybrid": 1
+  },
+  "hotspots": [
+    {
+      "path": "src/a.py",
+      "groups": 3,
+      "occurrences": 5
+    },
+    {
+      "path": "src/b.py",
+      "groups": 2,
+      "occurrences": 2
+    }
+  ]
+}
