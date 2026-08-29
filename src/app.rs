@@ -27,7 +27,8 @@ use crate::source::focus::resolve_focus;
 use crate::source::{
     build_source_inputs, prepare_sources, prepare_sources_with_policy, resolve_virtual_source,
 };
-use crate::text::render_text;
+use crate::summary::{SummaryOptions, build_summary};
+use crate::text::render_text_with_summary;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct ColorEnvironment {
@@ -52,7 +53,8 @@ impl ColorEnvironment {
             std::env::var_os("NO_COLOR").is_some_and(|value| !value.as_os_str().is_empty()),
             std::env::var_os("CLICOLOR_FORCE")
                 .is_some_and(|value| value.as_os_str() != OsStr::new("0")),
-            std::env::var_os("CLICOLOR").is_some_and(|value| value.as_os_str() == OsStr::new("0")),
+            std::env::var_os("CLICOLOR")
+                .is_some_and(|value| value.as_os_str() == OsStr::new("0")),
         )
     }
 }
@@ -404,9 +406,15 @@ fn execute(cli: &Cli, context: RunContext) -> Result<RunResult, OperationalError
             format!("failed to build report: {error}"),
         )
     })?;
+    let summary = build_summary(
+        &report,
+        SummaryOptions {
+            ignore_files: !cli.no_ignore_files,
+        },
+    );
 
     let output = match output_format {
-        OutputFormat::Text => render_text(&report, text_color),
+        OutputFormat::Text => render_text_with_summary(&report, &summary, text_color),
         OutputFormat::Json => render_json(&report).map_err(|error| {
             OperationalError::new(
                 ErrorKind::Output,
@@ -768,7 +776,11 @@ min-lines = 2
         assert!(result.stdout().contains("DUP001"));
         assert!(result.stdout().contains("a.py:1-2"));
         assert!(result.stdout().contains("b.py:1-2"));
-        assert!(result.stdout().contains("Found 1 duplicate group."));
+        assert!(result.stdout().contains("Summary"));
+        assert!(result.stdout().contains("Duplicate groups"));
+        assert!(result.stdout().contains("Breakdown"));
+        assert!(result.stdout().contains("Hotspots"));
+        assert!(!result.stdout().contains("Found 1 duplicate group."));
         assert!(!result.stdout().contains('\u{1b}'));
     }
 
@@ -1150,10 +1162,11 @@ baseline = "configured.json"
         cli.min_lines = Some(3);
         let result = run(&cli);
         assert_eq!(result.exit_status(), ExitStatus::Success);
-        assert_eq!(
-            result.stdout(),
-            concat!("No duplicate code found.\n", "0 duplicate lines (0.00%).\n")
-        );
+        assert!(result.stdout().contains("No duplicate code found."));
+        assert!(result.stdout().contains("Summary"));
+        assert!(result.stdout().contains("Duplicate groups"));
+        assert!(!result.stdout().contains("Breakdown"));
+        assert!(!result.stdout().contains("Hotspots"));
     }
 
     #[test]
@@ -1164,10 +1177,11 @@ baseline = "configured.json"
         temp.write("b.py", "gamma = 3\ndelta = 4\n");
         let result = run(&test_cli(vec![temp.path().to_path_buf()]));
         assert_eq!(result.exit_status(), ExitStatus::Success);
-        assert_eq!(
-            result.stdout(),
-            concat!("No duplicate code found.\n", "0 duplicate lines (0.00%).\n")
-        );
+        assert!(result.stdout().contains("No duplicate code found."));
+        assert!(result.stdout().contains("Summary"));
+        assert!(result.stdout().contains("Duplicate groups"));
+        assert!(!result.stdout().contains("Breakdown"));
+        assert!(!result.stdout().contains("Hotspots"));
     }
 
     #[test]
@@ -1280,8 +1294,8 @@ baseline = "configured.json"
         assert_eq!(value["runs"][0]["tool"]["driver"]["name"], "Arid");
         assert_eq!(value["runs"][0]["results"][0]["ruleId"], "DUP001");
         assert_eq!(
-            value["runs"][0]["results"][0]["locations"][0]["physicalLocation"]["artifactLocation"]
-                ["uri"],
+            value["runs"][0]["results"][0]["locations"][0]["physicalLocation"]
+                ["artifactLocation"]["uri"],
             "a.py"
         );
     }
