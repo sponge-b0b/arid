@@ -52,6 +52,15 @@ outputs:
   files:
     description: Number of successfully processed source files.
     value: ${{ steps.arid.outputs.files }}
+  occurrences:
+    description: Total reportable duplicate-group occurrences.
+    value: ${{ steps.arid.outputs.occurrences }}
+  files-with-duplicates:
+    description: Number of distinct files participating in reportable duplicate findings.
+    value: ${{ steps.arid.outputs.files-with-duplicates }}
+  summary-json:
+    description: Compact deterministic summary-v1 JSON for the completed or partial scan.
+    value: ${{ steps.arid.outputs.summary-json }}
   complete:
     description: Whether the Arid scan completed without source-processing errors.
     value: ${{ steps.arid.outputs.complete }}

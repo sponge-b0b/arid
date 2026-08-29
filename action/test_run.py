@@ -7,6 +7,94 @@ from pathlib import Path
 
 from action import run as action_run
 
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def analysis(*, keep_going: bool = False) -> dict[str, object]:
+    return {
+        "min_lines": 4,
+        "ignore_comments": True,
+        "ignore_docstrings": True,
+        "ignore_imports": True,
+        "ignore_signatures": True,
+        "same_file": True,
+        "hidden": False,
+        "exclude": [],
+        "baseline_enabled": False,
+        "focus": ["src/a.py"],
+        "virtual_source": None,
+        "keep_going": keep_going,
+    }
+
+
+def summary_report() -> dict[str, object]:
+    return {
+        "schema_version": 4,
+        "tool_version": "2.2.0",
+        "complete": True,
+        "analysis": analysis(),
+        "errors": [],
+        "files": 8,
+        "source_lines": 800,
+        "analyzed_lines": 600,
+        "duplicate_groups": 4,
+        "duplicate_lines": 120,
+        "duplication_percent": 20.0,
+        "findings": [
+            {
+                "context": "executable",
+                "scope": "function",
+                "distribution": "cross-file",
+                "occurrences": 2,
+                "locations": [{"path": "src/a.py"}, {"path": "src/b.py"}],
+            },
+            {
+                "context": "declarative",
+                "scope": "module",
+                "distribution": "same-file",
+                "occurrences": 2,
+                "locations": [{"path": "src/a.py"}, {"path": "src/a.py"}],
+            },
+            {
+                "context": "mixed",
+                "scope": "class",
+                "distribution": "hybrid",
+                "occurrences": 3,
+                "locations": [
+                    {"path": "src/a.py"},
+                    {"path": "src/a.py"},
+                    {"path": "src/c.py"},
+                ],
+            },
+            {
+                "context": "executable",
+                "scope": "mixed",
+                "distribution": "cross-file",
+                "occurrences": 2,
+                "locations": [{"path": "src/b.py"}, {"path": "src/d.py"}],
+            },
+        ],
+    }
+
+
+def report_from_summary_fixture(summary: dict[str, object]) -> dict[str, object]:
+    source_analysis = dict(summary["analysis"])
+    source_analysis.pop("ignore_files")
+    return {
+        "schema_version": 4,
+        "tool_version": summary["tool_version"],
+        "complete": summary["complete"],
+        "analysis": source_analysis,
+        "errors": summary["errors"],
+        "files": summary["files"],
+        "source_lines": summary["source_lines"],
+        "analyzed_lines": summary["analyzed_lines"],
+        "duplicate_groups": summary["duplicate_groups"],
+        "duplicate_lines": summary["duplicate_lines"],
+        "duplication_percent": summary["duplication_percent"],
+        "findings": [],
+    }
+
 
 class ActionHelperTests(unittest.TestCase):
     def test_split_lines_handles_paths_and_focus(self) -> None:
@@ -48,6 +136,8 @@ class ActionHelperTests(unittest.TestCase):
 
     def test_option_like_path_after_separator_is_not_rejected(self) -> None:
         action_run.validate_action_arguments(["--", "--show-config"])
+        self.assertFalse(action_run.has_option(["--", "--no-ignore-files"], "--no-ignore-files"))
+        self.assertTrue(action_run.has_option(["--no-ignore-files"], "--no-ignore-files"))
 
     def test_virtual_stdin_is_rejected(self) -> None:
         with self.assertRaises(action_run.ActionError):
@@ -99,6 +189,101 @@ class ActionHelperTests(unittest.TestCase):
         self.assertEqual(metrics.duplicate_lines, 18)
         self.assertEqual(metrics.duplication_percent, 4.25)
         self.assertTrue(metrics.has_findings)
+
+    def test_summary_projection_matches_core_counting_semantics(self) -> None:
+        summary = action_run.derive_summary(summary_report(), ignore_files=True)
+
+        self.assertEqual(summary["occurrences"], 9)
+        self.assertEqual(summary["files_with_duplicates"], 4)
+        self.assertEqual(
+            summary["context"],
+            {"executable": 2, "declarative": 1, "mixed": 1},
+        )
+        self.assertEqual(
+            summary["scope"],
+            {"function": 1, "module": 1, "class": 1, "mixed": 1},
+        )
+        self.assertEqual(
+            summary["distribution"],
+            {"cross_file": 2, "same_file": 1, "hybrid": 1},
+        )
+        self.assertEqual(
+            summary["hotspots"],
+            [
+                {"path": "src/a.py", "groups": 3, "occurrences": 5},
+                {"path": "src/b.py", "groups": 2, "occurrences": 2},
+                {"path": "src/c.py", "groups": 1, "occurrences": 1},
+                {"path": "src/d.py", "groups": 1, "occurrences": 1},
+            ],
+        )
+        self.assertEqual(summary["analysis"]["focus"], ["src/a.py"])
+        self.assertTrue(summary["analysis"]["ignore_files"])
+
+    def test_summary_projection_uses_deterministic_top_five(self) -> None:
+        document = summary_report()
+        findings = []
+        for path in ["f.py", "e.py", "d.py", "c.py", "b.py", "a.py"]:
+            findings.append(
+                {
+                    "context": "executable",
+                    "scope": "function",
+                    "distribution": "same-file",
+                    "occurrences": 2,
+                    "locations": [{"path": path}, {"path": path}],
+                }
+            )
+        document.update(
+            {
+                "duplicate_groups": 6,
+                "duplicate_lines": 6,
+                "duplication_percent": 1.0,
+                "findings": findings,
+            }
+        )
+
+        summary = action_run.derive_summary(document, ignore_files=True)
+
+        self.assertEqual(summary["files_with_duplicates"], 6)
+        self.assertEqual(
+            [hotspot["path"] for hotspot in summary["hotspots"]],
+            ["a.py", "b.py", "c.py", "d.py", "e.py"],
+        )
+
+    def test_zero_and_incomplete_projection_match_core_summary_fixtures(self) -> None:
+        for name in ["summary-v1-zero.json", "summary-v1-incomplete.json"]:
+            with self.subTest(name=name):
+                expected = json.loads(
+                    (ROOT / "schemas" / "fixtures" / name).read_text(encoding="utf-8")
+                )
+                report = report_from_summary_fixture(expected)
+                actual = action_run.derive_summary(
+                    report,
+                    ignore_files=expected["analysis"]["ignore_files"],
+                )
+                self.assertEqual(actual, expected)
+
+    def test_no_ignore_files_policy_is_reflected_in_summary_analysis(self) -> None:
+        summary = action_run.derive_summary(summary_report(), ignore_files=False)
+        self.assertFalse(summary["analysis"]["ignore_files"])
+
+    def test_action_outputs_expose_compact_summary(self) -> None:
+        summary = action_run.derive_summary(summary_report(), ignore_files=True)
+        metrics = action_run.report_metrics(summary_report())
+
+        with tempfile.TemporaryDirectory() as directory:
+            outputs = action_run.action_outputs(
+                1,
+                metrics,
+                summary,
+                False,
+                Path(directory) / "unused.sarif",
+                False,
+            )
+
+        self.assertEqual(outputs["occurrences"], "9")
+        self.assertEqual(outputs["files-with-duplicates"], "4")
+        self.assertEqual(json.loads(outputs["summary-json"]), summary)
+        self.assertNotIn("\n", outputs["summary-json"])
 
     def test_exit_policy_maps_findings_and_errors(self) -> None:
         clean = action_run.ReportMetrics("2.0.0", True, 2, 0, 0, 0.0)
