@@ -165,8 +165,8 @@ pub(crate) fn render_summary_json(summary: &Summary) -> Result<String, serde_jso
 mod tests {
     use crate::error::{ErrorKind, OperationalError};
     use crate::summary::{
-        ContextSummary, DistributionSummary, Hotspot, ScopeSummary, Summary, SummaryAnalysis,
-        SUMMARY_SCHEMA_VERSION,
+        ContextSummary, DistributionSummary, Hotspot, SUMMARY_SCHEMA_VERSION, ScopeSummary,
+        Summary, SummaryAnalysis,
     };
 
     use super::*;
