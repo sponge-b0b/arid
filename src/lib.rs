@@ -56,6 +56,8 @@ mod report;
 mod sarif;
 mod source;
 mod suffix;
+#[cfg_attr(not(test), allow(dead_code))]
+mod summary;
 mod suppression;
 mod suppression_command;
 mod text;
