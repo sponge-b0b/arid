@@ -53,8 +53,7 @@ impl ColorEnvironment {
             std::env::var_os("NO_COLOR").is_some_and(|value| !value.as_os_str().is_empty()),
             std::env::var_os("CLICOLOR_FORCE")
                 .is_some_and(|value| value.as_os_str() != OsStr::new("0")),
-            std::env::var_os("CLICOLOR")
-                .is_some_and(|value| value.as_os_str() == OsStr::new("0")),
+            std::env::var_os("CLICOLOR").is_some_and(|value| value.as_os_str() == OsStr::new("0")),
         )
     }
 }
@@ -1294,8 +1293,8 @@ baseline = "configured.json"
         assert_eq!(value["runs"][0]["tool"]["driver"]["name"], "Arid");
         assert_eq!(value["runs"][0]["results"][0]["ruleId"], "DUP001");
         assert_eq!(
-            value["runs"][0]["results"][0]["locations"][0]["physicalLocation"]
-                ["artifactLocation"]["uri"],
+            value["runs"][0]["results"][0]["locations"][0]["physicalLocation"]["artifactLocation"]
+                ["uri"],
             "a.py"
         );
     }

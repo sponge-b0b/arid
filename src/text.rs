@@ -801,10 +801,7 @@ mod tests {
             styles.success, styles.success,
         )));
         assert!(rendered.contains(&format!("{}0{:#}", styles.success, styles.success)));
-        assert!(rendered.contains(&format!(
-            "{}0.00%{:#}",
-            styles.success, styles.success,
-        )));
+        assert!(rendered.contains(&format!("{}0.00%{:#}", styles.success, styles.success,)));
         assert!(!rendered.contains("Breakdown"));
         assert!(!rendered.contains("Hotspots"));
     }
