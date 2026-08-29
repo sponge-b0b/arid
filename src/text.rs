@@ -117,17 +117,28 @@ fn render_text(report: &Report, color: bool) -> String {
 
 #[must_use]
 pub(crate) fn render_text_with_summary(report: &Report, summary: &Summary, color: bool) -> String {
-    let styles = if color {
-        TextStyles::colored()
-    } else {
-        TextStyles::plain()
-    };
+    let styles = text_styles(color);
     let mut output = String::new();
 
     render_findings(&mut output, report, styles);
     render_summary_text(&mut output, summary, styles);
 
     output
+}
+
+#[must_use]
+pub(crate) fn render_summary_only(summary: &Summary, color: bool) -> String {
+    let mut output = String::new();
+    render_summary_text(&mut output, summary, text_styles(color));
+    output
+}
+
+fn text_styles(color: bool) -> TextStyles {
+    if color {
+        TextStyles::colored()
+    } else {
+        TextStyles::plain()
+    }
 }
 
 fn render_findings(output: &mut String, report: &Report, styles: TextStyles) {

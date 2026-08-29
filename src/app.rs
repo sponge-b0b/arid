@@ -28,7 +28,8 @@ use crate::source::{
     build_source_inputs, prepare_sources, prepare_sources_with_policy, resolve_virtual_source,
 };
 use crate::summary::{SummaryOptions, build_summary};
-use crate::text::render_text_with_summary;
+use crate::summary_json::render_summary_json;
+use crate::text::{render_summary_only, render_text_with_summary};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct ColorEnvironment {
@@ -413,7 +414,16 @@ fn execute(cli: &Cli, context: RunContext) -> Result<RunResult, OperationalError
     );
 
     let output = match output_format {
+        OutputFormat::Text if cli.summary_only => render_summary_only(&summary, text_color),
         OutputFormat::Text => render_text_with_summary(&report, &summary, text_color),
+        OutputFormat::Json if cli.summary_only => {
+            render_summary_json(&summary).map_err(|error| {
+                OperationalError::new(
+                    ErrorKind::Output,
+                    format!("failed to render summary JSON: {error}"),
+                )
+            })?
+        }
         OutputFormat::Json => render_json(&report).map_err(|error| {
             OperationalError::new(
                 ErrorKind::Output,
@@ -481,6 +491,22 @@ fn validate_output_options(cli: &Cli, output_format: OutputFormat) -> Result<(),
 
     let non_scan_mode =
         administrative_mode.or_else(|| cli.write_baseline.as_ref().map(|_| "--write-baseline"));
+
+    if cli.summary_only
+        && let Some(mode) = non_scan_mode
+    {
+        return Err(OperationalError::new(
+            ErrorKind::Configuration,
+            format!("--summary-only is not valid with {mode}"),
+        ));
+    }
+
+    if cli.summary_only && matches!(output_format, OutputFormat::Markdown | OutputFormat::Sarif) {
+        return Err(OperationalError::new(
+            ErrorKind::Configuration,
+            "--summary-only supports only text or JSON primary output",
+        ));
+    }
 
     if cli.fail_on_stale && cli.baseline_status.is_none() {
         return Err(OperationalError::new(
@@ -714,6 +740,7 @@ min-lines = 2
             workers: 1,
             format: None,
             report: Vec::new(),
+            summary_only: false,
             color: None,
             json: false,
             show_source: false,

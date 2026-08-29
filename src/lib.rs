@@ -56,9 +56,7 @@ mod report;
 mod sarif;
 mod source;
 mod suffix;
-#[cfg_attr(not(test), allow(dead_code))]
 mod summary;
-#[cfg_attr(not(test), allow(dead_code))]
 mod summary_json;
 mod suppression;
 mod suppression_command;
@@ -176,7 +174,9 @@ mod tests {
 
     #[test]
     fn times_only_normal_text_scans() {
-        assert!(should_time_scan(&Cli::try_parse_from(["arid", "."]).unwrap()));
+        assert!(should_time_scan(
+            &Cli::try_parse_from(["arid", "."]).unwrap()
+        ));
         assert!(!should_time_scan(
             &Cli::try_parse_from(["arid", "--json", "."]).unwrap()
         ));

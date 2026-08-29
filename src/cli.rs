@@ -214,6 +214,21 @@ pub struct Cli {
     )]
     pub report: Vec<String>,
 
+    /// Suppress individual findings and emit only aggregate summary output.
+    #[arg(
+        long,
+        conflicts_with_all = [
+            "show_config",
+            "list_files",
+            "suppression_status",
+            "explain_path",
+            "baseline_status",
+            "prune_baseline",
+            "write_baseline"
+        ]
+    )]
+    pub summary_only: bool,
+
     /// Control color in text output.
     #[arg(long, value_enum, value_name = "WHEN")]
     pub(crate) color: Option<ColorWhen>,
@@ -328,6 +343,7 @@ mod tests {
         assert_eq!(cli.workers, 1);
         assert_eq!(cli.format, None);
         assert!(cli.report.is_empty());
+        assert!(!cli.summary_only);
         assert_eq!(cli.output_format(), OutputFormat::Text);
         assert_eq!(cli.color, None);
         assert!(!cli.json);
@@ -433,13 +449,9 @@ mod tests {
         assert!(cli.suppression_status);
         assert!(cli.fail_on_stale);
 
-        let cli = Cli::try_parse_from([
-            "arid",
-            "--baseline-status",
-            "debt.json",
-            "--fail-on-stale",
-        ])
-        .unwrap();
+        let cli =
+            Cli::try_parse_from(["arid", "--baseline-status", "debt.json", "--fail-on-stale"])
+                .unwrap();
         assert_eq!(cli.baseline_status, Some(PathBuf::from("debt.json")));
         assert!(cli.fail_on_stale);
     }
@@ -454,13 +466,8 @@ mod tests {
         assert!(cli.list_files);
         assert!(cli.no_ignore_files);
 
-        let cli = Cli::try_parse_from([
-            "arid",
-            "--explain-path",
-            "src/a.py",
-            "--no-ignore-files",
-        ])
-        .unwrap();
+        let cli = Cli::try_parse_from(["arid", "--explain-path", "src/a.py", "--no-ignore-files"])
+            .unwrap();
         assert_eq!(cli.explain_path, Some(PathBuf::from("src/a.py")));
         assert!(cli.no_ignore_files);
     }
@@ -550,25 +557,17 @@ mod tests {
         assert!(
             Cli::try_parse_from(["arid", "--list-files", "--prune-baseline", "debt.json"]).is_err()
         );
-        assert!(
-            Cli::try_parse_from(["arid", "--suppression-status", "--show-config"]).is_err()
-        );
+        assert!(Cli::try_parse_from(["arid", "--suppression-status", "--show-config"]).is_err());
         assert!(
             Cli::try_parse_from(["arid", "--suppression-status", "--baseline", "debt.json"])
                 .is_err()
         );
         assert!(
-            Cli::try_parse_from([
-                "arid",
-                "--suppression-status",
-                "--explain-path",
-                "src/a.py"
-            ])
-            .is_err()
+            Cli::try_parse_from(["arid", "--suppression-status", "--explain-path", "src/a.py"])
+                .is_err()
         );
         assert!(
-            Cli::try_parse_from(["arid", "--list-files", "--explain-path", "src/a.py"])
-                .is_err()
+            Cli::try_parse_from(["arid", "--list-files", "--explain-path", "src/a.py"]).is_err()
         );
     }
 
@@ -658,29 +657,18 @@ mod tests {
 
     #[test]
     fn suppression_status_rejects_scan_presentation_options() {
-        assert!(
-            Cli::try_parse_from(["arid", "--suppression-status", "--show-source"]).is_err()
-        );
-        assert!(
-            Cli::try_parse_from(["arid", "--suppression-status", "--color", "never"]).is_err()
-        );
+        assert!(Cli::try_parse_from(["arid", "--suppression-status", "--show-source"]).is_err());
+        assert!(Cli::try_parse_from(["arid", "--suppression-status", "--color", "never"]).is_err());
     }
 
     #[test]
     fn path_explanation_rejects_scan_presentation_options() {
         assert!(
-            Cli::try_parse_from(["arid", "--explain-path", "src/a.py", "--show-source"])
-                .is_err()
+            Cli::try_parse_from(["arid", "--explain-path", "src/a.py", "--show-source"]).is_err()
         );
         assert!(
-            Cli::try_parse_from([
-                "arid",
-                "--explain-path",
-                "src/a.py",
-                "--color",
-                "never"
-            ])
-            .is_err()
+            Cli::try_parse_from(["arid", "--explain-path", "src/a.py", "--color", "never"])
+                .is_err()
         );
     }
 
