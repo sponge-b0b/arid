@@ -272,7 +272,7 @@ fn render_summary_text(output: &mut String, summary: &Summary, styles: TextStyle
         ]),
         Row::new(vec![
             Cell::plain("Files with duplicates"),
-            Cell::styled(files_with_duplicates, group_style),
+            Cell::styled(files_with_duplicates, styles.heading),
         ]),
         Row::new(vec![
             Cell::plain("Source lines"),
@@ -298,7 +298,7 @@ fn render_summary_text(output: &mut String, summary: &Summary, styles: TextStyle
             Cell::plain("Duplication"),
             Cell::styled(
                 format!("{:.2}%", summary.duplication_percent),
-                duplicate_style,
+                styles.heading,
             ),
         ]),
     ];
@@ -745,7 +745,7 @@ mod tests {
         )));
         assert!(rendered.contains(&format!("{}1{:#}", styles.group, styles.group)));
         assert!(rendered.contains(&format!("{}a.py{:#}", styles.path, styles.path)));
-        assert!(rendered.contains(&format!("{}50.00%{:#}", styles.problem, styles.problem)));
+        assert!(rendered.contains(&format!("{}50.00%{:#}", styles.heading, styles.heading)));
     }
 
     #[test]
@@ -812,7 +812,7 @@ mod tests {
             styles.success, styles.success,
         )));
         assert!(rendered.contains(&format!("{}0{:#}", styles.success, styles.success)));
-        assert!(rendered.contains(&format!("{}0.00%{:#}", styles.success, styles.success,)));
+        assert!(rendered.contains(&format!("{}0.00%{:#}", styles.heading, styles.heading,)));
         assert!(!rendered.contains("Breakdown"));
         assert!(!rendered.contains("Hotspots"));
     }

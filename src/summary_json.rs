@@ -197,7 +197,7 @@ mod tests {
             analysis: analysis(),
             errors: Vec::new(),
             files: 8,
-            files_with_duplicates: 3,
+            files_with_duplicates: 4,
             source_lines: 800,
             analyzed_lines: 600,
             duplicate_groups: 4,
@@ -230,6 +230,16 @@ mod tests {
                     path: "src/b.py".to_owned(),
                     groups: 2,
                     occurrences: 2,
+                },
+                Hotspot {
+                    path: "src/c.py".to_owned(),
+                    groups: 1,
+                    occurrences: 1,
+                },
+                Hotspot {
+                    path: "src/d.py".to_owned(),
+                    groups: 1,
+                    occurrences: 1,
                 },
             ],
         }
