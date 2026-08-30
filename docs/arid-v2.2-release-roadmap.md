@@ -2,7 +2,7 @@
 
 **Product:** Arid  
 **Stable target:** `2.2.0`  
-**Current phase:** Alpha publication
+**Current phase:** Real-world validation and beta stabilization
 
 ## Purpose
 
@@ -527,6 +527,8 @@ All intended 2.2 behavior is code complete, documentation is sufficient for prer
 
 ## Phase 7 — Alpha publication
 
+**Status:** Complete.
+
 **Goal:** publish the first feature-complete v2.2 prerelease and freeze the new machine/presentation contracts with real packaged artifacts.
 
 ### Rules
@@ -553,13 +555,58 @@ Published alpha qualification MUST include:
 - Action version pin smoke;
 - report-v4 compatibility.
 
+### Qualification evidence
+
+`2.2.0-alpha.1` was published from the feature-complete v2.2 release commit and passed published-artifact qualification.
+
+Publication and packaging:
+
+- the tag-triggered production Release workflow completed successfully;
+- the GitHub release was created as a prerelease;
+- all five supported standalone assets were published:
+  - Linux x86-64
+  - Linux aarch64
+  - macOS aarch64
+  - macOS x86-64
+  - Windows x86-64
+- exact PyPI version `2.2.0a1` installed successfully;
+- the published Linux x86-64 standalone archive passed its published SHA-256 digest check;
+- both published Linux distribution paths reported `arid 2.2.0-alpha.1`.
+
+Published-contract qualification:
+
+- the complete `validation/v2.2.sh` suite passed against the published standalone binary;
+- the complete `validation/v2.2.sh` suite passed against the exact PyPI-installed binary;
+- inherited v2, v2.1, and v2.2 contracts passed from both artifacts;
+- rich normal-text Summary, Breakdown, and Hotspots passed;
+- summary-only text and JSON passed;
+- complete, incomplete, and zero-finding `summary-v1` schema validation passed;
+- baseline/focus summary behavior passed;
+- supplemental report-v4 preservation passed;
+- plain/color visible-output parity passed;
+- adaptive worker determinism passed;
+- standalone and PyPI `summary-v1` output was byte-identical;
+- standalone and PyPI report-v4 output was byte-identical.
+
+Published Action qualification:
+
+- the tagged Action pins exact PyPI version `2.2.0a1`;
+- the production Release workflow's published-Action verification job passed;
+- the Action fixture and output verification passed from the tagged release source.
+
+No alpha qualification defect requires a product or packaging correction before beta.
+
 ### Gate
 
 A published alpha passes artifact/install validation and demonstrates the complete v2.2 summary contract from actual distributed binaries.
 
+**Gate result:** PASS.
+
 ---
 
 ## Phase 8 — Real-world validation and beta stabilization
+
+**Status:** In progress.
 
 **Goal:** freeze v2.2 after real-world use and resolve prerelease defects without scope expansion.
 
