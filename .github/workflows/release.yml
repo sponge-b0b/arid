@@ -385,7 +385,7 @@ jobs:
           standalone-smoke/arid --help >/dev/null
 
   verify-action:
-    name: Verify GitHub Action outputs
+    name: Verify published GitHub Action
     if: >-
       always() &&
       needs.build.result == 'success' &&
