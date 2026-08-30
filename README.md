@@ -118,7 +118,7 @@ Arid v2 is designed to:
 - produce multiple reports from one scan
 - expose deterministic machine capabilities
 - provide an official GitHub Action
-- support opt-in parallel file preparation while remaining serial by default
+- use bounded automatic parallel file preparation by default while preserving explicit serial execution
 - publish versioned JSON Schemas for Arid-owned machine contracts
 - show total elapsed time for completed normal text scans without adding volatile timing to machine formats
 - publish artifacts for Linux x86_64 and ARM64, macOS x86_64 and ARM64, and Windows x86_64
@@ -261,27 +261,37 @@ arid . \
 
 ### Parallelism
 
-Arid runs serially by default:
+Arid uses bounded automatic parallel file preparation by default:
 
 ```bash
-arid . --workers 1
+arid .
 ```
 
-Use explicit parallel file preparation on larger projects:
-
-```bash
-arid . --workers 4
-```
-
-Or use bounded automatic selection:
+Omitting `--workers` uses the same worker-selection policy as:
 
 ```bash
 arid . --workers auto
 ```
 
-`auto` is capped at four workers and further bounded by available parallelism and the number of discovered Python files.
+Automatic selection uses available parallelism and is capped at four workers. If available parallelism cannot be determined, Arid falls back to one worker.
 
-Parallelism applies to file preparation—reading, parsing, and normalization. It does not change duplicate identity, finding order, metrics, or exit status.
+Require serial preparation explicitly with:
+
+```bash
+arid . --workers 1
+```
+
+Or request an exact positive worker count:
+
+```bash
+arid . --workers 2
+arid . --workers 4
+arid . --workers 8
+```
+
+Explicit numeric worker counts are not capped at four. The cap applies only to automatic selection.
+
+Parallelism applies to file preparation—reading, parsing, and normalization. It does not change duplicate identity, finding order, fingerprints, metrics, baseline/focus behavior, machine contracts, or exit status.
 
 Worker selection is intentionally CLI-only and cannot be configured in `[tool.arid]`.
 
@@ -298,13 +308,48 @@ arid . --format sarif
 
 `text` is the default. `--json` remains shorthand for `--format json`.
 
+Normal text scans end with a high-signal aggregate view:
+
+- **Summary** — files, source/analyzed lines, duplicate groups, occurrences, duplicate lines, and duplication percentage
+- **Breakdown** — duplicate-group counts and shares by Context, Scope, and Distribution
+- **Hotspots** — the top five files by duplicate-group participation, then occurrence count, then path
+
+Hotspots are objective participation counts, not severity or quality scores.
+
+For concise output without individual `DUP001` finding blocks:
+
+```bash
+arid . --summary-only
+```
+
+`--summary-only` changes presentation only. Detection, baseline filtering, focus filtering, suppression behavior, metrics, worker behavior, and exit status remain the same.
+
+JSON summary mode emits the compact deterministic `summary-v1` contract:
+
+```bash
+arid . --summary-only --json
+arid . --summary-only --format json
+```
+
+By contrast:
+
+```bash
+arid . --json
+```
+
+continues to emit the full `report-v4` document.
+
+`--summary-only` supports text and JSON primary output. Markdown and SARIF primary output are rejected because those formats remain full finding-oriented reports.
+
+Supplemental `--report` files remain full existing report formats even when the primary output is summary-only.
+
 Completed normal text scans end with a human-facing elapsed-time footer such as:
 
 ```text
 Total time: 18.7 ms
 ```
 
-The footer uses adaptive microsecond, millisecond, or second units. It is intentionally absent from JSON, Markdown, SARIF, supplemental report files, administrative machine contracts, and exit-2 failures so deterministic machine output remains stable.
+The footer is intentionally absent from JSON, Markdown, SARIF, supplemental report files, administrative machine contracts, incomplete exit-2 scans, and `summary-v1`.
 
 Include original source snippets:
 
@@ -319,6 +364,8 @@ arid . --color auto
 arid . --color always
 arid . --color never
 ```
+
+Color is semantic presentation only. Arid does not infer severity or grade duplication percentages.
 
 ### Multiple reports from one scan
 
@@ -359,6 +406,8 @@ arid . --baseline arid-baseline.json
 
 Or configure it in `[tool.arid]` so normal scans enforce it automatically.
 
+Summary metrics are derived after baseline filtering, so accepted baseline debt does not appear in Summary, Breakdown, Hotspots, or `summary-v1`.
+
 Inspect baseline state:
 
 ```bash
@@ -390,7 +439,7 @@ arid . --focus src/package --focus tests/package
 
 Focus changes **what is reported, not what is compared**.
 
-Arid still performs whole-project detection, applies baseline enforcement, and only then filters findings by focus. Reported groups retain all occurrences, including occurrences outside the focused path.
+Arid still performs whole-project detection, applies baseline enforcement, and only then filters findings by focus. Reported groups retain all occurrences, including occurrences outside the focused path. The same rule applies to `summary-v1`: occurrence counts, files-with-duplicates, and hotspots are derived from the complete retained finding rather than only the focused path.
 
 ### Explicit project and configuration control
 
@@ -478,6 +527,8 @@ The resulting report is explicitly incomplete:
 - the process exits `2`
 - incomplete scans cannot emit SARIF
 
+With `--summary-only --json`, the partial result is still emitted as deterministic `summary-v1` with `complete: false` and structured `errors`. The process remains exit `2`, and no timing value is included.
+
 ### Findings-only exit policy
 
 For CI workflows that want findings reported without failing the job:
@@ -544,7 +595,7 @@ Arid separates two questions:
 
 Arid deliberately does **not** assign severity or decide whether duplication should be removed. Duplicate code can be intentional, framework-driven, harmless, or worth refactoring.
 
-A typical diagnostic looks like:
+A detailed scan emits each `DUP001` diagnostic before the aggregate summary. The diagnostic portion looks like:
 
 ```text
 DUP001 4 duplicated lines
@@ -554,14 +605,13 @@ Occurrences: 2 across 2 files (cross-file)
 
   src/models/user.py:12-15
   src/models/account.py:20-23
-
-Found 1 duplicate group.
-4 duplicate lines (2.31%).
-
-Total time: 18.7 ms
 ```
 
-`Total time:` is presentation-only. Its value is expected to vary between invocations and is not part of Arid's deterministic machine-output guarantees.
+After the findings, Arid renders the overall **Summary**, the fixed Context/Scope/Distribution **Breakdown**, and up to five objective **Hotspots**.
+
+Use `--summary-only` when those aggregate sections are sufficient and individual finding blocks are not needed.
+
+`Total time:` follows completed normal text output and is presentation-only. Its value is expected to vary between invocations and is not part of Arid's deterministic machine-output guarantees.
 
 ### Effective normalized lines
 
@@ -661,7 +711,8 @@ The fingerprint identifies normalized duplicate content independently of path, p
 
 Arid publishes JSON Schema documents for its versioned machine contracts:
 
-- [Report schema v4](schemas/report-v4.schema.json) — current JSON report contract from `--format json` / `--json`
+- [Report schema v4](schemas/report-v4.schema.json) — current full JSON report contract from `--format json` / `--json`
+- [Summary schema v1](schemas/summary-v1.schema.json) — compact deterministic aggregate contract from `--summary-only --json`
 - [Operational error schema v1](schemas/error-v1.schema.json) — fatal JSON-mode operational errors
 - [Capabilities schema v1](schemas/capabilities-v1.schema.json) — `arid --capabilities`
 - [Baseline schema v1](schemas/baseline-v1.schema.json) — files created by `--write-baseline`
@@ -675,6 +726,44 @@ Elapsed scan timing is deliberately excluded from all versioned JSON contracts a
 [Report schema v3](schemas/report-v3.schema.json) remains published unchanged as the historical v1 report contract.
 
 SARIF output remains SARIF 2.1.0 and uses the official SARIF schema rather than an Arid-owned schema.
+
+### Summary v1
+
+`summary-v1` is the compact aggregate contract intended for CI, tools, and coding agents that do not need every finding location.
+
+It includes:
+
+```text
+schema_version
+tool_version
+complete
+analysis
+errors
+files
+files_with_duplicates
+source_lines
+analyzed_lines
+duplicate_groups
+occurrences
+duplicate_lines
+duplication_percent
+context
+scope
+distribution
+hotspots
+```
+
+Context, Scope, and Distribution contain fixed integer group counts.
+
+Hotspots contain at most five paths, ranked by:
+
+1. groups descending
+2. occurrences descending
+3. path ascending
+
+`summary-v1` is derived from the final reportable findings after baseline and focus policy.
+
+Worker count, elapsed timing, color, and human-formatted number strings are intentionally absent so logically identical scans remain deterministic across execution environments.
 
 ### Report v4
 
@@ -786,7 +875,7 @@ Arid v2 includes an official composite GitHub Action.
 Stable example:
 
 ```yaml
-- uses: sponge-b0b/arid@v2.0.0
+- uses: sponge-b0b/arid@v2.1.0
   with:
     paths: .
 ```
@@ -812,6 +901,9 @@ duplicate-groups
 duplicate-lines
 duplication-percent
 files
+occurrences
+files-with-duplicates
+summary-json
 complete
 scan-exit-code
 ```
@@ -819,7 +911,7 @@ scan-exit-code
 Example with focus and a non-failing findings policy:
 
 ```yaml
-- uses: sponge-b0b/arid@v2.0.0
+- uses: sponge-b0b/arid@v2.1.0
   id: arid
   with:
     paths: .
@@ -828,7 +920,7 @@ Example with focus and a non-failing findings policy:
     job-summary: "true"
 ```
 
-The Action runs Arid once per invocation. It uses a supplemental report-v4 JSON document for metrics and renders optional summaries/SARIF from the same scan.
+The Action runs Arid once per invocation. It uses the same supplemental report-v4 JSON document to derive existing metrics, `occurrences`, `files-with-duplicates`, and `summary-json`; optional job-summary and SARIF output also come from that same scan.
 
 SARIF upload requires the normal GitHub code-scanning permissions for the workflow and is skipped for incomplete scans.
 
@@ -845,7 +937,7 @@ Use the stable v2 release:
 ```yaml
 repos:
   - repo: https://github.com/sponge-b0b/arid
-    rev: v2.0.0
+    rev: v2.1.0
     hooks:
       - id: arid
 ```

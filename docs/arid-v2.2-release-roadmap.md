@@ -2,7 +2,7 @@
 
 **Product:** Arid  
 **Stable target:** `2.2.0`  
-**Current phase:** Contract
+**Current phase:** Integration and pre-publication validation
 
 ## Purpose
 
@@ -12,13 +12,14 @@ Arid v2.2 is a focused signal-extraction and presentation release built around o
 
 V2.2 deliberately preserves Arid 2.1 duplicate-detection semantics while making the information Arid already produces substantially easier to understand at a glance and easier for CI systems, tools, and coding agents to consume compactly.
 
-The release is intended to deliver five outcomes:
+The release is intended to deliver six outcomes:
 
 1. **Rich human summary** — normal text scans end with compact overall metrics plus Context, Scope, and Distribution breakdowns.
 2. **Objective hotspots** — the top files participating in reportable duplicate groups are visible without scrolling through every finding.
 3. **Concise scan mode** — `--summary-only` suppresses detailed findings without changing analysis or exit policy.
 4. **Compact machine contract** — `summary-v1` exposes deterministic high-level duplicate state without requiring consumers to parse every report-v4 finding.
 5. **Better Action integration** — the official GitHub Action exposes occurrences, files with duplicates, and summary JSON from the same scan.
+6. **Adaptive parallelism by default** — ordinary scans use the existing bounded automatic preparation-worker policy while explicit serial and numeric worker controls remain available.
 
 The detector itself is not redesigned for v2.2.
 
@@ -56,6 +57,7 @@ If these documents disagree, implementation MUST stop and the contract documents
   - `occurrences`
   - `files-with-duplicates`
   - `summary-json`
+- bounded adaptive parallelism as the implicit worker default;
 - focused v2.2 validation;
 - README/reference documentation;
 - release-tooling support for 2.2;
@@ -113,9 +115,10 @@ focus semantics
 baseline filtering semantics
 normalization semantics
 [tool.arid] behavior
-serial default
-numeric --workers N
---workers auto
+explicit --workers 1 behavior
+explicit numeric --workers N behavior
+--workers auto semantics
+implicit worker default changes from 1 to auto
 ordinary-scan exit meanings 0 / 1 / 2
 --no-fail-on-findings behavior
 Markdown report semantics
@@ -186,7 +189,7 @@ The final qualified-prerelease-to-stable promotion MUST remain metadata/document
 
 **Goal:** freeze the v2.2 product boundary, technical architecture, and release plan before implementation begins.
 
-**Status:** In progress.
+**Status:** Complete.
 
 ### Artifacts
 
@@ -208,11 +211,13 @@ The final qualified-prerelease-to-stable promotion MUST remain metadata/document
 - Action integration requires no second detector run.
 - No implementation begins while a known contract contradiction remains.
 
-**Gate result:** Pending review.
+**Gate result:** PASS.
 
 ---
 
 ## Phase 1 — Summary domain and counting foundation
+
+**Status:** Complete.
 
 **Goal:** establish one deterministic summary projection from the final typed `Report` without changing output yet.
 
@@ -251,6 +256,8 @@ Unit fixtures prove all counting semantics, hybrid same-path behavior, bucket in
 
 ## Phase 2 — `summary-v1` machine contract
 
+**Status:** Complete.
+
 **Goal:** freeze and validate the compact deterministic machine/agent representation before human rendering depends on it.
 
 ### Work
@@ -283,6 +290,8 @@ Representative documents validate against `summary-v1`; worker 1/numeric/auto ou
 ---
 
 ## Phase 3 — Rich human summary, breakdown, hotspots, and color
+
+**Status:** Complete.
 
 **Goal:** replace the minimal two-line normal text footer with a compact, information-dense human summary.
 
@@ -327,6 +336,8 @@ Plain/color golden tests pass, Unicode hotspot paths remain legible, zero/incomp
 
 ## Phase 4 — `--summary-only` orchestration
 
+**Status:** Complete.
+
 **Goal:** provide a concise normal scan for developers, CI logs, tools, and agents without creating another analysis path.
 
 ### Work
@@ -363,6 +374,8 @@ Complete CLI composition matrix passes, exit statuses match detailed mode, basel
 
 ## Phase 5 — GitHub Action integration
 
+**Status:** Complete.
+
 **Goal:** expose compact high-signal summary data from the official Action without changing its one-scan architecture.
 
 ### Work
@@ -394,6 +407,8 @@ Action unit/integration tests pass, parity fixtures cover repeated/hybrid locati
 ---
 
 ## Phase 6 — Integration, documentation, toolchain reproducibility, and pre-publication validation
+
+**Status:** In progress.
 
 **Goal:** prove the complete v2.2 product contract before publishing prereleases and repair the release-tooling reproducibility issue identified during v2.1 closeout.
 

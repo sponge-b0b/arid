@@ -1,6 +1,6 @@
 # Arid validation
 
-Arid's validation suite exercises Arid against unfamiliar real-world Python repositories, targeted filesystem edge cases, and the focused v1.1 integration surface.
+Arid's validation suite exercises Arid against unfamiliar real-world Python repositories, targeted filesystem edge cases, and versioned release-facing integration surfaces.
 
 It complements the automated test suite and benchmarks:
 
@@ -37,6 +37,8 @@ The validation tooling consists of:
 validation/build.sh <global-root> [options]
 validation/run.sh <global-root> [options]
 validation/v1.1.sh <arid-bin>
+validation/v2.1.sh <arid-bin>
+validation/v2.2.sh <arid-bin>
 ```
 
 `build.sh` provisions the validation corpora beneath:
@@ -92,6 +94,33 @@ The harness validates the release-facing v1.1 surface without multiplying every 
 The harness creates and removes its own temporary project and does not write persistent validation results.
 
 During 1.1 release-candidate qualification, this smoke runs against both the published standalone executable and the exact PyPI-installed executable before the larger real-world validation campaign.
+
+## V2.2 targeted integration validation
+
+Run the complete v2.2 release-facing contract validation against an existing executable with:
+
+```bash
+validation/v2.2.sh /path/to/arid
+```
+
+The v2.2 harness first runs the inherited v2.1 suite, then adds focused checks for:
+
+- rich Summary, Breakdown, and Hotspots text
+- zero-finding summary presentation
+- `--summary-only` text and JSON
+- `summary-v1` complete, zero, and incomplete schema validation
+- ordinary JSON remaining report-v4
+- supplemental full-report preservation
+- baseline-before-summary semantics
+- focus retaining outside-focus occurrences
+- incomplete keep-going summary behavior
+- plain/color visible-output parity
+- Markdown/SARIF summary-only rejection
+- implicit workers matching explicit `--workers auto`
+- deterministic summary output across worker modes
+- CLI help documenting `[default: auto]`
+
+This suite remains synthetic and focused. Real-world repository regression and performance qualification continue to use the established validation and benchmark corpora rather than duplicating them here.
 
 ## Validation corpora
 
