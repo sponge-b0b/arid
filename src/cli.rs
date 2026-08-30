@@ -197,7 +197,7 @@ pub struct Cli {
     #[arg(
         long,
         value_name = "N|auto",
-        default_value_t = 1,
+        default_value = "auto",
         value_parser = parse_worker_count,
     )]
     pub workers: usize,
@@ -340,7 +340,7 @@ mod tests {
         assert!(!cli.no_hidden);
         assert!(!cli.no_ignore_files);
         assert!(cli.exclude.is_empty());
-        assert_eq!(cli.workers, 1);
+        assert!((1..=MAX_AUTO_WORKERS).contains(&cli.workers));
         assert_eq!(cli.format, None);
         assert!(cli.report.is_empty());
         assert!(!cli.summary_only);
@@ -673,9 +673,22 @@ mod tests {
     }
 
     #[test]
-    fn accepts_auto_workers() {
-        let cli = Cli::try_parse_from(["arid", "--workers", "auto"]).unwrap();
-        assert!((1..=MAX_AUTO_WORKERS).contains(&cli.workers));
+    fn implicit_workers_match_explicit_auto() {
+        let implicit = Cli::try_parse_from(["arid"]).unwrap();
+        let explicit = Cli::try_parse_from(["arid", "--workers", "auto"]).unwrap();
+
+        assert_eq!(implicit.workers, explicit.workers);
+        assert!((1..=MAX_AUTO_WORKERS).contains(&implicit.workers));
+    }
+
+    #[test]
+    fn explicit_workers_are_not_auto_clamped() {
+        for workers in [1, 2, 4, 8] {
+            let value = workers.to_string();
+            let cli = Cli::try_parse_from(["arid", "--workers", value.as_str()]).unwrap();
+
+            assert_eq!(cli.workers, workers);
+        }
     }
 
     #[test]
@@ -684,6 +697,7 @@ mod tests {
         let help = Cli::command().render_long_help().to_string();
         assert!(help.contains("--workers <N|auto>"));
         assert!(help.contains("automatic selection capped at 4"));
+        assert!(help.contains("[default: auto]"));
     }
 
     #[test]
