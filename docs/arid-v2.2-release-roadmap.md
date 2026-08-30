@@ -707,21 +707,21 @@ The beta is feature-frozen, real-world output is useful and legible, machine con
 
 **Goal:** qualify one corrected build believed ready for stable `2.2.0` without further product-code changes.
 
-**Status:** Required.
+**Status:** Complete.
 
 ### Decision record
 
 The beta product itself satisfied every stabilization gate without a product, packaging, compatibility, deterministic-output, machine-contract, Action-implementation, or platform correction.
 
-An RC is nevertheless required because beta qualification identified and corrected a production release-workflow assertion gap after `v2.2.0-beta.1` was published. The corrected workflow now verifies all three v2.2 Action summary outputs and preserves the job identity expected by release qualification.
+An RC was nevertheless required because beta qualification identified and corrected a production release-workflow assertion gap after `v2.2.0-beta.1` was published. The corrected workflow verifies all three v2.2 Action summary outputs and preserves the job identity expected by release qualification.
 
-The release qualification harness accepts RC and stable releases, requires a qualified RC before stable promotion, and requires the RC-to-stable repository delta to be the exact managed metadata transition. Because `.github/workflows/release.yml` changed after the beta tag, direct beta-to-stable promotion would not satisfy that invariant.
+The release qualification harness requires a qualified RC before stable promotion and requires the RC-to-stable repository delta to be the exact managed metadata transition. Because `.github/workflows/release.yml` changed after the beta tag, direct beta-to-stable promotion would not have satisfied that invariant.
 
-The RC therefore freezes the already-qualified beta product together with the corrected production release gate. No additional product scope or product-code change is planned.
+The RC therefore froze the already-qualified beta product together with the corrected production release gate. No additional product scope or product-code change was introduced.
 
 ### Qualification
 
-The RC qualification MUST include:
+The RC qualification included:
 
 - supported platform release workflow;
 - exact PyPI/standalone smoke;
@@ -735,15 +735,36 @@ The RC qualification MUST include:
 - release benchmark qualification;
 - release-note/metadata checks.
 
+### Qualification evidence
+
+- `v2.2.0-rc.1` points to `c9add42cdbe643ee5be472f516e3d8850ef293f5`.
+- Production Release workflow run `33298547323` completed successfully.
+- All five supported native build targets passed.
+- GitHub prerelease publication and exact PyPI `2.2.0rc1` publication passed.
+- Published Linux aarch64 verification passed.
+- The corrected `Verify published GitHub Action` job passed, including the new v2.2 summary-output assertions.
+- The tagged RC source passed formatting, locked tests, Clippy with warnings denied, and repository diff checks.
+- Published standalone and exact PyPI artifacts both passed `validation/v2.2.sh`.
+- Published standalone and PyPI real-world validation passed.
+- Published standalone/PyPI validation JSON was byte-equivalent.
+- Release benchmarks passed.
+- Pydantic measured `219.46x` faster than Pylint.
+- Polaris measured `251.64x` faster than Pylint.
+- The qualification harness reported `QUALIFICATION: PASS`.
+
 ### Gate
 
 The RC passes complete qualification and is acceptable for stable promotion with no product-code changes.
+
+**Gate result:** PASS.
 
 ---
 
 ## Phase 10 — Stable promotion
 
 **Goal:** promote the final qualified prerelease to `2.2.0`.
+
+**Status:** Complete.
 
 ### Rules
 
@@ -753,13 +774,43 @@ The RC passes complete qualification and is acceptable for stable promotion with
 - Qualified-prerelease-to-stable repository delta contains only expected release metadata/documentation changes.
 - Published stable artifacts receive final contract qualification.
 
+### Qualification evidence
+
+- Qualified RC `v2.2.0-rc.1` points to `c9add42cdbe643ee5be472f516e3d8850ef293f5`.
+- Stable `v2.2.0` points to `85b186f6c24600df69c272ec0911ddf25f64184c`.
+- The RC-to-stable repository delta contained only the six release-managed files:
+  - `Cargo.toml`
+  - `Cargo.lock`
+  - `pyproject.toml`
+  - `README.md`
+  - `action.yml`
+  - `docs/arid-v2.2-release-roadmap.md`
+- The stable transition was reproduced by `release.sh` and matched the tagged stable metadata byte-for-byte.
+- Production Release workflow run `33300911077` completed successfully.
+- All five supported native build targets passed.
+- Exact PyPI `arid==2.2.0` publication passed.
+- The GitHub stable release was published with all five supported standalone assets.
+- Published Linux aarch64 verification passed.
+- Published GitHub Action verification passed with the corrected v2.2 summary-output assertions.
+- Published Linux x86-64 standalone smoke passed.
+- Exact stable PyPI installation and smoke passed.
+- Stable qualification reused the fully qualified RC rather than rerunning the unchanged benchmark and real-world campaigns.
+- Stable qualification reported:
+  - base RC `v2.2.0-rc.1` — PASS
+  - RC-to-stable delta — METADATA ONLY
+  - `QUALIFICATION: PASS`
+
 ### Gate
 
-`2.2.0` is published and installable on supported targets, GitHub assets are complete, PyPI is correct, `summary-v1` and human summary smoke checks pass from published artifacts, Action stable pin works, and stable qualification passes.
+`2.2.0` is published and installable on supported targets, GitHub assets are complete, PyPI is correct, the published Action stable pin works, and stable qualification passes.
+
+**Gate result:** PASS.
 
 ---
 
 ## Phase 11 — Closeout
+
+**Status:** Complete.
 
 **Goal:** record the actual v2.2 release outcome and leave the repository in a fully closed stable state.
 
@@ -777,11 +828,53 @@ The RC passes complete qualification and is acceptable for stable promotion with
 - Confirm no committed v2.2 product work remains unresolved.
 - Leave deferred ideas as future product decisions rather than unfinished v2.2 scope.
 
+### Closeout evidence
+
+Published release sequence:
+
+- `v2.2.0-alpha.1` → `f5cf63c82b7bf5c839e78517e286df7f2f6822d6`
+- `v2.2.0-beta.1` → `af35957c8169284792b4c4f9bce9fe1fce65b1d2`
+- `v2.2.0-rc.1` → `c9add42cdbe643ee5be472f516e3d8850ef293f5`
+- `v2.2.0` → `85b186f6c24600df69c272ec0911ddf25f64184c`
+
+Final qualification state:
+
+- alpha published-artifact qualification — PASS;
+- beta real-world stabilization — PASS;
+- published-to-published 2.1 → beta performance qualification — PASS with no material regression;
+- RC full published-artifact qualification — PASS;
+- RC Pydantic/Pylint performance — `219.46x`;
+- RC Polaris/Pylint performance — `251.64x`;
+- stable production workflow — PASS;
+- stable GitHub release — PASS;
+- stable PyPI release — PASS;
+- published stable Action verification — PASS;
+- stable RC-to-release metadata proof — PASS;
+- stable qualification — PASS.
+
+Release-process outcome:
+
+- the only post-beta executable-repository correction was stronger production verification for the three new v2.2 Action summary outputs;
+- that correction changed no detector, package, machine-contract, or Action implementation behavior;
+- the corrected gate was frozen and fully qualified through `v2.2.0-rc.1`;
+- stable promotion then contained only the exact managed `release.sh` metadata transition.
+
+Product/repository outcome:
+
+- Rust `1.97.1` and the pinned formatting/toolchain policy remained reproducible through release qualification;
+- `docs/releases/v2.2.0.md` reflects the shipped stable behavior;
+- README reports Stable and documents the shipped v2.2 summary, machine, Action, and performance behavior;
+- `main` contains the stable release metadata and complete v2.2 history;
+- no committed v2.2 product work remains unresolved;
+- out-of-scope and deferred ideas remain future product decisions rather than unfinished v2.2 work.
+
 ### Gate
 
 The roadmap accurately describes the shipped release, stable qualification is recorded, and the following statement is true:
 
 > **Arid 2.2 preserves the focused exact detector while turning its existing duplicate evidence into a concise, deterministic summary that developers can understand at a glance and tools or coding agents can consume without parsing every finding.**
+
+**Gate result:** PASS.
 
 ---
 
@@ -812,3 +905,5 @@ published artifacts pass established release qualification
 ```
 
 No additional feature is required merely because it might be useful in a future 2.x release.
+
+**Completion result:** PASS.
