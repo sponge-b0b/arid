@@ -181,6 +181,11 @@ def derive_summary(
     context = {"executable": 0, "declarative": 0, "mixed": 0}
     scope = {"function": 0, "module": 0, "class": 0, "mixed": 0}
     distribution = {"cross_file": 0, "same_file": 0, "hybrid": 0}
+    distribution_keys = {
+        "cross-file": "cross_file",
+        "same-file": "same_file",
+        "hybrid": "hybrid",
+    }
     hotspot_counts: dict[str, list[int]] = {}
     occurrences = 0
 
@@ -196,12 +201,13 @@ def derive_summary(
                 raise ValueError(f"unsupported context {finding_context!r}")
             if finding_scope not in scope:
                 raise ValueError(f"unsupported scope {finding_scope!r}")
-            if finding_distribution not in distribution:
+            distribution_key = distribution_keys.get(finding_distribution)
+            if distribution_key is None:
                 raise ValueError(f"unsupported distribution {finding_distribution!r}")
 
             context[finding_context] += 1
             scope[finding_scope] += 1
-            distribution[finding_distribution] += 1
+            distribution[distribution_key] += 1
 
             locations = finding["locations"]
             finding_occurrences = finding["occurrences"]
