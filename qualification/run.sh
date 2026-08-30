@@ -107,6 +107,12 @@ case "$BASE_VERSION" in
     2.0.*)
         RELEASE_ROADMAP="docs/arid-v2-release-roadmap.md"
         ;;
+    2.1.*)
+        RELEASE_ROADMAP="docs/arid-v2.1-release-roadmap.md"
+        ;;
+    2.2.*)
+        RELEASE_ROADMAP="docs/arid-v2.2-release-roadmap.md"
+        ;;
     *)
         die "no qualification release roadmap configured for version: $VERSION"
         ;;
@@ -120,7 +126,7 @@ RELEASE_METADATA_FILES=(
     "$RELEASE_ROADMAP"
 )
 
-if [[ "$BASE_VERSION" == 2.0.* ]]; then
+if [[ "$BASE_VERSION" == 2.* ]]; then
     RELEASE_METADATA_FILES+=(action.yml)
 fi
 
@@ -182,6 +188,14 @@ if [[ "$RELEASE_KIND" == "rc" ]]; then
         2.0.*)
             [[ -x "$ROOT_DIR/validation/v2.sh" ]] ||
                 die "required executable not found: validation/v2.sh"
+            ;;
+        2.1.*)
+            [[ -x "$ROOT_DIR/validation/v2.1.sh" ]] ||
+                die "required executable not found: validation/v2.1.sh"
+            ;;
+        2.2.*)
+            [[ -x "$ROOT_DIR/validation/v2.2.sh" ]] ||
+                die "required executable not found: validation/v2.2.sh"
             ;;
     esac
 fi
@@ -383,7 +397,7 @@ verify_release_workflow() {
     [[ "$run_conclusion" == "success" ]] ||
         die "release workflow did not succeed: run $RELEASE_RUN_ID ($run_conclusion)"
 
-    if [[ "$BASE_VERSION" == 1.2.* || "$BASE_VERSION" == 2.0.* ]]; then
+    if [[ "$BASE_VERSION" == 1.2.* || "$BASE_VERSION" == 2.* ]]; then
         jobs_json="$(
             gh api \
                 -X GET \
@@ -400,7 +414,7 @@ verify_release_workflow() {
 
         pass "published Linux aarch64 workflow verification"
 
-        if [[ "$BASE_VERSION" == 2.0.* ]]; then
+        if [[ "$BASE_VERSION" == 2.* ]]; then
             jq \
                 -e \
                 'any(.jobs[]; .name == "Verify published GitHub Action" and .conclusion == "success")' \
@@ -449,7 +463,7 @@ verify_github_release() {
         >/dev/null ||
         die "GitHub release is missing $LINUX_ARCHIVE"
 
-    if [[ "$BASE_VERSION" == 1.2.* || "$BASE_VERSION" == 2.0.* ]]; then
+    if [[ "$BASE_VERSION" == 1.2.* || "$BASE_VERSION" == 2.* ]]; then
         jq \
             -e \
             'any(.assets[]; .name == "arid-linux-aarch64.tar.gz")' \
@@ -757,6 +771,14 @@ run_targeted_validation() {
             validation_script="$RELEASE_WORKTREE/validation/v2.sh"
             validation_name="v2"
             ;;
+        2.1.*)
+            validation_script="$RELEASE_WORKTREE/validation/v2.1.sh"
+            validation_name="v2.1"
+            ;;
+        2.2.*)
+            validation_script="$RELEASE_WORKTREE/validation/v2.2.sh"
+            validation_name="v2.2"
+            ;;
         *)
             return 0
             ;;
@@ -1019,7 +1041,7 @@ write_report() {
         echo "pypi_binary_sha256=$PYPI_SHA256"
         echo "pypi_arid_version=$PYPI_ARID_VERSION"
 
-        if [[ "$BASE_VERSION" == 2.0.* ]]; then
+        if [[ "$BASE_VERSION" == 2.* ]]; then
             echo "published_action_verification=PASS"
         fi
 
@@ -1033,6 +1055,12 @@ write_report() {
             elif [[ "$BASE_VERSION" == 2.0.* ]]; then
                 echo "standalone_v2_validation=PASS"
                 echo "pypi_v2_validation=PASS"
+            elif [[ "$BASE_VERSION" == 2.1.* ]]; then
+                echo "standalone_v2_1_validation=PASS"
+                echo "pypi_v2_1_validation=PASS"
+            elif [[ "$BASE_VERSION" == 2.2.* ]]; then
+                echo "standalone_v2_2_validation=PASS"
+                echo "pypi_v2_2_validation=PASS"
             fi
 
             echo "standalone_validation=$STANDALONE_RESULTS"
@@ -1095,7 +1123,7 @@ printf '  %-28s %s\n' \
     "Standalone smoke:" "PASS" \
     "PyPI smoke:" "PASS"
 
-if [[ "$BASE_VERSION" == 2.0.* ]]; then
+if [[ "$BASE_VERSION" == 2.* ]]; then
     printf '  %-28s %s\n' \
         "Published GitHub Action:" "PASS"
 fi
