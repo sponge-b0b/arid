@@ -2,7 +2,7 @@
 
 **Product:** Arid  
 **Stable target:** `2.2.0`  
-**Current phase:** Integration and pre-publication validation
+**Current phase:** Alpha publication
 
 ## Purpose
 
@@ -408,7 +408,7 @@ Action unit/integration tests pass, parity fixtures cover repeated/hybrid locati
 
 ## Phase 6 — Integration, documentation, toolchain reproducibility, and pre-publication validation
 
-**Status:** In progress.
+**Status:** Complete.
 
 **Goal:** prove the complete v2.2 product contract before publishing prereleases and repair the release-tooling reproducibility issue identified during v2.1 closeout.
 
@@ -470,9 +470,58 @@ performance regression
 reproducible formatting gate
 ```
 
+### Qualification evidence
+
+Pre-publication qualification completed against the `v2.2` branch after all intended product work was integrated.
+
+Repository/source qualification:
+
+- Rust `1.97.1`, rustfmt `1.9.0-stable`, and Clippy `0.1.97` were pinned and verified.
+- `cargo fmt --all -- --check` passed.
+- the complete locked Rust test suite passed.
+- Clippy passed across all targets/features with `-D warnings`.
+- Action and release Python unit tests passed.
+- the locked release build passed.
+- `validation/v2.2.sh` passed.
+- release metadata dry-run for `2.2.0-alpha.1` passed.
+- branch-wide diff and clean-tree checks passed.
+
+Real-world regression qualification:
+
+- Black passed.
+- Django passed, including deterministic output across workers `1`, `2`, `4`, and `8`.
+- Mypy passed.
+- Rich passed.
+- Unicode, spaces, non-ASCII filename, relative-path, and source-location cases passed.
+- no detector-behavior regression requiring a v2.2 product correction was identified.
+
+Stable `2.1.0` → v2.2 candidate performance qualification used two Hyperfine passes per corpus with reversed command order, three warmups per pass, and ten measured runs per pass:
+
+| Corpus | 2.1 implicit | v2.2 implicit | v2.2 `--workers 1` | v2.2 `--workers auto` | implicit change |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| requests | 17.0 ms | 16.4 ms | 17.2 ms | 15.0 ms | -3.6% |
+| pydantic | 251.2 ms | 134.9 ms | 244.9 ms | 132.2 ms | -46.3% |
+| polaris | 521.4 ms | 303.2 ms | 518.8 ms | 305.9 ms | -41.8% |
+| duplicate-heavy | 61.6 ms | 39.2 ms | 62.1 ms | 42.1 ms | -36.3% |
+
+The explicit v2.2 serial path remained effectively at stable 2.1 performance while the new bounded automatic default materially improved medium, large, and duplicate-heavy workloads.
+
+Release-workflow qualification:
+
+- the non-publishing `Release` workflow passed from `v2.2`;
+- release verification passed;
+- Linux x86-64 passed;
+- Linux aarch64 passed;
+- macOS aarch64 passed;
+- macOS x86-64 passed;
+- Windows x86-64 passed;
+- tag-gated PyPI and GitHub publication did not execute.
+
 ### Gate
 
 All intended 2.2 behavior is code complete, documentation is sufficient for prerelease users, formatting is reproducible, pre-publication validation passes, and no out-of-scope product behavior has entered the release.
+
+**Gate result:** PASS.
 
 ---
 
