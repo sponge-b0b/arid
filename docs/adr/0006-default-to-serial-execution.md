@@ -1,5 +1,6 @@
 ---
-status: accepted
+status: superseded
+superseded_by: docs/arid-v2.2-adaptive-parallelism-amendment.md
 ---
 
 # Default to Serial Execution
@@ -46,3 +47,9 @@ Making parallelism opt-in:
 - preserves Arid's principle of adding complexity only when it provides measured value
 
 Worker count may affect runtime but must never affect findings, grouping, canonical occurrence selection, metrics, structural metadata, or output ordering.
+
+## Superseded
+
+Arid v2.2 changes the implicit worker default to the existing bounded `auto` policy. The original serial path remains available through explicit `--workers 1`, and all determinism requirements from this ADR remain in force.
+
+See `docs/arid-v2.2-adaptive-parallelism-amendment.md` for the current worker-selection contract and rationale.
