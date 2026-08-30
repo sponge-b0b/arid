@@ -59,11 +59,8 @@ fn execute(cli: &Cli) -> Result<RunResult, OperationalError> {
             format!("failed to discover Python files: {error}"),
         )
     })?;
-    let report_targets = resolve_administrative_json_targets(
-        &cli.report,
-        &discovered,
-        "--suppression-status",
-    )?;
+    let report_targets =
+        resolve_administrative_json_targets(&cli.report, &discovered, "--suppression-status")?;
     let inputs = build_source_inputs(discovered, None);
     let prepared = prepare_sources_for_audit(
         inputs,
@@ -84,11 +81,8 @@ fn execute(cli: &Cli) -> Result<RunResult, OperationalError> {
         )
     })?;
 
-    let exit_status = apply_fail_on_stale(
-        ExitStatus::Success,
-        status.has_stale(),
-        cli.fail_on_stale,
-    );
+    let exit_status =
+        apply_fail_on_stale(ExitStatus::Success, status.has_stale(), cli.fail_on_stale);
     let json_output = if cli.output_format() == OutputFormat::Json || !report_targets.is_empty() {
         Some(render_suppression_status_json(&status).map_err(|error| {
             OperationalError::new(
@@ -214,24 +208,18 @@ fn prepare_source_for_audit(
         SourceInput::Virtual { path, source } => (path, source),
     };
 
-    let (file, suppressions) = prepare_file_with_mode(
-        path.clone(),
-        source,
-        options,
-        SuppressionMode::Audit,
-    )
-    .map_err(|error| {
-        OperationalError::new(
-            ErrorKind::Parse,
-            format!("failed to prepare Python source: {error}"),
-        )
-        .with_project_path(&path, project_root)
-    })?;
+    let (file, suppressions) =
+        prepare_file_with_mode(path.clone(), source, options, SuppressionMode::Audit).map_err(
+            |error| {
+                OperationalError::new(
+                    ErrorKind::Parse,
+                    format!("failed to prepare Python source: {error}"),
+                )
+                .with_project_path(&path, project_root)
+            },
+        )?;
 
-    Ok(AuditPreparedFile {
-        file,
-        suppressions,
-    })
+    Ok(AuditPreparedFile { file, suppressions })
 }
 
 fn scan_paths(cli: &Cli) -> Vec<PathBuf> {
@@ -392,8 +380,7 @@ mod tests {
 
         normal_cli.no_ignore_files = true;
         let overridden = run(&normal_cli);
-        let overridden_json: serde_json::Value =
-            serde_json::from_str(overridden.stdout()).unwrap();
+        let overridden_json: serde_json::Value = serde_json::from_str(overridden.stdout()).unwrap();
         assert_eq!(overridden_json["files"], 2);
         assert_eq!(overridden_json["summary"]["total"], 1);
         assert_eq!(overridden_json["summary"]["stale"], 1);

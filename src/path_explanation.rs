@@ -281,14 +281,8 @@ fn explain_path(
     let mut exclusion_reasons = Vec::new();
 
     for root in candidate_roots {
-        let reasons = traversal_exclusion_reasons(
-            &root.path,
-            &target,
-            kind,
-            settings,
-            project_root,
-            policy,
-        )?;
+        let reasons =
+            traversal_exclusion_reasons(&root.path, &target, kind, settings, project_root, policy)?;
 
         if reasons.is_empty() {
             return Ok(PathExplanation {
@@ -422,7 +416,8 @@ fn traversal_exclusion_reasons(
         reasons.push(PathReason::AridExclude);
     }
 
-    let actual_ignored = incremental_ignored(root, &target.path, kind.is_dir(), settings.hidden, policy)?;
+    let actual_ignored =
+        incremental_ignored(root, &target.path, kind.is_dir(), settings.hidden, policy)?;
 
     if actual_ignored {
         let hidden_ignored = incremental_ignored(
@@ -479,13 +474,16 @@ fn traversal_symlink_reason(
 
     for component in relative.components() {
         current.push(component.as_os_str());
-        let metadata = fs::symlink_metadata(&current).map_err(|error| metadata_error(&current, error))?;
+        let metadata =
+            fs::symlink_metadata(&current).map_err(|error| metadata_error(&current, error))?;
         if metadata.file_type().is_symlink() {
-            return Ok(Some(if current == target && target_kind == PathKind::Directory {
-                PathReason::SymlinkDirectory
-            } else {
-                PathReason::SymlinkTraversal
-            }));
+            return Ok(Some(
+                if current == target && target_kind == PathKind::Directory {
+                    PathReason::SymlinkDirectory
+                } else {
+                    PathReason::SymlinkTraversal
+                },
+            ));
         }
     }
 
@@ -530,7 +528,8 @@ fn inspect_path(path: &Path, require_kind: bool) -> Result<InspectedPath, Operat
             format!("failed to resolve path {}: {error}", path.display()),
         )
     })?;
-    let symlink_metadata = fs::symlink_metadata(&path).map_err(|error| metadata_error(&path, error))?;
+    let symlink_metadata =
+        fs::symlink_metadata(&path).map_err(|error| metadata_error(&path, error))?;
     let symlink = symlink_metadata.file_type().is_symlink();
     let metadata = if symlink {
         fs::metadata(&path).map_err(|error| metadata_error(&path, error))?
@@ -823,10 +822,7 @@ mod tests {
 
         let value: serde_json::Value = serde_json::from_str(result.stdout()).unwrap();
         assert_eq!(value["decision"], "exclude");
-        assert_eq!(
-            value["reasons"],
-            serde_json::json!(["outside-scan-roots"])
-        );
+        assert_eq!(value["reasons"], serde_json::json!(["outside-scan-roots"]));
     }
 
     #[test]
@@ -853,10 +849,7 @@ mod tests {
         assert_eq!(value["kind"], "directory");
         assert_eq!(value["explicit"], true);
         assert_eq!(value["decision"], "include");
-        assert_eq!(
-            value["reasons"],
-            serde_json::json!(["explicit-directory"])
-        );
+        assert_eq!(value["reasons"], serde_json::json!(["explicit-directory"]));
     }
 
     #[test]
@@ -943,9 +936,6 @@ mod tests {
 
         let value: serde_json::Value = serde_json::from_str(result.stdout()).unwrap();
         assert_eq!(value["decision"], "exclude");
-        assert_eq!(
-            value["reasons"],
-            serde_json::json!(["symlink-traversal"])
-        );
+        assert_eq!(value["reasons"], serde_json::json!(["symlink-traversal"]));
     }
 }

@@ -27,12 +27,7 @@ pub fn prepare_file(
     source: String,
     options: NormalizationOptions,
 ) -> Result<PreparedFile, PrepareError> {
-    let (file, _) = prepare_file_with_mode(
-        path.into(),
-        source,
-        options,
-        SuppressionMode::Apply,
-    )?;
+    let (file, _) = prepare_file_with_mode(path.into(), source, options, SuppressionMode::Apply)?;
 
     Ok(file)
 }
@@ -673,9 +668,8 @@ fourth()
 
     #[test]
     fn inline_disable_takes_effect_after_its_physical_line() {
-        let file = prepare(
-            "before()\nkept()  # arid: disable\nhidden()\n# arid: enable\nafter()\n",
-        );
+        let file =
+            prepare("before()\nkept()  # arid: disable\nhidden()\n# arid: enable\nafter()\n");
 
         assert_eq!(texts(&file), vec!["before()", "kept()", "after()"]);
         assert_eq!(
@@ -704,10 +698,7 @@ fourth()
             texts(&file),
             vec!["first()", "hidden()", "also_hidden()", "last()"]
         );
-        assert_eq!(
-            file.segments,
-            vec![NormalizedSegment { start: 0, end: 4 }]
-        );
+        assert_eq!(file.segments, vec![NormalizedSegment { start: 0, end: 4 }]);
         assert_eq!(
             suppressions,
             vec![SuppressionRegion {

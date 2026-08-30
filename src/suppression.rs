@@ -118,18 +118,18 @@ pub(crate) enum SuppressionAuditError {
         "duplicate occurrence for file {file} at normalized range {start}..{end} \
          cannot be mapped to source lines"
     )]
-    InvalidOccurrence {
-        file: u32,
-        start: u32,
-        end: u32,
-    },
+    InvalidOccurrence { file: u32, start: u32, end: u32 },
 }
 
 pub(crate) fn derive_suppression_regions(
     source: &str,
     events: &[SuppressionEvent],
 ) -> Vec<SuppressionRegion> {
-    debug_assert!(events.windows(2).all(|pair| pair[0].offset <= pair[1].offset));
+    debug_assert!(
+        events
+            .windows(2)
+            .all(|pair| pair[0].offset <= pair[1].offset)
+    );
 
     let mut regions = Vec::new();
     let mut open_disable = None;
@@ -217,9 +217,7 @@ pub(crate) fn build_suppression_status(
 
         for (region_index, region) in source_regions.iter().enumerate() {
             let (end_line, termination) = match region.end {
-                SuppressionEnd::Enable { line } => {
-                    (Some(line), SuppressionTermination::Enable)
-                }
+                SuppressionEnd::Enable { line } => (Some(line), SuppressionTermination::Enable),
                 SuppressionEnd::Eof => (None, SuppressionTermination::Eof),
             };
 
@@ -248,17 +246,16 @@ pub(crate) fn build_suppression_status(
             })
     });
 
-    let summary = regions.iter().fold(
-        SuppressionSummary::default(),
-        |mut summary, region| {
+    let summary = regions
+        .iter()
+        .fold(SuppressionSummary::default(), |mut summary, region| {
             summary.total += 1;
             match region.status {
                 SuppressionStatusKind::Active => summary.active += 1,
                 SuppressionStatusKind::Stale => summary.stale += 1,
             }
             summary
-        },
-    );
+        });
 
     Ok(SuppressionStatus {
         schema_version: SUPPRESSION_STATUS_SCHEMA_VERSION,
@@ -347,8 +344,12 @@ pub(crate) fn render_suppression_status_text(status: &SuppressionStatus) -> Stri
     writeln!(&mut output, "Files: {}", status.files).expect("writing to String cannot fail");
     writeln!(&mut output, "Total suppressions: {}", status.summary.total)
         .expect("writing to String cannot fail");
-    writeln!(&mut output, "Active suppressions: {}", status.summary.active)
-        .expect("writing to String cannot fail");
+    writeln!(
+        &mut output,
+        "Active suppressions: {}",
+        status.summary.active
+    )
+    .expect("writing to String cannot fail");
     writeln!(&mut output, "Stale suppressions: {}", status.summary.stale)
         .expect("writing to String cannot fail");
 
@@ -409,10 +410,7 @@ mod tests {
         )
         .unwrap();
 
-        AuditPreparedFile {
-            file,
-            suppressions,
-        }
+        AuditPreparedFile { file, suppressions }
     }
 
     fn settings() -> Settings {
@@ -632,10 +630,7 @@ mod tests {
     #[test]
     fn json_has_versioned_deterministic_shape() {
         let status = build_suppression_status(
-            vec![audit_file(
-                "project/a.py",
-                "# arid: disable\nunique = 1\n",
-            )],
+            vec![audit_file("project/a.py", "# arid: disable\nunique = 1\n")],
             &settings(),
             Path::new("project"),
             true,

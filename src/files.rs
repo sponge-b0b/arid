@@ -329,12 +329,7 @@ mod tests {
         settings: &Settings,
         project_root: &Path,
     ) -> Result<Vec<PathBuf>, DiscoveryError> {
-        discover_python_files(
-            paths,
-            settings,
-            project_root,
-            DiscoveryPolicy::new(false),
-        )
+        discover_python_files(paths, settings, project_root, DiscoveryPolicy::new(false))
     }
 
     #[test]
@@ -562,12 +557,9 @@ mod tests {
             ..Settings::default()
         };
 
-        let files = discover_without_ignore_files(
-            &[temp.path().to_path_buf()],
-            &settings,
-            temp.path(),
-        )
-        .unwrap();
+        let files =
+            discover_without_ignore_files(&[temp.path().to_path_buf()], &settings, temp.path())
+                .unwrap();
 
         assert_eq!(files, vec![included]);
     }
@@ -702,7 +694,12 @@ mod tests {
         let link = temp.path().join("linked");
         symlink(&target, &link).unwrap();
 
-        let files = discover(std::slice::from_ref(&link), &Settings::default(), temp.path()).unwrap();
+        let files = discover(
+            std::slice::from_ref(&link),
+            &Settings::default(),
+            temp.path(),
+        )
+        .unwrap();
 
         assert!(files.is_empty());
     }
