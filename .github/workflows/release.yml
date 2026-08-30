@@ -385,9 +385,20 @@ jobs:
           standalone-smoke/arid --help >/dev/null
 
   verify-action:
-    name: Verify published GitHub Action
-    if: startsWith(github.ref, 'refs/tags/v2.')
+    name: Verify GitHub Action outputs
+    if: >-
+      always() &&
+      needs.build.result == 'success' &&
+      (
+        github.event_name == 'workflow_dispatch' ||
+        (
+          startsWith(github.ref, 'refs/tags/v2.') &&
+          needs.publish-pypi.result == 'success' &&
+          needs.publish-github.result == 'success'
+        )
+      )
     needs:
+      - build
       - publish-pypi
       - publish-github
     runs-on: ubuntu-latest
@@ -467,6 +478,9 @@ jobs:
           DUPLICATE_LINES: ${{ steps.arid.outputs.duplicate-lines }}
           DUPLICATION_PERCENT: ${{ steps.arid.outputs.duplication-percent }}
           FILES: ${{ steps.arid.outputs.files }}
+          OCCURRENCES: ${{ steps.arid.outputs.occurrences }}
+          FILES_WITH_DUPLICATES: ${{ steps.arid.outputs.files-with-duplicates }}
+          SUMMARY_JSON: ${{ steps.arid.outputs.summary-json }}
           COMPLETE: ${{ steps.arid.outputs.complete }}
           SCAN_EXIT_CODE: ${{ steps.arid.outputs.scan-exit-code }}
         shell: bash
@@ -474,15 +488,80 @@ jobs:
           test "$TOOL_VERSION" = "$ARID_VERSION"
           test "$HAS_FINDINGS" = "true"
           test "$DUPLICATE_GROUPS" = "1"
-          test "$DUPLICATE_LINES" -gt 0
+          test "$DUPLICATE_LINES" = "5"
           test "$FILES" = "2"
+          test "$OCCURRENCES" = "2"
+          test "$FILES_WITH_DUPLICATES" = "2"
           test "$COMPLETE" = "true"
           test "$SCAN_EXIT_CODE" = "1"
 
           python3 - <<'PY'
+          import json
           import os
 
           value = float(os.environ["DUPLICATION_PERCENT"])
-          if value <= 0:
-              raise SystemExit("expected positive duplication percentage")
+          if value != 50.0:
+              raise SystemExit(
+                  f"unexpected duplication percentage: {value}"
+              )
+
+          summary = json.loads(os.environ["SUMMARY_JSON"])
+
+          expected = {
+              "schema_version": 1,
+              "tool_version": os.environ["ARID_VERSION"],
+              "complete": True,
+              "files": 2,
+              "files_with_duplicates": 2,
+              "duplicate_groups": 1,
+              "occurrences": 2,
+              "duplicate_lines": 5,
+              "duplication_percent": 50.0,
+          }
+
+          for key, expected_value in expected.items():
+              actual = summary[key]
+              if actual != expected_value:
+                  raise SystemExit(
+                      f"summary-json {key}: "
+                      f"expected {expected_value!r}, got {actual!r}"
+                  )
+
+          if summary["context"] != {
+              "executable": 1,
+              "declarative": 0,
+              "mixed": 0,
+          }:
+              raise SystemExit("unexpected summary-json Context counts")
+
+          if summary["scope"] != {
+              "function": 1,
+              "module": 0,
+              "class": 0,
+              "mixed": 0,
+          }:
+              raise SystemExit("unexpected summary-json Scope counts")
+
+          if summary["distribution"] != {
+              "cross_file": 1,
+              "same_file": 0,
+              "hybrid": 0,
+          }:
+              raise SystemExit(
+                  "unexpected summary-json Distribution counts"
+              )
+
+          if summary["hotspots"] != [
+              {
+                  "path": "action-e2e/left.py",
+                  "groups": 1,
+                  "occurrences": 1,
+              },
+              {
+                  "path": "action-e2e/right.py",
+                  "groups": 1,
+                  "occurrences": 1,
+              },
+          ]:
+              raise SystemExit("unexpected summary-json hotspots")
           PY
