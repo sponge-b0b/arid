@@ -10,7 +10,7 @@ release.sh
 release workflow
     ↓
 qualification/run.sh
-    ├── validation/v1.1.sh
+    ├── validation/<release-series>.sh
     ├── validation/run.sh
     └── benchmarks/run.sh
 ```
@@ -27,11 +27,11 @@ The qualification harness MUST:
 - verify the corresponding GitHub release
 - verify the exact published PyPI package
 - verify the published Linux x86-64 standalone artifact
-- run focused v1.1 integration validation against both published 1.1 RC executables
+- run release-series targeted integration validation against both published RC executables when that series provides a targeted suite
 - run the real-world validation campaign against published RC artifacts
 - compare standalone and PyPI validation JSON byte-for-byte
 - benchmark the exact published standalone RC artifact
-- enforce the v1 performance target
+- enforce the release performance target
 - preserve qualification evidence locally
 - prevent stable promotion without a qualified RC
 - prevent stable promotion when product code changed after the qualified RC
@@ -143,7 +143,7 @@ clean PyPI installation
     ↓
 PyPI smoke test
     ↓
-v1.1 targeted integration validation, when qualifying a 1.1 RC
+release-series targeted integration validation, when available
     ↓
 standalone real-world validation
     ↓
@@ -198,9 +198,13 @@ Release metadata files are selected by release series. The active roadmap mappin
 ```text
 1.0.x  → docs/arid-v1-release-roadmap.md
 1.1.x  → docs/arid-v1.1-release-roadmap.md
+1.2.x  → docs/arid-v1.2-release-roadmap.md
+2.0.x  → docs/arid-v2-release-roadmap.md
+2.1.x  → docs/arid-v2.1-release-roadmap.md
+2.2.x  → docs/arid-v2.2-release-roadmap.md
 ```
 
-The historical v1 roadmap is therefore not part of a 1.1 RC-to-stable metadata transition.
+Only the roadmap for the release series being qualified participates in that RC-to-stable metadata transition.
 
 ### Production release workflow
 
@@ -220,6 +224,8 @@ conclusion=success
 This proves that the production release workflow associated with the release tag succeeded.
 
 The production workflow remains responsible for native build and package smoke tests across its platform matrix.
+
+For 1.2 and all v2 releases, qualification additionally requires the production workflow's published Linux aarch64 verification job to pass. For v2 releases it also requires the published GitHub Action verification job to pass.
 
 Qualification does not duplicate those platform-specific jobs locally.
 
@@ -280,28 +286,25 @@ The installed executable MUST:
 
 No existing local Python environment is reused.
 
-### V1.1 targeted integration validation
+### Release-series targeted integration validation
 
-When the release being qualified belongs to the 1.1 series, both published executables must pass:
+When a release series provides a targeted integration suite, both published executables must pass that exact series suite before the larger real-world campaign.
 
-```bash
-validation/v1.1.sh <arid-executable>
+Current mappings are:
+
+```text
+1.1.x  → validation/v1.1.sh
+1.2.x  → validation/v1.2.sh
+2.0.x  → validation/v2.sh
+2.1.x  → validation/v2.1.sh
+2.2.x  → validation/v2.2.sh
 ```
 
-The targeted smoke runs first against the downloaded standalone executable and then against the exact PyPI-installed executable.
+The targeted suite runs first against the downloaded standalone executable and then against the exact PyPI-installed executable.
 
-It validates:
+For v2.2 this includes the inherited v2/v2.1 contracts plus rich Summary/Breakdown/Hotspots behavior, `--summary-only`, `summary-v1`, complete/incomplete behavior, baseline/focus interactions, supplemental report preservation, color/plain parity, timing exclusions, and adaptive-worker determinism.
 
-- plain and colored text behavior
-- redirected auto color
-- JSON selector compatibility
-- Markdown
-- SARIF
-- baseline creation
-- unchanged baseline enforcement
-- new duplicate debt against a baseline
-
-This gate runs before the larger real-world validation and benchmark campaign so a broken v1.1 integration surface fails qualification early.
+This gate runs before the larger real-world validation and benchmark campaign so a broken release-series integration surface fails qualification early.
 
 ### Real-world validation
 
@@ -440,7 +443,13 @@ The release-series roadmap is also permitted:
 ```text
 1.0.x  → docs/arid-v1-release-roadmap.md
 1.1.x  → docs/arid-v1.1-release-roadmap.md
+1.2.x  → docs/arid-v1.2-release-roadmap.md
+2.0.x  → docs/arid-v2-release-roadmap.md
+2.1.x  → docs/arid-v2.1-release-roadmap.md
+2.2.x  → docs/arid-v2.2-release-roadmap.md
 ```
+
+For v2 releases, `action.yml` is also managed release metadata and may change only as part of the exact `release.sh` transition.
 
 Allowing a file name alone is not sufficient.
 
@@ -521,11 +530,10 @@ Pydantic/Pylint speedup
 Polaris/Pylint speedup
 ```
 
-For a 1.1 RC, the record additionally includes:
+For release series with targeted integration validation, the record additionally includes series-specific standalone and PyPI validation PASS fields. V2 qualification records also include:
 
 ```text
-standalone_v1_1_validation=PASS
-pypi_v1_1_validation=PASS
+published_action_verification=PASS
 ```
 
 A successful stable record additionally identifies:

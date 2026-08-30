@@ -2,7 +2,7 @@
 
 **Product:** Arid  
 **Stable target:** `2.2.0`  
-**Current phase:** Real-world validation and beta stabilization
+**Current phase:** Release Candidate
 
 ## Purpose
 
@@ -606,7 +606,7 @@ A published alpha passes artifact/install validation and demonstrates the comple
 
 ## Phase 8 — Real-world validation and beta stabilization
 
-**Status:** In progress.
+**Status:** Complete.
 
 **Goal:** freeze v2.2 after real-world use and resolve prerelease defects without scope expansion.
 
@@ -629,25 +629,97 @@ A published alpha passes artifact/install validation and demonstrates the comple
 - Reconcile README/reference docs with actual beta behavior.
 - Prepare substantive stable release notes before stable-readiness qualification.
 
+### Qualification evidence
+
+Published beta boundary:
+
+- `v2.2.0-beta.1` was published from commit `af35957c8169284792b4c4f9bce9fe1fce65b1d2`;
+- the production Release workflow completed successfully;
+- all five supported standalone assets were published;
+- exact PyPI `arid==2.2.0b1` installed successfully;
+- the published Linux x86-64 standalone digest matched the GitHub release digest;
+- both standalone and PyPI artifacts passed `validation/v2.2.sh`;
+- standalone/PyPI `summary-v1` output was byte-identical;
+- standalone/PyPI report-v4 output was byte-identical.
+
+Real-world detector campaign:
+
+- Black: PASS;
+- Django: PASS;
+- mypy: PASS;
+- Rich: PASS;
+- Unicode/space/non-ASCII path cases: PASS;
+- detector behavior remained consistent with the established 2.1 expectations.
+
+Human presentation:
+
+- Summary, Breakdown, and Hotspots remained legible from small through large repositories;
+- objective hotspot ranking produced useful application-code results;
+- Rich demonstrated that generated/data-heavy paths can objectively dominate hotspots and that ordinary Arid exclusion policy produces the intended application-code view without a new heuristic;
+- `--summary-only` developer use passed;
+- semantic color was visually reviewed as restrained, readable, and semantically sensible;
+- stripping ANSI from forced-color output produced the same visible content as plain output after excluding the intentionally volatile timing footer.
+
+Machine contract and determinism:
+
+- real Django `summary-v1` validated against `schemas/summary-v1.schema.json`;
+- default, `auto`, and explicit workers 1, 2, 4, and 8 produced byte-identical `summary-v1`;
+- aggregate counts, Context, Scope, Distribution, and Hotspots were independently reproduced from report-v4;
+- timing, worker count, and color state remained excluded from `summary-v1`;
+- compact tool/agent-style consumption passed.
+
+GitHub Action:
+
+- the published beta Action executed successfully in the production release workflow;
+- beta review identified a release-process coverage gap: the workflow did not assert the new `occurrences`, `files-with-duplicates`, and `summary-json` outputs;
+- the production gate was strengthened after beta without changing Action or detector behavior;
+- non-publishing Release workflow run `33296962210` passed with all three new outputs asserted, including logical `summary-json` contents;
+- the qualification-visible job identity `Verify published GitHub Action` was preserved.
+
+Published-to-published performance:
+
+| Corpus | 2.1 implicit | 2.2 implicit | 2.2 `--workers 1` | 2.2 `--workers auto` | implicit change |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| requests | 16.9 ms | 15.4 ms | 16.3 ms | 15.6 ms | -9.1% |
+| pydantic | 239.7 ms | 129.6 ms | 237.2 ms | 126.6 ms | -45.9% |
+| polaris | 501.5 ms | 293.9 ms | 497.6 ms | 295.7 ms | -41.4% |
+| duplicate-heavy | 61.2 ms | 40.6 ms | 59.3 ms | 38.4 ms | -33.8% |
+
+No material unexplained performance regression was observed.
+
+Documentation and release state:
+
+- README behavior documentation was reconciled with beta behavior and measured performance;
+- release qualification reference documentation was reconciled with the current multi-series harness;
+- substantive stable `2.2.0` release notes were prepared before stable-readiness qualification;
+- no v2.2 product, packaging, detector, or machine-contract correction was required after beta;
+- the only post-beta executable-repository change was the release-workflow qualification correction.
+
 ### Gate
 
 The beta is feature-frozen, real-world output is useful and legible, machine contracts remain stable, detector behavior matches 2.1 expectations, Action integration is reliable, and no material unexplained performance regression remains.
+
+**Gate result:** PASS.
 
 ---
 
 ## Phase 9 — Release Candidate
 
-**Goal:** when beta stabilization requires material fixes, qualify one corrected build believed ready for stable `2.2.0` without further product-code changes.
+**Goal:** qualify one corrected build believed ready for stable `2.2.0` without further product-code changes.
 
-**Status:** Conditional.
+**Status:** Required.
 
-### Decision rule
+### Decision record
 
-An RC is required only if beta qualification causes a material product, packaging, compatibility, deterministic-output, machine-contract, Action, or platform correction that benefits from one final frozen-build qualification.
+The beta product itself satisfied every stabilization gate without a product, packaging, compatibility, deterministic-output, machine-contract, Action-implementation, or platform correction.
 
-If beta satisfies all stabilization gates without such a change, an unchanged RC is not required.
+An RC is nevertheless required because beta qualification identified and corrected a production release-workflow assertion gap after `v2.2.0-beta.1` was published. The corrected workflow now verifies all three v2.2 Action summary outputs and preserves the job identity expected by release qualification.
 
-### Qualification when required
+The release qualification harness accepts RC and stable releases, requires a qualified RC before stable promotion, and requires the RC-to-stable repository delta to be the exact managed metadata transition. Because `.github/workflows/release.yml` changed after the beta tag, direct beta-to-stable promotion would not satisfy that invariant.
+
+The RC therefore freezes the already-qualified beta product together with the corrected production release gate. No additional product scope or product-code change is planned.
+
+### Qualification
 
 The RC qualification MUST include:
 
@@ -665,7 +737,7 @@ The RC qualification MUST include:
 
 ### Gate
 
-If used, the RC passes complete qualification and is acceptable for stable promotion with no product-code changes.
+The RC passes complete qualification and is acceptable for stable promotion with no product-code changes.
 
 ---
 

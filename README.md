@@ -1072,7 +1072,18 @@ The qualifying medium and large corpora remain far above Arid's 10x performance 
 
 A paired reversed-order v1.2→v2 investigation found only low-single-digit serial overhead across the canonical corpora, with no unacceptable performance regression.
 
-See [Arid v2 performance report](docs/arid-v2-performance-report.md) for the exact methodology and results.
+For v2.2 beta stabilization, the exact published Arid 2.1.0 and `2.2.0-beta.1` Linux x86-64 standalone artifacts were compared across the canonical v2.2 corpora. Each corpus used two Hyperfine passes with reversed command order, three warmups, and ten measured runs per pass.
+
+| Corpus | 2.1 implicit | 2.2 implicit | 2.2 `--workers 1` | 2.2 `--workers auto` | implicit change |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| requests | 16.9 ms | 15.4 ms | 16.3 ms | 15.6 ms | -9.1% |
+| pydantic | 239.7 ms | 129.6 ms | 237.2 ms | 126.6 ms | -45.9% |
+| polaris | 501.5 ms | 293.9 ms | 497.6 ms | 295.7 ms | -41.4% |
+| duplicate-heavy | 61.2 ms | 40.6 ms | 59.3 ms | 38.4 ms | -33.8% |
+
+No material regression was observed. Explicit `--workers 1` remained near stable 2.1 performance, while the bounded automatic default materially improved the medium, large, and duplicate-heavy workloads.
+
+See [Arid v2 performance report](docs/arid-v2-performance-report.md) for the original v2 methodology and [Benchmarks](benchmarks/README.md) for the current reproducible benchmark tooling.
 
 ---
 
@@ -1087,8 +1098,9 @@ Arid includes dedicated tooling and documentation for release qualification, per
 - [Validation](validation/README.md)
 - [V2 release roadmap](docs/arid-v2-release-roadmap.md)
 - [V2.1 release roadmap](docs/arid-v2.1-release-roadmap.md)
+- [V2.2 release roadmap](docs/arid-v2.2-release-roadmap.md)
 
-The targeted v2.1 integration suite is `validation/v2.1.sh`; it runs the inherited v2 suite first and then validates the v2.1 maintenance, discovery, machine-contract, and timing behavior.
+The targeted v2.2 integration suite is `validation/v2.2.sh`; it runs the inherited v2.1 suite first and then validates the v2.2 summary, summary-only, machine-contract, color, timing, baseline/focus, and adaptive-worker behavior.
 
 ---
 
