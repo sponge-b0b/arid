@@ -13,3 +13,4 @@ Record one snapshot per week, ideally on the same day, to make the rolling 7-day
 | Date | Last Day | Last Week | Last Month |
 | --- | ---: | ---: | ---: |
 | 2026-08-24 | 29 | 1,282 | 2,665 |
+| 2026-08-31 | 701 | 1,632 | 4,268 |
