@@ -243,12 +243,12 @@ fn build_exclude_matcher(
 }
 
 fn is_excluded(matcher: &Gitignore, project_root: &Path, path: &Path, is_dir: bool) -> bool {
-    if !path.starts_with(project_root) {
+    let Ok(relative) = path.strip_prefix(project_root) else {
         return false;
-    }
+    };
 
     matcher
-        .matched_path_or_any_parents(path, is_dir)
+        .matched_path_or_any_parents(relative, is_dir)
         .is_ignore()
 }
 
@@ -540,6 +540,24 @@ mod tests {
         };
 
         let files = discover(&[temp.path().to_path_buf()], &settings, temp.path()).unwrap();
+
+        assert_eq!(files, vec![included]);
+    }
+
+    #[test]
+    fn configured_exclude_applies_with_dot_scan_root() {
+        let temp = TempDir::new();
+
+        let included = temp.write("src/included.py", "");
+        temp.write("generated/ignored.py", "");
+
+        let settings = Settings {
+            exclude: vec!["generated/**".to_owned()],
+            ..Settings::default()
+        };
+        let scan_root = temp.path().join(".");
+
+        let files = discover(&[scan_root], &settings, temp.path()).unwrap();
 
         assert_eq!(files, vec![included]);
     }

@@ -178,6 +178,15 @@ run_expect_status 0 \
     --project-root "$CONFIG_PROJECT" \
     --list-files
 
+(
+    cd "$CONFIG_PROJECT"
+    run_expect_status 0 \
+        "$TMP_ROOT/list-files-dot.txt" \
+        "$TMP_ROOT/list-files-dot.stderr" \
+        "$ARID_BIN" . \
+        --list-files
+)
+
 python3 - \
     "$CONFIG_PROJECT" \
     "$EXACT_PROJECT" \
@@ -186,6 +195,7 @@ python3 - \
     "$TMP_ROOT/show-exact-config.json" \
     "$TMP_ROOT/list-files.json" \
     "$TMP_ROOT/list-files.txt" \
+    "$TMP_ROOT/list-files-dot.txt" \
     <<'PY'
 import json
 import os
@@ -199,6 +209,7 @@ disabled = json.loads(Path(sys.argv[4]).read_text(encoding="utf-8"))
 exact = json.loads(Path(sys.argv[5]).read_text(encoding="utf-8"))
 files = json.loads(Path(sys.argv[6]).read_text(encoding="utf-8"))
 text_files = Path(sys.argv[7]).read_text(encoding="utf-8").splitlines()
+dot_files = Path(sys.argv[8]).read_text(encoding="utf-8").splitlines()
 
 if os.path.realpath(discovered["project_root"]) != config_project:
     raise SystemExit("discovered configuration reports the wrong project root")
@@ -234,11 +245,14 @@ if files != expected_files:
     raise SystemExit(f"--list-files JSON returned unexpected files: {files}")
 if text_files != expected_files:
     raise SystemExit(f"--list-files text returned unexpected files: {text_files}")
+if dot_files != expected_files:
+    raise SystemExit(f"--list-files from dot scan root returned unexpected files: {dot_files}")
 PY
 
 pass "config, no-config, exact config, and project-root resolution"
 pass "show-config exposes resolved settings and project identity"
 pass "list-files is deterministic and honors project excludes"
+pass "dot scan root honors project excludes"
 
 VIRTUAL_ADD_PROJECT="$TMP_ROOT/virtual-add-project"
 mkdir -p "$VIRTUAL_ADD_PROJECT"
