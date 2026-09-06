@@ -378,6 +378,28 @@ pub(crate) fn render_suppression_status_text(status: &SuppressionStatus) -> Stri
     output
 }
 
+pub(crate) fn render_suppression_summary_text(status: &SuppressionStatus) -> String {
+    let total = status.summary.total.to_string();
+    let active = status.summary.active.to_string();
+    let stale = status.summary.stale.to_string();
+    let count_width = total.len().max(active.len()).max(stale.len());
+    let mut output = String::new();
+
+    output.push_str("Suppressions\n\n");
+    writeln!(&mut output, "┌────────┬─{}─┐", "─".repeat(count_width))
+        .expect("writing to String cannot fail");
+    writeln!(&mut output, "│ Total  │ {total:>count_width$} │")
+        .expect("writing to String cannot fail");
+    writeln!(&mut output, "│ Active │ {active:>count_width$} │")
+        .expect("writing to String cannot fail");
+    writeln!(&mut output, "│ Stale  │ {stale:>count_width$} │")
+        .expect("writing to String cannot fail");
+    writeln!(&mut output, "└────────┴─{}─┘", "─".repeat(count_width))
+        .expect("writing to String cannot fail");
+
+    output
+}
+
 pub(crate) fn render_suppression_status_json(
     status: &SuppressionStatus,
 ) -> Result<String, serde_json::Error> {
@@ -625,6 +647,27 @@ mod tests {
         assert!(rendered.contains("Total suppressions: 1"));
         assert!(rendered.contains("Stale suppressions: 1"));
         assert!(rendered.contains("stale: a.py:1-3 (enable)"));
+    }
+
+    #[test]
+    fn summary_text_lists_aggregate_counts_without_regions() {
+        let status = build_suppression_status(
+            vec![audit_file(
+                "project/a.py",
+                "# arid: disable\nunique = 1\n# arid: enable\n",
+            )],
+            &settings(),
+            Path::new("project"),
+            true,
+        )
+        .unwrap();
+        let rendered = render_suppression_summary_text(&status);
+
+        assert!(rendered.starts_with("Suppressions\n\n"));
+        assert!(rendered.contains("│ Total  │ 1 │"));
+        assert!(rendered.contains("│ Active │ 0 │"));
+        assert!(rendered.contains("│ Stale  │ 1 │"));
+        assert!(!rendered.contains("a.py"));
     }
 
     #[test]

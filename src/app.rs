@@ -29,6 +29,8 @@ use crate::source::{
 };
 use crate::summary::{SummaryOptions, build_summary};
 use crate::summary_json::render_summary_json;
+use crate::suppression::render_suppression_summary_text;
+use crate::suppression_command;
 use crate::text::{render_summary_only, render_text_with_summary};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -412,8 +414,13 @@ fn execute(cli: &Cli, context: RunContext) -> Result<RunResult, OperationalError
             ignore_files: !cli.no_ignore_files,
         },
     );
+    let suppression_status = if cli.suppression_summary || cli.fail_on_stale {
+        Some(suppression_command::audit(cli)?)
+    } else {
+        None
+    };
 
-    let output = match output_format {
+    let mut output = match output_format {
         OutputFormat::Text if cli.summary_only => render_summary_only(&summary, text_color),
         OutputFormat::Text => render_text_with_summary(&report, &summary, text_color),
         OutputFormat::Json if cli.summary_only => {
@@ -439,9 +446,26 @@ fn execute(cli: &Cli, context: RunContext) -> Result<RunResult, OperationalError
         })?,
     };
 
+    if output_format == OutputFormat::Text
+        && let Some(status) = suppression_status.as_ref()
+    {
+        if !output.ends_with('\n') {
+            output.push('\n');
+        }
+        output.push('\n');
+        output.push_str(&render_suppression_summary_text(status));
+    }
+
     write_report_targets(&report_targets, &report, &loaded.project_root)?;
 
     let exit_status = apply_no_fail_on_findings(report.exit_status(), cli.no_fail_on_findings);
+    let exit_status = apply_fail_on_stale(
+        exit_status,
+        suppression_status
+            .as_ref()
+            .is_some_and(|status| status.has_stale()),
+        cli.fail_on_stale,
+    );
     Ok(RunResult::new(output, "", exit_status))
 }
 
@@ -508,10 +532,56 @@ fn validate_output_options(cli: &Cli, output_format: OutputFormat) -> Result<(),
         ));
     }
 
-    if cli.fail_on_stale && cli.baseline_status.is_none() {
+    if cli.suppression_summary
+        && let Some(mode) = non_scan_mode
+    {
         return Err(OperationalError::new(
             ErrorKind::Configuration,
-            "--fail-on-stale requires --suppression-status or --baseline-status",
+            format!("--suppression-summary is not valid with {mode}"),
+        ));
+    }
+
+    if cli.suppression_summary && output_format != OutputFormat::Text {
+        return Err(OperationalError::new(
+            ErrorKind::Configuration,
+            "--suppression-summary is only valid with text output",
+        ));
+    }
+
+    if cli.fail_on_stale
+        && let Some(mode) = non_scan_mode
+        && mode != "--baseline-status"
+    {
+        return Err(OperationalError::new(
+            ErrorKind::Configuration,
+            format!("--fail-on-stale is not valid with {mode}"),
+        ));
+    }
+
+    let suppression_audit_requested =
+        cli.suppression_summary || (cli.fail_on_stale && cli.baseline_status.is_none());
+
+    if suppression_audit_requested && cli.stdin_path.is_some() {
+        let option = if cli.suppression_summary {
+            "--suppression-summary"
+        } else {
+            "--fail-on-stale"
+        };
+        return Err(OperationalError::new(
+            ErrorKind::Configuration,
+            format!("{option} is not valid with --stdin-path"),
+        ));
+    }
+
+    if suppression_audit_requested && cli.keep_going {
+        let option = if cli.suppression_summary {
+            "--suppression-summary"
+        } else {
+            "--fail-on-stale"
+        };
+        return Err(OperationalError::new(
+            ErrorKind::Configuration,
+            format!("{option} is not valid with --keep-going"),
         ));
     }
 
@@ -716,6 +786,7 @@ min-lines = 2
             show_config: false,
             list_files: false,
             suppression_status: false,
+            suppression_summary: false,
             explain_path: None,
             fail_on_stale: false,
             stdin_path: None,
@@ -756,6 +827,18 @@ min-lines = 2
         write_test_config(&temp);
         temp.write("a.py", "alpha = 1\nbeta = 2\n");
         temp.write("b.py", "alpha = 1\nbeta = 2\n");
+        let cli = test_cli(vec![temp.path().to_path_buf()]);
+        (temp, cli)
+    }
+
+    fn stale_suppression_fixture() -> (TempDir, Cli) {
+        let temp = TempDir::new();
+        write_test_config(&temp);
+        temp.write("a.py", "alpha = 1\nbeta = 2\n");
+        temp.write(
+            "b.py",
+            "# arid: disable\ngamma = 3\ndelta = 4\n# arid: enable\n",
+        );
         let cli = test_cli(vec![temp.path().to_path_buf()]);
         (temp, cli)
     }
@@ -808,6 +891,66 @@ min-lines = 2
         assert!(result.stdout().contains("Hotspots"));
         assert!(!result.stdout().contains("Found 1 duplicate group."));
         assert!(!result.stdout().contains('\u{1b}'));
+    }
+
+    #[test]
+    fn suppression_summary_enriches_normal_text_without_changing_exit_policy() {
+        let (_temp, mut cli) = stale_suppression_fixture();
+        cli.suppression_summary = true;
+
+        let result = run(&cli);
+
+        assert_eq!(result.exit_status(), ExitStatus::Success);
+        assert!(result.stdout().contains("No duplicate code found."));
+        assert!(result.stdout().contains("Suppressions"));
+        assert!(result.stdout().contains("│ Total  │ 1 │"));
+        assert!(result.stdout().contains("│ Active │ 0 │"));
+        assert!(result.stdout().contains("│ Stale  │ 1 │"));
+    }
+
+    #[test]
+    fn normal_fail_on_stale_audits_suppressions_and_fails_stale_only_scan() {
+        let (_temp, mut cli) = stale_suppression_fixture();
+        cli.fail_on_stale = true;
+
+        let result = run(&cli);
+
+        assert_eq!(result.exit_status(), ExitStatus::Findings);
+        assert!(result.stdout().contains("No duplicate code found."));
+        assert!(result.stdout().contains("Suppressions"));
+        assert!(result.stdout().contains("│ Stale  │ 1 │"));
+    }
+
+    #[test]
+    fn normal_fail_on_stale_keeps_json_contract_unchanged() {
+        let (_temp, mut cli) = stale_suppression_fixture();
+        cli.fail_on_stale = true;
+        cli.json = true;
+
+        let result = run(&cli);
+
+        assert_eq!(result.exit_status(), ExitStatus::Findings);
+        let value: serde_json::Value = serde_json::from_str(result.stdout()).unwrap();
+        assert_eq!(value["schema_version"], 4);
+        assert!(value.get("suppressions").is_none());
+        assert_eq!(value["duplicate_groups"], 0);
+    }
+
+    #[test]
+    fn suppression_summary_rejects_non_text_output() {
+        let (_temp, mut cli) = stale_suppression_fixture();
+        cli.suppression_summary = true;
+        cli.json = true;
+
+        let result = run(&cli);
+
+        assert_eq!(result.exit_status(), ExitStatus::Error);
+        let value: serde_json::Value = serde_json::from_str(result.stdout()).unwrap();
+        assert_eq!(value["error"]["kind"], "configuration");
+        assert_eq!(
+            value["error"]["message"],
+            "--suppression-summary is only valid with text output"
+        );
     }
 
     #[test]
@@ -1034,9 +1177,10 @@ baseline = "debt.json"
     }
 
     #[test]
-    fn fail_on_stale_requires_status_mode() {
+    fn fail_on_stale_rejects_non_scan_non_status_modes() {
         let (_temp, mut cli) = duplicate_fixture();
         cli.fail_on_stale = true;
+        cli.list_files = true;
 
         let error = run(&cli);
 
@@ -1045,7 +1189,7 @@ baseline = "debt.json"
         assert!(
             error
                 .stderr()
-                .contains("--fail-on-stale requires --suppression-status or --baseline-status")
+                .contains("--fail-on-stale is not valid with --list-files")
         );
     }
 

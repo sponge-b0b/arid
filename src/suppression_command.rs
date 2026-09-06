@@ -14,7 +14,7 @@ use crate::outcome::{ExitStatus, RunResult};
 use crate::output::{resolve_administrative_json_targets, write_atomic_output};
 use crate::source::{SourceInput, build_source_inputs};
 use crate::suppression::{
-    AuditPreparedFile, build_suppression_status, render_suppression_status_json,
+    AuditPreparedFile, SuppressionStatus, build_suppression_status, render_suppression_status_json,
     render_suppression_status_text,
 };
 
@@ -33,9 +33,50 @@ pub(crate) fn run(cli: &Cli) -> RunResult {
     }
 }
 
+pub(crate) fn audit(cli: &Cli) -> Result<SuppressionStatus, OperationalError> {
+    audit_with_discovered(cli).map(|(status, _, _)| status)
+}
+
 fn execute(cli: &Cli) -> Result<RunResult, OperationalError> {
     validate_options(cli)?;
 
+    let (status, discovered, project_root) = audit_with_discovered(cli)?;
+    let report_targets =
+        resolve_administrative_json_targets(&cli.report, &discovered, "--suppression-status")?;
+
+    let exit_status =
+        apply_fail_on_stale(ExitStatus::Success, status.has_stale(), cli.fail_on_stale);
+    let json_output = if cli.output_format() == OutputFormat::Json || !report_targets.is_empty() {
+        Some(render_suppression_status_json(&status).map_err(|error| {
+            OperationalError::new(
+                ErrorKind::Output,
+                format!("failed to render suppression status JSON: {error}"),
+            )
+        })?)
+    } else {
+        None
+    };
+
+    if let Some(json) = json_output.as_deref() {
+        for target in &report_targets {
+            write_atomic_output(&target.path, json, &project_root)?;
+        }
+    }
+
+    let output = match cli.output_format() {
+        OutputFormat::Text => render_suppression_status_text(&status),
+        OutputFormat::Json => json_output.expect("JSON output is rendered for JSON stdout"),
+        OutputFormat::Markdown | OutputFormat::Sarif => {
+            unreachable!("suppression status output is validated before execution")
+        }
+    };
+
+    Ok(RunResult::new(output, "", exit_status))
+}
+
+fn audit_with_discovered(
+    cli: &Cli,
+) -> Result<(SuppressionStatus, Vec<PathBuf>, PathBuf), OperationalError> {
     let paths = scan_paths(cli);
     let loaded =
         load_settings_with_options(&paths[0], settings_overrides(cli), project_options(cli))
@@ -59,9 +100,7 @@ fn execute(cli: &Cli) -> Result<RunResult, OperationalError> {
             format!("failed to discover Python files: {error}"),
         )
     })?;
-    let report_targets =
-        resolve_administrative_json_targets(&cli.report, &discovered, "--suppression-status")?;
-    let inputs = build_source_inputs(discovered, None);
+    let inputs = build_source_inputs(discovered.clone(), None);
     let prepared = prepare_sources_for_audit(
         inputs,
         loaded.settings.normalization_options(),
@@ -81,34 +120,7 @@ fn execute(cli: &Cli) -> Result<RunResult, OperationalError> {
         )
     })?;
 
-    let exit_status =
-        apply_fail_on_stale(ExitStatus::Success, status.has_stale(), cli.fail_on_stale);
-    let json_output = if cli.output_format() == OutputFormat::Json || !report_targets.is_empty() {
-        Some(render_suppression_status_json(&status).map_err(|error| {
-            OperationalError::new(
-                ErrorKind::Output,
-                format!("failed to render suppression status JSON: {error}"),
-            )
-        })?)
-    } else {
-        None
-    };
-
-    if let Some(json) = json_output.as_deref() {
-        for target in &report_targets {
-            write_atomic_output(&target.path, json, &loaded.project_root)?;
-        }
-    }
-
-    let output = match cli.output_format() {
-        OutputFormat::Text => render_suppression_status_text(&status),
-        OutputFormat::Json => json_output.expect("JSON output is rendered for JSON stdout"),
-        OutputFormat::Markdown | OutputFormat::Sarif => {
-            unreachable!("suppression status output is validated before execution")
-        }
-    };
-
-    Ok(RunResult::new(output, "", exit_status))
+    Ok((status, discovered, loaded.project_root))
 }
 
 fn validate_options(cli: &Cli) -> Result<(), OperationalError> {
@@ -116,6 +128,7 @@ fn validate_options(cli: &Cli) -> Result<(), OperationalError> {
         (cli.capabilities, "--capabilities"),
         (cli.show_config, "--show-config"),
         (cli.list_files, "--list-files"),
+        (cli.suppression_summary, "--suppression-summary"),
         (cli.stdin_path.is_some(), "--stdin-path"),
         (cli.keep_going, "--keep-going"),
         (!cli.focus.is_empty(), "--focus"),
@@ -358,6 +371,17 @@ mod tests {
         assert_eq!(result.exit_status(), ExitStatus::Findings);
         assert!(result.stdout().contains("Stale suppressions: 1"));
         assert!(result.stderr().is_empty());
+    }
+
+    #[test]
+    fn reusable_audit_matches_status_command_state() {
+        let temp = fixture();
+        let cli = cli(&temp, false, 1);
+        let status = audit(&cli).unwrap();
+
+        assert!(status.has_stale());
+        assert!(render_suppression_status_text(&status).contains("Active suppressions: 1"));
+        assert!(render_suppression_status_text(&status).contains("Stale suppressions: 1"));
     }
 
     #[test]

@@ -63,6 +63,7 @@ pub struct Cli {
         conflicts_with_all = [
             "show_config",
             "list_files",
+            "suppression_summary",
             "stdin_path",
             "keep_going",
             "focus",
@@ -77,6 +78,21 @@ pub struct Cli {
     )]
     pub suppression_status: bool,
 
+    /// Include aggregate suppression health in normal text summary output.
+    #[arg(
+        long,
+        conflicts_with_all = [
+            "show_config",
+            "list_files",
+            "suppression_status",
+            "explain_path",
+            "baseline_status",
+            "prune_baseline",
+            "write_baseline"
+        ]
+    )]
+    pub suppression_summary: bool,
+
     /// Explain what Arid discovery would do with PATH and exit.
     #[arg(
         long,
@@ -85,6 +101,7 @@ pub struct Cli {
             "show_config",
             "list_files",
             "suppression_status",
+            "suppression_summary",
             "stdin_path",
             "keep_going",
             "focus",
@@ -99,7 +116,7 @@ pub struct Cli {
     )]
     pub explain_path: Option<PathBuf>,
 
-    /// Fail suppression or baseline status when stale maintenance state exists.
+    /// Fail when stale suppression or baseline maintenance state exists.
     #[arg(long)]
     pub fail_on_stale: bool,
 
@@ -319,6 +336,7 @@ mod tests {
         assert!(!cli.show_config);
         assert!(!cli.list_files);
         assert!(!cli.suppression_status);
+        assert!(!cli.suppression_summary);
         assert_eq!(cli.explain_path, None);
         assert!(!cli.fail_on_stale);
         assert_eq!(cli.stdin_path, None);
@@ -419,6 +437,7 @@ mod tests {
         assert!(cli.show_config);
         assert!(!cli.list_files);
         assert!(!cli.suppression_status);
+        assert!(!cli.suppression_summary);
         assert_eq!(cli.explain_path, None);
         assert_eq!(cli.output_format(), OutputFormat::Json);
 
@@ -426,12 +445,14 @@ mod tests {
         assert!(!cli.show_config);
         assert!(cli.list_files);
         assert!(!cli.suppression_status);
+        assert!(!cli.suppression_summary);
         assert_eq!(cli.explain_path, None);
 
         let cli = Cli::try_parse_from(["arid", "--suppression-status", "--json"]).unwrap();
         assert!(!cli.show_config);
         assert!(!cli.list_files);
         assert!(cli.suppression_status);
+        assert!(!cli.suppression_summary);
         assert_eq!(cli.explain_path, None);
         assert_eq!(cli.output_format(), OutputFormat::Json);
 
@@ -439,12 +460,25 @@ mod tests {
         assert!(!cli.show_config);
         assert!(!cli.list_files);
         assert!(!cli.suppression_status);
+        assert!(!cli.suppression_summary);
         assert_eq!(cli.explain_path, Some(PathBuf::from("src/a.py")));
         assert_eq!(cli.output_format(), OutputFormat::Json);
     }
 
     #[test]
+    fn accepts_suppression_summary() {
+        let cli = Cli::try_parse_from(["arid", "--suppression-summary", "."]).unwrap();
+        assert!(cli.suppression_summary);
+        assert!(!cli.suppression_status);
+        assert_eq!(cli.paths, vec![PathBuf::from(".")]);
+    }
+
+    #[test]
     fn accepts_fail_on_stale_policy() {
+        let cli = Cli::try_parse_from(["arid", "--fail-on-stale", "."]).unwrap();
+        assert!(!cli.suppression_status);
+        assert!(cli.fail_on_stale);
+
         let cli = Cli::try_parse_from(["arid", "--suppression-status", "--fail-on-stale"]).unwrap();
         assert!(cli.suppression_status);
         assert!(cli.fail_on_stale);
@@ -565,6 +599,9 @@ mod tests {
         assert!(
             Cli::try_parse_from(["arid", "--suppression-status", "--explain-path", "src/a.py"])
                 .is_err()
+        );
+        assert!(
+            Cli::try_parse_from(["arid", "--suppression-status", "--suppression-summary"]).is_err()
         );
         assert!(
             Cli::try_parse_from(["arid", "--list-files", "--explain-path", "src/a.py"]).is_err()
