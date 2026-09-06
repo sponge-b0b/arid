@@ -63,7 +63,7 @@ dependencies = [
 
 [[package]]
 name = "arid-cli"
-version = "2.2.1"
+version = "2.2.2"
 dependencies = [
  "atomic-write-file",
  "clap",
