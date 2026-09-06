@@ -313,6 +313,9 @@ Normal text scans end with a high-signal aggregate view:
 - **Summary** — files, source/analyzed lines, duplicate groups, occurrences, duplicate lines, and duplication percentage
 - **Breakdown** — duplicate-group counts and shares by Context, Scope, and Distribution
 - **Hotspots** — the top five files by duplicate-group participation, then occurrence count, then path
+- **Suppressions** — total, active, and stale suppression counts when suppression auditing is requested
+
+Ordinary `arid .` scans do not run the additional suppression audit. Request it with `--suppression-summary` for informational health or `--fail-on-stale` when stale suppressions should affect the normal scan exit status.
 
 Hotspots are objective participation counts, not severity or quality scores.
 
@@ -561,7 +564,23 @@ Suppression regions also create matching boundaries, so Arid does not construct 
 
 Suppression directives are idempotent state transitions. A repeated `# arid: disable` while already disabled and a repeated `# arid: enable` while already enabled are valid no-ops. A disabled region may also continue through EOF; a closing enable directive is not required.
 
-Audit all effective suppression regions without changing normal detection behavior:
+Include aggregate suppression health in an otherwise normal text scan:
+
+```bash
+arid . --suppression-summary
+```
+
+The normal scan still reports duplicate findings and its usual Summary, Breakdown, and Hotspots. A Suppressions block is appended with total, active, and stale counts. Stale suppressions are informational in this mode.
+
+Run a normal duplication scan and fail if any suppression is stale:
+
+```bash
+arid . --fail-on-stale
+```
+
+This implicitly runs the suppression audit. In text output it also includes the aggregate Suppressions block. In JSON, Markdown, or SARIF normal scans, `--fail-on-stale` changes only the exit policy; existing machine report contracts are not enriched with suppression fields.
+
+Audit all effective suppression regions in the standalone detailed administrative view:
 
 ```bash
 arid . --suppression-status
@@ -574,13 +593,15 @@ Each effective region is classified as:
 
 No-op directives do not create audit records.
 
-Treat stale suppressions as CI failure while still emitting the audit result:
+The detailed status command can also enforce the same stale-maintenance policy:
 
 ```bash
 arid . --suppression-status --fail-on-stale
 ```
 
 This supports a maintenance invariant of **zero new duplication + zero obsolete suppression**. Intentional duplication may remain suppressed, but obsolete suppression directives can be required to disappear instead of becoming permanent lint graffiti.
+
+Ordinary `arid .` does not pay for the additional suppression audit. See [Suppression health](docs/suppression-health.md) for the normal-scan and administrative behaviors in one place.
 
 Use suppression for local duplication that a project intentionally accepts. For project-wide existing debt, prefer a baseline instead of scattering suppressions across many files.
 
@@ -607,9 +628,9 @@ Occurrences: 2 across 2 files (cross-file)
   src/models/account.py:20-23
 ```
 
-After the findings, Arid renders the overall **Summary**, the fixed Context/Scope/Distribution **Breakdown**, and up to five objective **Hotspots**.
+After the findings, Arid renders the overall **Summary**, the fixed Context/Scope/Distribution **Breakdown**, and up to five objective **Hotspots**. When suppression auditing is requested for a normal text scan, an aggregate **Suppressions** block follows with total, active, and stale counts.
 
-Use `--summary-only` when those aggregate sections are sufficient and individual finding blocks are not needed.
+Use `--summary-only` when the aggregate sections are sufficient and individual finding blocks are not needed.
 
 `Total time:` follows completed normal text output and is presentation-only. Its value is expected to vary between invocations and is not part of Arid's deterministic machine-output guarantees.
 
@@ -720,6 +741,8 @@ Arid publishes JSON Schema documents for its versioned machine contracts:
 - [Path explanation schema v1](schemas/path-explanation-v1.schema.json) — deterministic `--explain-path PATH --json` discovery decision
 
 The two v2.1 administrative contracts may also be written directly with `--report json=PATH`; the supplemental file is rendered from the same typed model and JSON renderer as stdout.
+
+`--suppression-summary` is human text presentation only. Normal-scan `--fail-on-stale` does not add suppression state to `report-v4`, `summary-v1`, Markdown, SARIF, or supplemental normal-scan reports.
 
 Elapsed scan timing is deliberately excluded from all versioned JSON contracts and other machine-oriented formats.
 
@@ -1018,7 +1041,7 @@ report
 
 Arid analyzes Python source entirely in Rust and never imports or executes the project being scanned.
 
-V2 workflow controls reuse this same detector path; focus, baselines, multiple outputs, the GitHub Action, and virtual input do not create alternate duplicate detectors. Suppression audit and targeted path explanation are explicit administrative paths and do not replace or alter normal duplicate detection.
+V2 workflow controls reuse this same detector path; focus, baselines, multiple outputs, the GitHub Action, and virtual input do not create alternate duplicate detectors. Suppression auditing can be requested as a normal-scan health/policy adjunct; the detailed suppression status and targeted path explanation remain explicit administrative views and do not replace or alter normal duplicate detection.
 
 ---
 
@@ -1032,7 +1055,7 @@ Arid uses predictable exit codes:
 | `1` | Complete scan findings or an enforced stale-maintenance policy failure. |
 | `2` | Invocation/configuration/operational failure or incomplete scan. |
 
-`--no-fail-on-findings` can map a complete findings-only `1` to `0`, but never masks `2`. `--fail-on-stale` can make stale `--suppression-status` or `--baseline-status` state exit `1`; without that flag, stale maintenance state remains informational.
+`--no-fail-on-findings` can map a complete findings-only `1` to `0`, but never masks `2`. `--fail-on-stale` can make stale suppression state fail a normal scan or `--suppression-status`, and it continues to enforce stale `--baseline-status` state. Without `--fail-on-stale`, stale maintenance state remains informational.
 
 ---
 
@@ -1093,6 +1116,7 @@ Arid includes dedicated tooling and documentation for release qualification, per
 
 - [V2 migration guide](docs/arid-v2-migration-guide.md)
 - [V2 performance report](docs/arid-v2-performance-report.md)
+- [Suppression health](docs/suppression-health.md)
 - [Release qualification](qualification/README.md)
 - [Benchmarks](benchmarks/README.md)
 - [Validation](validation/README.md)
@@ -1100,7 +1124,7 @@ Arid includes dedicated tooling and documentation for release qualification, per
 - [V2.1 release roadmap](docs/arid-v2.1-release-roadmap.md)
 - [V2.2 release roadmap](docs/arid-v2.2-release-roadmap.md)
 
-The targeted v2.2 integration suite is `validation/v2.2.sh`; it runs the inherited v2.1 suite first and then validates the v2.2 summary, summary-only, machine-contract, color, timing, baseline/focus, and adaptive-worker behavior.
+The targeted v2.2 integration suite is `validation/v2.2.sh`; it runs the inherited v2.1 suite first and then validates the v2.2 summary, summary-only, machine-contract, color, timing, baseline/focus, and adaptive-worker behavior. The inherited v2 suite also validates normal-scan suppression summary and stale-policy composition.
 
 ---
 
