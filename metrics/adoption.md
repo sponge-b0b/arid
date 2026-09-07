@@ -14,3 +14,4 @@ Record one snapshot per week, ideally on the same day, to make the rolling 7-day
 | --- | ---: | ---: | ---: |
 | 2026-08-24 | 29 | 1,282 | 2,665 |
 | 2026-08-31 | 701 | 1,632 | 4,268 |
+| 2026-09-06 | 270 | 940 | 5,208 |
