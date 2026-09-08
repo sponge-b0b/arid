@@ -1,5 +1,5 @@
 name: Arid duplicate-code check
-description: Run Arid once and expose duplicate-code findings and metrics.
+description: Detect duplicate Python code with Arid and expose findings, metrics, and CI outputs.
 
 author: Bob Taylor
 
@@ -119,3 +119,7 @@ runs:
           echo "Arid action failed." >&2
         fi
         exit 1
+
+branding:
+  icon: layers
+  color: orange
