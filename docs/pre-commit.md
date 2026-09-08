@@ -24,7 +24,7 @@ Add Arid to `.pre-commit-config.yaml`:
 ```yaml
 repos:
   - repo: https://github.com/sponge-b0b/arid
-    rev: v2.0.0
+    rev: v2.2.2
     hooks:
       - id: arid
 ```

@@ -898,7 +898,7 @@ Arid v2 includes an official composite GitHub Action.
 Stable example:
 
 ```yaml
-- uses: sponge-b0b/arid@v2.1.0
+- uses: sponge-b0b/arid@v2.2.2
   with:
     paths: .
 ```
@@ -934,7 +934,7 @@ scan-exit-code
 Example with focus and a non-failing findings policy:
 
 ```yaml
-- uses: sponge-b0b/arid@v2.1.0
+- uses: sponge-b0b/arid@v2.2.2
   id: arid
   with:
     paths: .
@@ -960,7 +960,7 @@ Use the stable v2 release:
 ```yaml
 repos:
   - repo: https://github.com/sponge-b0b/arid
-    rev: v2.1.0
+    rev: v2.2.2
     hooks:
       - id: arid
 ```
