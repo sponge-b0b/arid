@@ -177,8 +177,10 @@ derive() {
     FILES=("${COMMON_FILES[@]}" "$ROADMAP")
 
     if [[ "$ACTION_RELEASE" == "true" ]]; then
+        [[ -f docs/pre-commit.md ]] ||
+            die "required file not found: docs/pre-commit.md"
         [[ -f action.yml ]] || die "required file not found: action.yml"
-        FILES+=(action.yml)
+        FILES+=(docs/pre-commit.md action.yml)
     fi
 
     export VERSION PYPI CLASSIFIER PHASE BADGE STATUS ROADMAP ACTION_RELEASE
@@ -219,6 +221,17 @@ def sub_once(path, pattern, replacement, label, flags=re.M):
 
     if count != 1:
         fail(f"expected exactly one {label} in {path}")
+
+    file.write_text(text)
+
+
+def sub_exact(path, pattern, replacement, expected, label, flags=re.M):
+    file = Path(path)
+    text = file.read_text()
+    text, count = re.subn(pattern, replacement, text, flags=flags)
+
+    if count != expected:
+        fail(f"expected exactly {expected} {label} entries in {path}")
 
     file.write_text(text)
 
@@ -294,6 +307,31 @@ if action == "update":
         f"**Current phase:** {phase}",
         "roadmap release phase",
     )
+
+    if action_release and "-" not in version:
+        tag = f"v{version}"
+
+        sub_exact(
+            "README.md",
+            r'(^- uses: sponge-b0b/arid@)v[^\s]+$',
+            rf'\g<1>{tag}',
+            2,
+            "README GitHub Action release pin",
+        )
+
+        sub_once(
+            "README.md",
+            r'(^    rev: )v[^\s]+$',
+            rf'\g<1>{tag}',
+            "README pre-commit release pin",
+        )
+
+        sub_once(
+            "docs/pre-commit.md",
+            r'(^    rev: )v[^\s]+$',
+            rf'\g<1>{tag}',
+            "pre-commit documentation release pin",
+        )
 
     if action_release:
         sub_once(
@@ -378,6 +416,45 @@ if block(
     "README release status",
 ) != status.strip():
     fail("README release status does not match")
+
+if action_release:
+    action_pins = re.findall(
+        r'^- uses: sponge-b0b/arid@(v[^\s]+)$',
+        readme,
+        re.M,
+    )
+    readme_precommit_pins = re.findall(
+        r'^    rev: (v[^\s]+)$',
+        readme,
+        re.M,
+    )
+    docs_precommit_pins = re.findall(
+        r'^    rev: (v[^\s]+)$',
+        Path("docs/pre-commit.md").read_text(),
+        re.M,
+    )
+
+    if len(action_pins) != 2:
+        fail("expected exactly two README GitHub Action release pins")
+    if len(readme_precommit_pins) != 1:
+        fail("expected exactly one README pre-commit release pin")
+    if len(docs_precommit_pins) != 1:
+        fail("expected exactly one pre-commit documentation release pin")
+
+    integration_pins = [
+        *action_pins,
+        readme_precommit_pins[0],
+        docs_precommit_pins[0],
+    ]
+
+    if len(set(integration_pins)) != 1:
+        fail("current integration release pins do not match")
+
+    if "-" not in version and integration_pins[0] != f"v{version}":
+        fail(
+            f"current integration release pin is {integration_pins[0]}, "
+            f"expected v{version}"
+        )
 PY
 }
 

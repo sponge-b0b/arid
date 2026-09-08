@@ -126,6 +126,10 @@ RELEASE_METADATA_FILES=(
     "$RELEASE_ROADMAP"
 )
 
+if [[ "$BASE_VERSION" == 1.1.* || "$BASE_VERSION" == 1.2.* || "$BASE_VERSION" == 2.* ]]; then
+    RELEASE_METADATA_FILES+=(docs/pre-commit.md)
+fi
+
 if [[ "$BASE_VERSION" == 2.* ]]; then
     RELEASE_METADATA_FILES+=(action.yml)
 fi
