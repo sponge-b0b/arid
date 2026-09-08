@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+    width="512" height="512" viewBox="0 0 24 24"
+     role="img" aria-label="Arid icon">
+  <g fill="#F39E0A">
+    <path d="M4.25 20V8.25L11.1 2V11.65L9.05 13.55V20H4.25Z"/>
+    <path d="M13.15 9.55L19.75 15.45V20H15.85V16.95L13.15 14.45V9.55Z"/>
+  </g>
+</svg>
