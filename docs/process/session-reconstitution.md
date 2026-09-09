@@ -52,13 +52,15 @@ The campaign must preserve technical credibility. Articles, community responses,
 
 ## Current product snapshot
 
-At this handoff, the current stable release is **Arid 2.2.2**.
+At this handoff, the current stable release is **Arid 2.2.3**.
 
 Future sessions must verify this before using it in current-facing copy.
 
 Arid remains a fast Python duplicate-code checker written in Rust: a focused replacement for Pylint `R0801` / `symilar` designed to complement Ruff. Its core semantic responsibility remains exact normalized Python duplicate detection rather than general semantic clone detection.
 
-The 2.2 line materially expanded the product around the detector, including richer aggregate analysis, Summary/Breakdown/Hotspots, deterministic machine-readable summary output, stronger GitHub Actions outputs, and adaptive parallelism. Do not describe serial execution as the current default without verifying current behavior.
+The 2.2 line materially expanded the product around the detector, including richer aggregate analysis, Summary/Breakdown/Hotspots, deterministic machine-readable summary output, stronger GitHub Actions outputs, adaptive parallelism, and suppression-health workflows. Do not describe serial execution as the current default without verifying current behavior.
+
+Arid 2.2.3 is a narrow integration/packaging patch that made the existing GitHub Action Marketplace-ready; it did not change duplicate-detection semantics.
 
 ## Adoption metrics
 
@@ -93,7 +95,7 @@ Never default to:
 2. **DONE — Duplicate-Code Detection for Ruff Users**
    - Tool-composition argument for developers using Ruff.
 3. **NEXT — How to Add Python Duplicate-Code Detection to GitHub Actions**
-   - High-intent implementation article. Write against the current Arid interface and current official Action behavior.
+   - High-intent implementation article. Write against the current Arid interface, the current official Action behavior, and the live GitHub Marketplace listing.
 4. **PLANNED — How to Adopt Duplicate-Code Checks Without Fixing All Existing Debt**
    - Brownfield adoption, baselines, stable fingerprints, and preventing new debt without requiring immediate cleanup of historical debt.
 5. **PLANNED — How to Find Duplicate Code in Python Without Running Pylint**
@@ -209,28 +211,64 @@ Capture useful language and recurring problems as lightweight user research. Fee
 
 A scheduled weekly **Arid Problem Scan** exists at this handoff. It searches these target families and should surface only worthwhile candidates with tailored response drafts for strong fits. Future sessions should not assume the task still exists if automation state matters; verify when necessary.
 
+## Ecosystem discovery: GitHub Marketplace
+
+The official Arid GitHub Action is **live in GitHub Marketplace**.
+
+Marketplace listing:
+
+- `https://github.com/marketplace/actions/arid-duplicate-code-check`
+- Listing name: **Arid duplicate-code check**
+- Published from the existing `sponge-b0b/arid` repository.
+- Marketplace-ready release: **v2.2.3**.
+- The Action continues to use normal Arid release tags; there is no separate Action repository or alternate Action versioning scheme.
+- Root `action.yml` at `v2.2.3` contains the Marketplace description and GitHub-supported branding:
+
+```yaml
+description: Detect duplicate Python code with Arid and expose findings, metrics, and CI outputs.
+
+branding:
+  icon: layers
+  color: orange
+```
+
+Repository branding assets also include:
+
+- `assets/arid-feather-solid.svg`
+- `assets/arid-feather-solid.png`
+
+Those custom assets use Arid's brand amber `#F39E0A`; GitHub Marketplace itself uses its supported `layers` icon and `orange` color.
+
+The Marketplace listing is now a durable first-party GitHub ecosystem-discovery surface. Article 3 should link to it naturally when showing readers how to add Arid to GitHub Actions.
+
 ## Ecosystem discovery: awesome-python
 
-Arid has been submitted to `vinta/awesome-python` as a **Challenger** in **Developer Tools → Code Analysis**.
+Arid was submitted to `vinta/awesome-python` as a **Challenger** in **Developer Tools → Code Analysis**.
 
-Active pull request at handoff:
+Pull request:
 
 - `https://github.com/vinta/awesome-python/pull/3321`
 - Title: `Add arid`
-- State at handoff: open, mergeable, not draft.
-- Submission branch: `sponge-b0b/awesome-python:add-arid-final`.
-- Diff: one README entry, one addition, zero deletions.
-- Tier: Challenger, deliberately not claimed as an Obvious Choice.
-- Adoption evidence in PR: rolling 30-day PyPI downloads of 2,665 → 4,268 → 5,208, approximately 95% growth across the recorded snapshots.
-- Current release cited in PR: Arid 2.2.2.
+- Final state: **closed, not merged**.
+- Tier requested: Challenger, deliberately not claimed as an Obvious Choice.
+- Adoption evidence submitted: rolling 30-day PyPI downloads of 2,665 → 4,268 → 5,208, approximately 95% growth across the recorded snapshots.
 
-At handoff there were no comments/reviews and no reported commit status checks. **Always fetch the current PR state during reconstitution rather than relying on this snapshot.**
+The maintainer's rejection was specific: the reported download growth covered too short a period and did not yet demonstrate the **sustained adoption trajectory or broader community uptake** required for challenger admission.
 
-An hourly conditional watch exists for PR #3321 and is intended to notify on a new review, comment, CI failure, merge, or closure.
+Treat this as **rejected for now, not permanently ineligible**.
 
-During submission diligence, another open challenger, `thailint`, was seeking what appeared to be the fifth Code Analysis slot. This was strategically relevant at submission time but may become stale quickly. Verify its current status before treating it as competition or discussing displacement.
+Do not immediately resubmit merely because one download threshold is crossed. Build a stronger evidence package over roughly the next 8–12 weeks, including where available:
 
-Do not add unsolicited comments to PR #3321 while it is awaiting review. Respond when maintainers or automation provide something actionable.
+- several months of sustained PyPI activity;
+- independent user issues/discussions;
+- public projects using Arid in real repositories or CI;
+- third-party mentions/recommendations;
+- community uptake not initiated by the author;
+- additional contributors or other credible external adoption signals.
+
+Continue the weekly PyPI snapshots in `metrics/adoption.md`. Reassess awesome-python only after enough time and broader evidence have accumulated, and re-read its current contribution rules before any future submission because a recently closed PR may itself affect eligibility.
+
+The previous hourly watch on PR #3321 is no longer needed because the PR is closed.
 
 ## Ecosystem/discovery model
 
@@ -238,7 +276,7 @@ The campaign currently has three complementary discovery tracks:
 
 1. **Search interception:** search → useful article → Arid.
 2. **Direct problem interception:** active developer problem → useful answer → article/Arid when appropriate.
-3. **Ecosystem discovery:** awesome-python, PyPI, newsletters, GitHub, and other trusted ecosystem surfaces → Arid.
+3. **Ecosystem discovery:** GitHub Marketplace, PyPI, newsletters, GitHub, awesome-python when later eligible, and other trusted ecosystem surfaces → Arid.
 
 These tracks should reinforce one another rather than become independent promotion campaigns.
 
@@ -246,11 +284,10 @@ These tracks should reinforce one another rather than become independent promoti
 
 Unless current state changes the priority during reconstitution:
 
-1. Monitor and respond appropriately to developments on awesome-python PR #3321; do not manufacture activity while it is waiting.
+1. Write the next Search-driven Content article: **How to Add Python Duplicate-Code Detection to GitHub Actions**. The GitHub Marketplace listing is now live and should be incorporated naturally.
 2. Continue the scheduled Direct Problem Interception cadence.
-3. Write the next Search-driven Content article: **How to Add Python Duplicate-Code Detection to GitHub Actions**.
-4. Continue periodic PyPI adoption snapshots in `metrics/adoption.md`.
-5. After article 3, proceed to the existing-debt/baseline article unless new evidence justifies reprioritization.
+3. Continue periodic PyPI adoption snapshots in `metrics/adoption.md` and accumulate broader community-adoption evidence for a future awesome-python reassessment.
+4. After article 3, proceed to **How to Adopt Duplicate-Code Checks Without Fixing All Existing Debt** unless new evidence justifies reprioritization.
 
 ## Reconstitution principle
 
