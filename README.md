@@ -308,12 +308,12 @@ arid . --format sarif
 
 `text` is the default. `--json` remains shorthand for `--format json`.
 
-Normal text scans end with a high-signal aggregate view:
+Normal text scans end with a high-signal summary view:
 
 - **Summary** — files, source/analyzed lines, duplicate groups, occurrences, duplicate lines, and duplication percentage
 - **Breakdown** — duplicate-group counts and shares by Context, Scope, and Distribution
 - **Hotspots** — the top five files by duplicate-group participation, then occurrence count, then path
-- **Suppressions** — total, active, and stale suppression counts when suppression auditing is requested
+- **Suppressions** — total, active, and stale suppression counts when suppression auditing is requested; if any suppressions are stale, their project-relative locations are listed immediately below the counts
 
 Ordinary `arid .` scans do not run the additional suppression audit. Request it with `--suppression-summary` for informational health or `--fail-on-stale` when stale suppressions should affect the normal scan exit status.
 
@@ -564,13 +564,23 @@ Suppression regions also create matching boundaries, so Arid does not construct 
 
 Suppression directives are idempotent state transitions. A repeated `# arid: disable` while already disabled and a repeated `# arid: enable` while already enabled are valid no-ops. A disabled region may also continue through EOF; a closing enable directive is not required.
 
-Include aggregate suppression health in an otherwise normal text scan:
+Include suppression health in an otherwise normal text scan:
 
 ```bash
 arid . --suppression-summary
 ```
 
-The normal scan still reports duplicate findings and its usual Summary, Breakdown, and Hotspots. A Suppressions block is appended with total, active, and stale counts. Stale suppressions are informational in this mode.
+The normal scan still reports duplicate findings and its usual Summary, Breakdown, and Hotspots. A Suppressions block is appended with total, active, and stale counts. When stale suppressions exist, Arid immediately lists only those stale regions using project-relative `path:start-end` locations; EOF-terminated regions use `path:start-EOF`. Stale suppressions remain informational in this mode.
+
+For example:
+
+```text
+Stale suppressions
+
+  src/example.py:120-134
+
+Run with --suppression-status for the full suppression audit.
+```
 
 Run a normal duplication scan and fail if any suppression is stale:
 
@@ -578,7 +588,7 @@ Run a normal duplication scan and fail if any suppression is stale:
 arid . --fail-on-stale
 ```
 
-This implicitly runs the suppression audit. In text output it also includes the aggregate Suppressions block. In JSON, Markdown, or SARIF normal scans, `--fail-on-stale` changes only the exit policy; existing machine report contracts are not enriched with suppression fields.
+This implicitly runs the suppression audit. In text output it also includes the Suppressions block and, when stale suppressions exist, their locations. In JSON, Markdown, or SARIF normal scans, `--fail-on-stale` changes only the exit policy; existing machine report contracts are not enriched with suppression fields.
 
 Audit all effective suppression regions in the standalone detailed administrative view:
 
@@ -628,7 +638,7 @@ Occurrences: 2 across 2 files (cross-file)
   src/models/account.py:20-23
 ```
 
-After the findings, Arid renders the overall **Summary**, the fixed Context/Scope/Distribution **Breakdown**, and up to five objective **Hotspots**. When suppression auditing is requested for a normal text scan, an aggregate **Suppressions** block follows with total, active, and stale counts.
+After the findings, Arid renders the overall **Summary**, the fixed Context/Scope/Distribution **Breakdown**, and up to five objective **Hotspots**. When suppression auditing is requested for a normal text scan, a **Suppressions** block follows with total, active, and stale counts; if stale suppressions exist, their project-relative locations are listed immediately afterward.
 
 Use `--summary-only` when the aggregate sections are sufficient and individual finding blocks are not needed.
 
