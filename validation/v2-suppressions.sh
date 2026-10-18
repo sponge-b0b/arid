@@ -126,7 +126,14 @@ grep -q '│ Active │ 0 │' "$TMP_ROOT/summary.txt" ||
     die "suppression summary active count is wrong"
 grep -q '│ Stale  │ 1 │' "$TMP_ROOT/summary.txt" ||
     die "suppression summary stale count is wrong"
-pass "suppression summary enriches normal text without changing exit policy"
+grep -q '^Stale suppressions$' "$TMP_ROOT/summary.txt" ||
+    die "suppression summary stale-location heading missing"
+grep -q '^  b.py:1-4$' "$TMP_ROOT/summary.txt" ||
+    die "suppression summary did not identify stale region"
+grep -q '^Run with --suppression-status for the full suppression audit\.$' \
+    "$TMP_ROOT/summary.txt" ||
+    die "suppression summary full-audit hint missing"
+pass "suppression summary identifies stale suppression without changing exit policy"
 
 run_expect_status \
     1 \
@@ -138,7 +145,9 @@ grep -q '^Suppressions$' "$TMP_ROOT/fail.txt" ||
     die "--fail-on-stale did not show suppression health in text output"
 grep -q '│ Stale  │ 1 │' "$TMP_ROOT/fail.txt" ||
     die "--fail-on-stale stale count is wrong"
-pass "normal scan fail-on-stale fails stale-only suppression health"
+grep -q '^  b.py:1-4$' "$TMP_ROOT/fail.txt" ||
+    die "--fail-on-stale did not identify stale region"
+pass "normal scan fail-on-stale identifies and fails stale-only suppression health"
 
 run_expect_status \
     1 \
@@ -178,7 +187,9 @@ grep -q '│ Active │ 1 │' "$TMP_ROOT/active.txt" ||
     die "active suppression count is wrong"
 grep -q '│ Stale  │ 0 │' "$TMP_ROOT/active.txt" ||
     die "active suppression was incorrectly classified stale"
-pass "normal scan fail-on-stale accepts active suppressions"
+! grep -q '^Stale suppressions$' "$TMP_ROOT/active.txt" ||
+    die "healthy suppression summary unexpectedly listed stale locations"
+pass "normal scan fail-on-stale accepts active suppressions without stale detail"
 
 echo
 echo "V2 suppression health validation PASS"

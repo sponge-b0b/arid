@@ -397,6 +397,26 @@ pub(crate) fn render_suppression_summary_text(status: &SuppressionStatus) -> Str
     writeln!(&mut output, "└────────┴─{}─┘", "─".repeat(count_width))
         .expect("writing to String cannot fail");
 
+    if status.has_stale() {
+        output.push_str("\nStale suppressions\n\n");
+
+        for region in status
+            .regions
+            .iter()
+            .filter(|region| region.status == SuppressionStatusKind::Stale)
+        {
+            let location = match region.end_line {
+                Some(end_line) => format!("{}-{}", region.start_line, end_line),
+                None => format!("{}-EOF", region.start_line),
+            };
+
+            writeln!(&mut output, "  {}:{location}", region.path)
+                .expect("writing to String cannot fail");
+        }
+
+        output.push_str("\nRun with --suppression-status for the full suppression audit.\n");
+    }
+
     output
 }
 
@@ -650,7 +670,7 @@ mod tests {
     }
 
     #[test]
-    fn summary_text_lists_aggregate_counts_without_regions() {
+    fn summary_text_lists_counts_and_stale_locations() {
         let status = build_suppression_status(
             vec![audit_file(
                 "project/a.py",
@@ -667,7 +687,30 @@ mod tests {
         assert!(rendered.contains("│ Total  │ 1 │"));
         assert!(rendered.contains("│ Active │ 0 │"));
         assert!(rendered.contains("│ Stale  │ 1 │"));
-        assert!(!rendered.contains("a.py"));
+        assert!(rendered.contains("\nStale suppressions\n\n"));
+        assert!(rendered.contains("  a.py:1-3\n"));
+        assert!(rendered.contains("Run with --suppression-status for the full suppression audit."));
+    }
+
+    #[test]
+    fn summary_text_omits_stale_locations_when_healthy() {
+        let source = "# arid: disable\nalpha = 1\nbeta = 2\n# arid: enable\n";
+        let status = build_suppression_status(
+            vec![
+                audit_file("project/a.py", source),
+                audit_file("project/b.py", source),
+            ],
+            &settings(),
+            Path::new("project"),
+            true,
+        )
+        .unwrap();
+        let rendered = render_suppression_summary_text(&status);
+
+        assert!(rendered.contains("│ Active │ 2 │"));
+        assert!(rendered.contains("│ Stale  │ 0 │"));
+        assert!(!rendered.contains("Stale suppressions"));
+        assert!(!rendered.contains("--suppression-status"));
     }
 
     #[test]
