@@ -2,32 +2,43 @@
 
 Arid source suppressions have two related views:
 
-- aggregate suppression health during a normal duplicate-code scan;
+- suppression health during a normal duplicate-code scan, including actionable stale locations when unhealthy;
 - detailed suppression lifecycle administration.
 
 These views use the same suppression audit semantics without changing normal duplicate identity or Arid's existing machine-report schemas.
 
-## Aggregate suppression health
+## Suppression health
 
-Use `--suppression-summary` when you want a normal text scan plus aggregate suppression maintenance state:
+Use `--suppression-summary` when you want a normal text scan plus suppression maintenance state:
 
 ```bash
 arid . --suppression-summary
 ```
 
-The normal duplicate findings and Summary/Breakdown/Hotspots output remain intact. Arid additionally renders:
+The normal duplicate findings and Summary/Breakdown/Hotspots output remain intact. Arid additionally renders aggregate suppression health:
 
 ```text
 Suppressions
 
-┌────────┬───────┐
-│ Status │ Count │
-├────────┼───────┤
-│ Total  │     4 │
-│ Active │     3 │
-│ Stale  │     1 │
-└────────┴───────┘
+┌────────┬───┐
+│ Total  │ 4 │
+│ Active │ 3 │
+│ Stale  │ 1 │
+└────────┴───┘
 ```
+
+When stale suppressions exist, normal text output immediately identifies only the stale regions so the result is actionable without requiring a second command:
+
+```text
+Stale suppressions
+
+  src/b.py:30-42
+  src/c.py:55-EOF
+
+Run with --suppression-status for the full suppression audit.
+```
+
+Stale locations use project-relative paths and the same deterministic path/line ordering as the full suppression audit. Active regions remain summarized by count; use `--suppression-status` when you need every region and its lifecycle state.
 
 `--suppression-summary` is informational. Stale suppressions do not change the process exit status unless `--fail-on-stale` is also requested.
 
@@ -49,7 +60,7 @@ Arid performs the normal duplicate scan and a suppression audit. Exit status is 
 - `1` — duplicate findings, stale suppressions, or both;
 - `2` — invocation, configuration, operational, or incomplete-scan failure.
 
-For normal text output, `--fail-on-stale` also renders the aggregate Suppressions block automatically; a separate `--suppression-summary` flag is unnecessary.
+For normal text output, `--fail-on-stale` renders the Suppressions block automatically and, when stale suppressions exist, lists their locations. A separate `--suppression-summary` flag is unnecessary.
 
 For normal JSON, Markdown, or SARIF output, `--fail-on-stale` changes only exit policy. Existing machine-output shapes remain unchanged.
 
